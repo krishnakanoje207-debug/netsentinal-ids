@@ -55,7 +55,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 474 tests, no database or network needed
+uv run pytest            # 538 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
