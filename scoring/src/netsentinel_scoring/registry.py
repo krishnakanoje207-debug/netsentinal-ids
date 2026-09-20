@@ -49,6 +49,36 @@ class ModelLoadError(RuntimeError):
     """A model was refused. The message says which check failed and why."""
 
 
+#: Calibration methods this serving path knows how to reproduce. A card naming
+#: anything else is refused at load rather than at first score, so a model that
+#: cannot be served correctly never enters the registry.
+SUPPORTED_CALIBRATIONS = frozenset({"platt", "empirical_quantiles"})
+
+
+def apply_calibration(raw: np.ndarray, calibration: dict | None) -> np.ndarray:
+    """Turn a tier's raw output into a probability, per its card."""
+    if not calibration:
+        return raw
+
+    method = calibration.get("method")
+    if method == "platt":
+        # Platt scaling was fitted on the raw LightGBM margin, but the ONNX graph
+        # emits sigmoid(margin), so the margin is recovered by its logit first.
+        probability = np.clip(raw, 1e-12, 1.0 - 1e-12)
+        margin = np.log(probability / (1.0 - probability))
+        a = float(calibration.get("a", 1.0))
+        b = float(calibration.get("b", 0.0))
+        return 1.0 / (1.0 + np.exp(-np.clip(a * margin + b, -500.0, 500.0)))
+
+    if method == "empirical_quantiles":
+        # The share of benign traffic that looks more normal than this flow.
+        levels = calibration["levels"]
+        quantiles = calibration["scores"]
+        return 1.0 - np.interp(raw, quantiles, levels)
+
+    raise ModelLoadError(f"unsupported calibration method {method!r}")
+
+
 @dataclass(slots=True)
 class LoadedModel:
     """One tier, ready to score."""
@@ -69,13 +99,19 @@ class LoadedModel:
         return self.mode == "active"
 
     def score(self, matrix: np.ndarray) -> np.ndarray:
-        """Return one probability per row."""
+        """Return one calibrated probability per row.
+
+        Calibration is applied here, not by the caller, because what an ONNX graph
+        emits differs by tier: the tree classifier outputs an uncalibrated
+        probability, the Isolation Forest an arbitrary-scale decision function.
+        Fusion can only average numbers that mean the same thing.
+        """
         outputs = self.session.run(None, {self.input_name: matrix.astype(np.float32)})
-        probabilities = np.asarray(outputs[-1])
-        if probabilities.ndim == 2:
+        raw = np.asarray(outputs[-1])
+        if raw.ndim == 2 and raw.shape[1] > 1:
             # Binary classifier: column 1 is the attack probability.
-            probabilities = probabilities[:, -1]
-        return probabilities.astype(np.float64)
+            raw = raw[:, -1]
+        return apply_calibration(raw.ravel().astype(np.float64), self.calibration)
 
 
 def sha256_of(path: Path) -> str:
@@ -124,6 +160,22 @@ def load_model(card_path: str | Path, onnx_path: str | Path | None = None) -> Lo
             f"{_first_difference(declared, expected)}. Retrain or pin the older core."
         )
 
+    calibration = card.get("calibration")
+    if calibration:
+        method = calibration.get("method")
+        if method not in SUPPORTED_CALIBRATIONS:
+            raise ModelLoadError(
+                f"model {card['name']!r} declares calibration {method!r}, which this "
+                f"serving path cannot reproduce. Supported: "
+                f"{sorted(SUPPORTED_CALIBRATIONS)}."
+            )
+        if method == "empirical_quantiles":
+            missing_keys = [k for k in ("levels", "scores") if k not in calibration]
+            if missing_keys:
+                raise ModelLoadError(
+                    f"empirical_quantiles calibration is missing {missing_keys}"
+                )
+
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     inputs = session.get_inputs()
     if len(inputs) != 1:
@@ -143,7 +195,7 @@ def load_model(card_path: str | Path, onnx_path: str | Path | None = None) -> Lo
         mode=str(card["mode"]),
         threshold=float(card["threshold"]),
         feature_order=expected,
-        calibration=card.get("calibration"),
+        calibration=calibration,
         session=session,
         input_name=inputs[0].name,
     )

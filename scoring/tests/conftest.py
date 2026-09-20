@@ -109,3 +109,56 @@ def benign_flow() -> FlowFeatures:
 @pytest.fixture
 def malicious_flow() -> FlowFeatures:
     return _features(8.0)
+
+
+def _train_tier_d(directory: Path, mode: str) -> Path:
+    """A real Isolation Forest artefact, so the quantile calibration is exercised."""
+    from sklearn.ensemble import IsolationForest
+    from skl2onnx import to_onnx
+
+    from netsentinel_scoring.registry import sha256_of
+    from netsentinel_training.models.tier_d import TARGET_OPSET, fit_quantiles
+
+    # Benign rows only, selected by label rather than by slicing: the attack rows are
+    # displaced on feature 0, and including them would teach the forest that the
+    # displacement is normal - which is exactly the bug this fixture first had.
+    x, y = _synthetic(1200, seed=21)
+    benign = x[y == 0]
+    fit_rows, calibration_rows = benign[: len(benign) // 2], benign[len(benign) // 2 :]
+
+    model = IsolationForest(n_estimators=20, random_state=0).fit(fit_rows)
+
+    onnx_path = directory / "tier_d.onnx"
+    onnx_path.write_bytes(
+        to_onnx(model, fit_rows[:1], target_opset=TARGET_OPSET).SerializeToString()
+    )
+
+    levels, quantiles = fit_quantiles(model.decision_function(calibration_rows))
+    card_path = directory / "model_card.json"
+    card_path.write_text(
+        json.dumps(
+            {
+                "name": "tier_d_isolation_forest",
+                "tier": "D",
+                "version": "0.1.0-test",
+                "onnx_sha256": sha256_of(onnx_path),
+                "threshold": 0.99,
+                "mode": mode,
+                "feature_order": list(TIER_A_FEATURES),
+                "calibration": {
+                    "method": "empirical_quantiles",
+                    "levels": levels,
+                    "scores": quantiles,
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return card_path
+
+
+@pytest.fixture(scope="session")
+def tier_d_shadow_card(tmp_path_factory) -> Path:
+    pytest.importorskip("skl2onnx", reason="Tier D export needs the training extras")
+    return _train_tier_d(tmp_path_factory.mktemp("tier_d_shadow"), mode="shadow")
