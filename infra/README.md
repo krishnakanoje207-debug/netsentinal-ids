@@ -147,6 +147,9 @@ Verifying the D11 exit gate, end to end:
 docker compose exec crowdsec cscli decisions list -o human
 # and the bouncer wrote it into the kernel
 sudo nft list set inet crowdsec crowdsec-blacklists | head
+
+# after a rollback, the decision is gone and the address is reachable again
+docker compose exec crowdsec cscli decisions list -o human | grep 203.0.113.9 || echo lifted
 ```
 
 `cscli decisions list` shows the origin as `netsentinel` and the reason as
@@ -163,11 +166,15 @@ memory settings in mind against the budget above.
 Its Active Response side needs two commands declared in the manager's `ossec.conf`,
 because Wazuh ships no stock equivalent of either:
 
-| Action type | Command | Script |
-|---|---|---|
-| `isolate_host` | `!netsentinel-isolate` | deployed with the agent |
-| `kill_process` | `!netsentinel-kill-process` | deployed with the agent |
-| `disable_account` | `!disable-account` | ships with Wazuh |
+| Action type | Command | Undo | Script |
+|---|---|---|---|
+| `isolate_host` | `!netsentinel-isolate` | `!netsentinel-unisolate` | deployed with the agent |
+| `kill_process` | `!netsentinel-kill-process` | none | deployed with the agent |
+| `disable_account` | `!disable-account` | `!netsentinel-enable-account` | `disable-account` ships with Wazuh |
+
+`kill_process` has no undo and never will: a killed process cannot be un-killed, and a
+command listed there that quietly did nothing would let an analyst believe a rollback
+restored something.
 
 The map lives in `services/enforcement.py`, and `enforcers_from` offers Wazuh only the
 action types it appears in — so an action type with no command waits in the queue

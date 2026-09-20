@@ -191,6 +191,24 @@ Bans expire (four hours by default). A decision that lapses fails open: a mistak
 block costs an afternoon rather than leaving a permanent hole in the lab that nobody
 remembers punching.
 
+Lifting one goes back through the same gate. `POST /actions/{id}/rollback` records
+that a named analyst asked for it and why, and moves the action to
+`rollback_requested` — the ban is still in force in that state, which is why it has
+its own name rather than an early move to `rolled_back`. The worker drains that queue
+too: it deletes the CrowdSec decision or runs the undo command, and only then is the
+action `rolled_back`. Approvals are drained first, because a block that has not been
+applied is an attacker still reaching the network while an undo that waits one
+interval is a ban that lasts ten seconds longer.
+
+The asymmetry between the two queues is deliberate. A refused execution is recorded as
+`failed` and left; a refused undo is retried indefinitely. What the database would
+otherwise claim is the difference: `failed` means nothing is blocked, which is true
+after a failed execution and a dangerous lie after a failed unban.
+
+An action the system cannot reverse is refused at the click rather than in a worker
+log an hour later — a killed process has nothing to restore, and the analyst is owed
+that answer while they can still do something else about the host.
+
 ## Design decisions that deviate from M2 §4
 
 | Document says | Built with | Why |
