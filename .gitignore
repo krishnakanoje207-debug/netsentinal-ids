@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Captures and datasets (large, regenerated)
+*.pcap
+*.pcapng
+data/raw/
+data/interim/
+!tests/data/*.pcap
+
+# Model artefacts
+*.onnx
+*.pkl
+*.pt
+
+# Secrets and local config
+.env
+*.key
+*.pem
+
+# Build scratch
+deliverables/_build/__pycache__/
