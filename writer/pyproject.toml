@@ -1,0 +1,37 @@
+[project]
+name = "netsentinel-writer"
+version = "0.1.0"
+description = "Bus consumer: scored flows to explained detections in PostgreSQL"
+requires-python = "==3.11.*"
+# netsentinel-api is here for the ORM models, not for the web application. The
+# schema is defined once and the writer inserts through the same classes the API
+# reads back, so a column can never mean two things.
+#
+# lightgbm is here and nowhere else: the API must not be able to import it, and the
+# sensor must stay installable without a compiler. This process is the one place
+# that needs the tree structure, because TreeSHAP cannot read an ONNX graph.
+dependencies = [
+    "netsentinel-api",
+    "netsentinel-core",
+    "lightgbm>=4.5",
+    "numpy>=1.26",
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+# Only needed to consume for real; the replay consumer works without it.
+bus = ["confluent-kafka>=2.5"]
+
+[project.scripts]
+netsentinel-writer = "netsentinel_writer.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netsentinel_writer"]
+
+[tool.uv.sources]
+netsentinel-api = { workspace = true }
+netsentinel-core = { workspace = true }

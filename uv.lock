@@ -16,6 +16,7 @@ members = [
     "netsentinel-scoring",
     "netsentinel-sensor",
     "netsentinel-training",
+    "netsentinel-writer",
 ]
 
 [manifest.dependency-groups]
@@ -709,6 +710,34 @@ requires-dist = [
     { name = "torch-geometric", marker = "extra == 'deep'", specifier = ">=2.6" },
 ]
 provides-extras = ["deep"]
+
+[[package]]
+name = "netsentinel-writer"
+version = "0.1.0"
+source = { editable = "writer" }
+dependencies = [
+    { name = "lightgbm" },
+    { name = "netsentinel-api" },
+    { name = "netsentinel-core" },
+    { name = "numpy" },
+    { name = "sqlalchemy" },
+]
+
+[package.optional-dependencies]
+bus = [
+    { name = "confluent-kafka" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "confluent-kafka", marker = "extra == 'bus'", specifier = ">=2.5" },
+    { name = "lightgbm", specifier = ">=4.5" },
+    { name = "netsentinel-api", editable = "backend" },
+    { name = "netsentinel-core", editable = "core" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+]
+provides-extras = ["bus"]
 
 [[package]]
 name = "networkx"

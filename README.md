@@ -13,6 +13,7 @@ than language conventions — each one ends up on a different node.
 | [`core/`](core) | everywhere | Feature contract and flow extraction | built |
 | [`training/`](training) | Kaggle GPU | Dataset prep, Tier A, Tier D | built |
 | [`scoring/`](scoring) | cloud VM | Model loader and fusion scorer | built |
+| [`writer/`](writer) | cloud VM | Bus consumer: explained detections into PostgreSQL | built |
 | [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
 | [`frontend/`](frontend) | browser | React SOC dashboard | D10 |
 | [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | D3/D8 |
@@ -20,7 +21,10 @@ than language conventions — each one ends up on a different node.
 
 Dependencies run one way only. `core` is the single shared package and is
 deliberately tiny — `dpkt` and nothing else — so the sensor stays installable on a
-constrained host and the API cannot import LightGBM by accident.
+constrained host and the API cannot import LightGBM by accident. `writer` is the one
+exception: it imports `backend` for the ORM models, because the schema should be
+defined once and a writer with its own copy of the table definitions is a column
+that means two things.
 
 ## The feature contract
 
@@ -50,7 +54,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 204 tests, no database or network needed
+uv run pytest            # 319 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -78,6 +82,32 @@ model to within 1e-4. Each run writes a `model_card.json` whose fields map onto 
 
 Tiers B (1D-CNN + BiLSTM), C (E-GraphSAGE) and the Tier D autoencoder need PyTorch and
 belong in the Kaggle notebooks; they are not installed locally by design.
+
+## From the wire to the dashboard
+
+```bash
+# the sensor scores flows and publishes them (see sensors/)
+uv run netsentinel-sensor --interface netsentinel-lab     --models artefacts/tier_a/model_card.json --brokers localhost:9092
+
+# a model needs a row before a detection can point at it
+uv run netsentinel-register-model artefacts/tier_a/model_card.json
+
+# the writer consumes that topic, explains each verdict and stores it
+uv run netsentinel-writer --card artefacts/tier_a/model_card.json     --sensor-id 1 --brokers localhost:9092
+```
+
+The split exists because TreeSHAP needs the tree structure and an ONNX graph does not
+carry it. The sensor scores through ONNX and publishes the feature vector; the writer
+holds the native booster and produces the explanation. That is also why LightGBM lives
+in `writer` and in `training`, and nowhere near the API.
+
+Not every flow becomes a row. ClickHouse holds every scored flow; PostgreSQL holds the
+ones at or above the deciding threshold. A shadow verdict is stored — against the
+shadow tier's own score and threshold, so the shadow period can be evaluated
+afterwards — and never raises an alert.
+
+Delivery is at-least-once: the bus offset is committed after the database transaction,
+so a crash replays a message rather than losing a detection.
 
 ## Backend
 
