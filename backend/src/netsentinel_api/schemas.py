@@ -35,6 +35,18 @@ class UserOut(BaseModel):
     is_active: bool
 
 
+class CurrentUserOut(UserOut):
+    """The caller's own identity, plus what they may do.
+
+    Permissions are served rather than inferred client-side. The dashboard needs them
+    to avoid offering a button that will only ever return 403, and duplicating the
+    role-to-permission table in TypeScript would guarantee the two drift.
+    """
+
+    role: str | None
+    permissions: list[str]
+
+
 class AlertOut(BaseModel):
     """Feed row. Deliberately compact - the dashboard renders hundreds."""
 

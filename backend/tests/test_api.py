@@ -37,6 +37,24 @@ def test_login_returns_a_usable_token(client, analyst, analyst_password):
     assert me.json()["username"] == analyst.username
 
 
+def test_me_reports_the_callers_permissions(client, auth_header):
+    """The dashboard needs these to avoid offering a button that only ever 403s."""
+    response = client.get(f"{V1}/auth/me", headers=auth_header)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "soc_analyst"
+    assert "approvals:decide" in body["permissions"]
+    assert "models:deploy" not in body["permissions"]
+
+
+def test_me_permissions_match_the_role_not_the_token(client, engineer_header):
+    response = client.get(f"{V1}/auth/me", headers=engineer_header)
+    body = response.json()
+    assert body["role"] == "ml_engineer"
+    assert "models:deploy" in body["permissions"]
+    assert "approvals:decide" not in body["permissions"]
+
+
 def test_login_never_returns_the_password_hash(client, analyst, analyst_password):
     response = client.post(
         f"{V1}/auth/token",

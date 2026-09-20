@@ -14,7 +14,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from netsentinel_api.db.models import AuditLog
 from netsentinel_api.deps import CurrentUser, SessionDep, SettingsDep, UserRepoDep
-from netsentinel_api.schemas import TokenResponse, UserOut
+from netsentinel_api.rbac import permissions_for
+from netsentinel_api.schemas import CurrentUserOut, TokenResponse
 from netsentinel_api.security import create_access_token, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -79,6 +80,14 @@ def login(
     )
 
 
-@router.get("/me", response_model=UserOut)
-def me(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+@router.get("/me", response_model=CurrentUserOut)
+def me(user: CurrentUser) -> CurrentUserOut:
+    granted = permissions_for(user.role.permissions if user.role else None)
+    return CurrentUserOut(
+        user_id=user.user_id,
+        username=user.username,
+        email=user.email,
+        is_active=user.is_active,
+        role=user.role.name if user.role else None,
+        permissions=sorted(granted),
+    )
