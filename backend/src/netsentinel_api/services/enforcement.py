@@ -55,9 +55,30 @@ WAZUH_COMMANDS: dict[ActionType, str] = {
     ActionType.disable_account: "!disable-account",
 }
 
+#: The Active Response commands that put back what ``WAZUH_COMMANDS`` took away.
+#: ``kill_process`` has no entry and never will: a killed process cannot be
+#: un-killed, and listing a command here that quietly does nothing would let an
+#: analyst believe a rollback restored something.
+UNDO_COMMANDS: dict[ActionType, str] = {
+    ActionType.isolate_host: "!netsentinel-unisolate",
+    ActionType.disable_account: "!netsentinel-enable-account",
+}
+
 
 class EnforcementError(Exception):
     """The enforcement point refused, or could not be reached."""
+
+
+def can_undo(action_type: ActionType) -> bool:
+    """Whether this system can reverse an action of this type.
+
+    Covers both backends, because the question is asked at the API - before an
+    analyst is allowed to request a rollback - and the route should not have to
+    know which backend serves which type. A ban is a decision CrowdSec can delete;
+    isolation and a disabled account have undo commands; a killed process has
+    nothing to restore.
+    """
+    return action_type is ActionType.block_ip or action_type in UNDO_COMMANDS
 
 
 # --- request bodies, kept out of the clients so they can be tested ---------
@@ -223,6 +244,38 @@ class CrowdSecEnforcer:
             "alert_ids": created,
         }
 
+    def undo(self, action: ResponseAction) -> dict:
+        """Lift the ban on the action's target. Returns what was deleted."""
+        import httpx
+
+        value = ban_target(action)
+
+        with httpx.Client(timeout=self._timeout, verify=self._verify_tls) as client:
+            token = self._login(client)
+            try:
+                response = client.delete(
+                    f"{self._url}/v1/decisions",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"scope": "Ip", "value": value},
+                )
+                response.raise_for_status()
+                deleted = response.json()
+            except httpx.HTTPError as exc:
+                raise EnforcementError(
+                    f"CrowdSec refused to lift the ban on {value}: {exc}"
+                ) from exc
+            except ValueError as exc:
+                raise EnforcementError(
+                    f"CrowdSec returned a body that is not JSON: {exc}"
+                ) from exc
+
+        # A delete that matched nothing is a success, not a failure. Decisions
+        # expire, so the ban may well have lapsed between the approval and this
+        # call - and "no ban in place" is precisely the state the caller asked for.
+        # Treating an empty result as an error would leave the action stuck in the
+        # undo queue forever, retrying a deletion that has nothing left to delete.
+        return {"backend": "crowdsec", "target": value, "deleted": deleted}
+
     def _login(self, client) -> str:
         """A fresh token per action.
 
@@ -268,10 +321,22 @@ class WazuhEnforcer:
         self._timeout = timeout
 
     def apply(self, action: ResponseAction) -> dict:
+        return self._run(action, WAZUH_COMMANDS[action.action_type])
+
+    def undo(self, action: ResponseAction) -> dict:
+        command = UNDO_COMMANDS.get(action.action_type)
+        if command is None:
+            raise EnforcementError(
+                f"action {action.action_id} is {action.action_type.value}, which "
+                "cannot be undone"
+            )
+        return self._run(action, command)
+
+    def _run(self, action: ResponseAction, command: str) -> dict:
+        """Send one Active Response command. Applying and undoing differ only here."""
         import httpx
 
         agent, argument = split_target(action)
-        command = WAZUH_COMMANDS[action.action_type]
         body = active_response_body(action, command, argument)
 
         with httpx.Client(timeout=self._timeout, verify=self._verify_tls) as client:

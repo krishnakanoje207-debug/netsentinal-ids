@@ -15,6 +15,7 @@ from netsentinel_api.db.models import ActionType, ResponseAction
 from netsentinel_api.services.enforcement import (
     DEFAULT_BAN_DURATION,
     ORIGIN,
+    UNDO_COMMANDS,
     WAZUH_COMMANDS,
     CrowdSecEnforcer,
     EnforcementError,
@@ -22,6 +23,7 @@ from netsentinel_api.services.enforcement import (
     active_response_body,
     ban_request,
     ban_target,
+    can_undo,
     enforcers_from,
     split_target,
 )
@@ -138,6 +140,59 @@ def test_isolation_sends_no_arguments():
 def test_every_host_action_type_has_a_command():
     """block_ip is the edge's job; everything else is the agent's."""
     assert set(WAZUH_COMMANDS) == set(ActionType) - {ActionType.block_ip}
+
+
+# --- undoing ---------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    ("action_type", "reversible"),
+    [
+        (ActionType.block_ip, True),
+        (ActionType.isolate_host, True),
+        (ActionType.disable_account, True),
+        (ActionType.kill_process, False),
+    ],
+)
+def test_only_what_can_be_put_back_can_be_undone(action_type, reversible):
+    """A killed process is gone; the other three are states, and states revert."""
+    assert can_undo(action_type) is reversible
+
+
+def test_killing_a_process_has_no_undo_command():
+    assert ActionType.kill_process not in UNDO_COMMANDS
+
+
+def test_the_undo_command_is_not_the_command_it_undoes():
+    """Re-running the original would extend the very action being lifted."""
+    for action_type, command in UNDO_COMMANDS.items():
+        assert command != WAZUH_COMMANDS[action_type]
+
+
+def test_undoing_an_isolation_sends_the_unisolate_command():
+    body = active_response_body(
+        _action(action_type=ActionType.isolate_host, target="001"),
+        UNDO_COMMANDS[ActionType.isolate_host],
+        None,
+    )
+    assert body["command"] == "!netsentinel-unisolate"
+    assert body["arguments"] == []
+
+
+def test_undoing_a_disabled_account_names_the_account():
+    body = active_response_body(
+        _action(action_type=ActionType.disable_account, target="003:svc-backup"),
+        UNDO_COMMANDS[ActionType.disable_account],
+        "svc-backup",
+    )
+    assert body["command"] == "!netsentinel-enable-account"
+    assert body["arguments"] == ["svc-backup"]
+
+
+def test_wazuh_refuses_to_undo_an_action_type_with_no_undo():
+    """Refused before the client is built, so nothing is sent to the agent."""
+    wazuh = WazuhEnforcer("https://localhost:55000", "wazuh-wui", "a-wazuh-password")
+    with pytest.raises(EnforcementError, match="cannot be undone"):
+        wazuh.undo(_action(action_type=ActionType.kill_process, target="001:4172"))
 
 
 # --- wiring ----------------------------------------------------------------
