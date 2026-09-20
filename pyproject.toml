@@ -3,7 +3,7 @@
 # its own dependency list. That boundary is the point: the API must not be able to
 # import LightGBM by accident, and the sensor must stay installable without it.
 [tool.uv.workspace]
-members = ["core", "training"]
+members = ["backend", "core", "training"]
 
 [tool.uv]
 package = false
@@ -12,4 +12,4 @@ package = false
 dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
-testpaths = ["core/tests", "training/tests"]
+testpaths = ["backend/tests", "core/tests", "training/tests"]

@@ -1,0 +1,170 @@
+"""The human-in-the-loop gate: the rule the whole design rests on.
+
+These run without a database. The service takes objects and never queries, so a
+stub session that only collects what was added is enough - and that shape is
+deliberate, because it means no code path can reach execution without passing the
+check.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from netsentinel_api.db.models import (
+    ActionStatus,
+    ActionType,
+    Approval,
+    ApprovalDecision,
+    AuditLog,
+    ResponseAction,
+    User,
+)
+from netsentinel_api.services.response import (
+    AlreadyDecided,
+    ApprovalRequired,
+    NotExecutable,
+    mark_executed,
+    mark_failed,
+    mark_rolled_back,
+    record_decision,
+)
+
+
+class StubSession:
+    """Collects added objects. Stands in for a Session's add()."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    def add(self, instance: object, /) -> None:
+        self.added.append(instance)
+
+    def audit_entries(self) -> list[AuditLog]:
+        return [o for o in self.added if isinstance(o, AuditLog)]
+
+
+@pytest.fixture
+def session() -> StubSession:
+    return StubSession()
+
+
+@pytest.fixture
+def analyst() -> User:
+    return User(user_id=7, username="analyst", email="a@example.test",
+                password_hash="x", role_id=1, is_active=True)
+
+
+@pytest.fixture
+def action() -> ResponseAction:
+    return ResponseAction(
+        action_id=42,
+        alert_id=1,
+        action_type=ActionType.block_ip,
+        target="203.0.113.9",
+        status=ActionStatus.pending_approval,
+    )
+
+
+# --- the refusals ----------------------------------------------------------
+
+def test_execution_without_approval_is_refused(session, action):
+    """The single most important assertion in the backend."""
+    with pytest.raises(ApprovalRequired, match="no approval"):
+        mark_executed(session, action)
+    assert action.status is ActionStatus.pending_approval
+    assert action.executed_at is None
+
+
+def test_execution_after_rejection_is_refused(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.rejected, "false positive")
+    with pytest.raises(ApprovalRequired, match="rejected"):
+        mark_executed(session, action)
+    assert action.status is ActionStatus.rejected
+    assert action.executed_at is None
+
+
+def test_a_deactivated_user_cannot_approve(session, action, analyst):
+    analyst.is_active = False
+    with pytest.raises(ApprovalRequired, match="deactivated"):
+        record_decision(session, action, analyst, ApprovalDecision.approved)
+    assert action.approval is None
+
+
+def test_an_action_cannot_be_decided_twice(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.rejected)
+    with pytest.raises(AlreadyDecided, match="already rejected"):
+        record_decision(session, action, analyst, ApprovalDecision.approved)
+
+
+def test_a_forged_approval_object_still_needs_to_say_yes(session, action, analyst):
+    """Attaching an Approval is not enough; the decision is what is checked."""
+    action.approval = Approval(
+        action_id=action.action_id,
+        approver_id=analyst.user_id,
+        decision=ApprovalDecision.rejected,
+    )
+    action.status = ActionStatus.approved  # inconsistent state, as a bug would leave it
+    with pytest.raises(ApprovalRequired):
+        mark_executed(session, action)
+
+
+def test_double_execution_is_refused(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_executed(session, action)
+    with pytest.raises(NotExecutable, match="expected approved"):
+        mark_executed(session, action)
+
+
+# --- the happy path -------------------------------------------------------
+
+def test_approved_action_executes(session, action, analyst):
+    approval = record_decision(session, action, analyst, ApprovalDecision.approved, "confirmed")
+    assert action.status is ActionStatus.approved
+    assert approval.approver_id == analyst.user_id
+
+    at = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    mark_executed(session, action, at=at)
+    assert action.status is ActionStatus.executed
+    assert action.executed_at == at
+
+
+def test_executed_action_can_be_rolled_back(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_executed(session, action)
+    mark_rolled_back(session, action, analyst, reason="blocked a partner IP")
+    assert action.status is ActionStatus.rolled_back
+
+
+def test_only_an_executed_action_can_be_rolled_back(session, action, analyst):
+    with pytest.raises(NotExecutable, match="nothing to roll back"):
+        mark_rolled_back(session, action, analyst, reason="premature")
+
+
+def test_failed_execution_is_recorded(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_failed(session, action, error="nftables rule rejected")
+    assert action.status is ActionStatus.failed
+    assert "nftables" in session.audit_entries()[-1].details["error"]
+
+
+# --- the audit trail ------------------------------------------------------
+
+def test_every_transition_writes_an_audit_row(session, action, analyst):
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_executed(session, action)
+    mark_rolled_back(session, action, analyst, reason="undo")
+
+    actions = [entry.action for entry in session.audit_entries()]
+    assert actions == ["response.approved", "response.executed", "response.rolled_back"]
+    for entry in session.audit_entries():
+        assert entry.entity == "response_action:42"
+        assert entry.user_id == analyst.user_id
+
+
+def test_a_refused_execution_leaves_no_audit_row(session, action):
+    """Nothing happened on the network, so nothing is claimed in the log."""
+    with pytest.raises(ApprovalRequired):
+        mark_executed(session, action)
+    assert session.audit_entries() == []
