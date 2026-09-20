@@ -7,9 +7,15 @@ model would score.
 The capture file is built here rather than imported from another package's tests. Test
 directories are not packages, so a shared helper would have to be importable across them,
 and that is exactly the collision that once broke a full-suite run.
+
+For the same reason everything shared with the test modules is handed out as a fixture.
+``from conftest import ...`` resolves through sys.path, where every tests directory is
+prepended, so it silently binds to whichever package's conftest was added last.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import dpkt
 import pytest
@@ -90,6 +96,16 @@ def pcap_path(frames, tmp_path_factory) -> str:
     return str(path)
 
 
+@dataclass(frozen=True)
+class StubModel:
+    """Just the identity fields the agent reads off a LoadedModel."""
+
+    tier: str
+    name: str
+    version: str
+    mode: str
+
+
 class StubScorer:
     """Returns a canned verdict. Records what it was asked to score."""
 
@@ -97,6 +113,9 @@ class StubScorer:
         self.risk = risk
         self.threshold = threshold
         self.scored: list = []
+        self.models = [
+            StubModel("A", "stub", "0", "shadow" if risk is None else "active")
+        ]
 
     def score(self, features):
         self.scored.append(features)
@@ -111,6 +130,25 @@ class StubScorer:
             shadow=self.risk is None,
             threshold=self.threshold,
         )
+
+
+@pytest.fixture(scope="session")
+def expected_flows() -> int:
+    return EXPECTED_FLOWS
+
+
+@pytest.fixture(scope="session")
+def tcp_dport() -> int:
+    return TCP_DPORT
+
+
+@pytest.fixture(scope="session")
+def open_flow_frames() -> list[tuple[float, bytes]]:
+    """A handshake that never closes: no FIN, and no idle timeout reached."""
+    return [
+        (1000.0, _to_server(_tcp(TCP_SPORT, TCP_DPORT, dpkt.tcp.TH_SYN))),
+        (1000.01, _to_server(_tcp(TCP_SPORT, TCP_DPORT, dpkt.tcp.TH_ACK))),
+    ]
 
 
 @pytest.fixture

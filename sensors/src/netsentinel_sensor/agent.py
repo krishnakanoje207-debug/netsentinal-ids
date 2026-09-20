@@ -67,7 +67,23 @@ class Stats:
         }
 
 
-def flow_payload(features: FlowFeatures, verdict, sensor_name: str) -> dict:
+def model_index(models: Iterable) -> list[dict[str, str]]:
+    """Identify every tier that scored, shadow ones included.
+
+    ``decided_by`` names only the models that moved the number. A shadow tier moves
+    nothing by definition, so without this the writer could record what a shadow model
+    said but not which model said it - and comparing a shadow tier against the analyst
+    is the entire reason for running one.
+    """
+    return [
+        {"tier": model.tier, "name": model.name, "version": model.version, "mode": model.mode}
+        for model in models
+    ]
+
+
+def flow_payload(
+    features: FlowFeatures, verdict, sensor_name: str, models: Iterable = ()
+) -> dict:
     """The message published for one scored flow.
 
     Carries the feature vector as well as the scores. The SHAP writer downstream needs the
@@ -89,6 +105,10 @@ def flow_payload(features: FlowFeatures, verdict, sensor_name: str) -> dict:
             "undecided": verdict.is_undecided,
             "is_alert": verdict.is_alert,
         },
+        # The scoring set travels with the message. The topic is retained for replay, so a
+        # consumer reading it months later must not have to guess which models were loaded
+        # at the time - they will have been promoted or retired since.
+        "models": list(models),
         # Pinned so a consumer can refuse a message built against another contract rather
         # than misreading the vector.
         "contract": {"features": len(FEATURE_ORDER)},
@@ -109,6 +129,8 @@ class SensorAgent:
         self.tracker = tracker or FlowTracker()
         self.stats = Stats()
         self._stopping = False
+        # Built once: the loaded set does not change while the agent runs.
+        self._models = model_index(scorer.models)
 
     def stop(self) -> None:
         """Ask the loop to finish after the current packet."""
@@ -124,7 +146,10 @@ class SensorAgent:
                 self.stats.decided += 1
             if verdict.is_alert:
                 self.stats.alerts += 1
-            self.publisher.publish(str(features.key), flow_payload(features, verdict, self.sensor_name))
+            self.publisher.publish(
+                str(features.key),
+                flow_payload(features, verdict, self.sensor_name, self._models),
+            )
 
     def run(self, packets: Iterator[tuple[float, bytes]]) -> Stats:
         """Consume a packet stream until it ends or stop() is called."""

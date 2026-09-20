@@ -11,8 +11,6 @@ import pytest
 
 from netsentinel_sensor.capture import CaptureError, from_interface, from_pcap_file
 
-from conftest import EXPECTED_FLOWS
-
 
 def test_reads_a_pcap_file(pcap_path, frames):
     read = list(from_pcap_file(pcap_path))
@@ -99,7 +97,7 @@ def test_the_default_filter_keeps_only_ip(monkeypatch):
     assert command[-1] == "ip"
 
 
-def test_flows_extracted_from_a_file_match_the_expected_count(pcap_path):
+def test_flows_extracted_from_a_file_match_the_expected_count(pcap_path, expected_flows):
     """Belt and braces: the capture path feeds the same extractor the tests elsewhere use."""
     from netsentinel_core.features.extractor import FlowTracker
 
@@ -108,4 +106,4 @@ def test_flows_extracted_from_a_file_match_the_expected_count(pcap_path):
     for timestamp, frame in from_pcap_file(pcap_path):
         flows.extend(tracker.update(timestamp, frame))
     flows.extend(tracker.flush())
-    assert len(flows) == EXPECTED_FLOWS
+    assert len(flows) == expected_flows
