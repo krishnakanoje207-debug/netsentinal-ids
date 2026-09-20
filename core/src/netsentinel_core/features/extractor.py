@@ -273,9 +273,11 @@ def extract_from_pcap(path: str) -> Iterator[FlowFeatures]:
     """Yield one FlowFeatures per flow in a PCAP. Used for training data."""
     tracker = FlowTracker()
     with open(path, "rb") as fh:
+        # ValueError for a wrong magic number, NeedData for a file too short to hold a
+        # header; a truncated capture must not surface as a raw dpkt traceback.
         try:
             reader = dpkt.pcap.Reader(fh)
-        except ValueError:
+        except (ValueError, dpkt.dpkt.UnpackError):
             fh.seek(0)
             reader = dpkt.pcapng.Reader(fh)
         for ts, frame in reader:
