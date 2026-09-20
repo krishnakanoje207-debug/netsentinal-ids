@@ -21,7 +21,9 @@ from netsentinel_api.db.models import (
     ActionType,
     Alert,
     AlertStatus,
+    Asset,
     AuditLog,
+    Criticality,
     Detection,
     Incident,
     IoC,
@@ -30,9 +32,15 @@ from netsentinel_api.db.models import (
     Role,
     Severity,
     User,
+    Vulnerability,
 )
 from netsentinel_api.db.session import get_session
-from netsentinel_api.deps import get_action_repo, get_alert_repo, get_user_repo
+from netsentinel_api.deps import (
+    get_action_repo,
+    get_alert_repo,
+    get_asset_repo,
+    get_user_repo,
+)
 from netsentinel_api.rbac import DEFAULT_ROLE_PERMISSIONS, ML_ENGINEER, SOC_ANALYST, as_column
 from netsentinel_api.security import create_access_token, hash_password
 
@@ -126,6 +134,23 @@ class FakeAlertRepo:
         return alert
 
 
+class FakeAssetRepo:
+    def __init__(self, assets: list[Asset], vulns: list[Vulnerability]) -> None:
+        self.assets = assets
+        self.vulns = vulns
+
+    def list(self, limit: int = 50, offset: int = 0) -> list[Asset]:
+        return self.assets[offset : offset + limit]
+
+    def get(self, asset_id: int) -> Asset | None:
+        return next((a for a in self.assets if a.asset_id == asset_id), None)
+
+    def vulnerabilities(self, asset: Asset) -> list[Vulnerability]:
+        rows = [v for v in self.vulns if v.asset_id == asset.asset_id]
+        # Worst first, as the repository's ORDER BY does.
+        return sorted(rows, key=lambda v: (v.cvss is None, -(v.cvss or 0), v.cve_id))
+
+
 class FakeActionRepo:
     def __init__(self, actions: list[ResponseAction]) -> None:
         self.actions = actions
@@ -204,6 +229,24 @@ def alert(detection: Detection) -> Alert:
 
 
 @pytest.fixture
+def asset() -> Asset:
+    return Asset(asset_id=1, hostname="victim-web", ip_address="172.30.0.10",
+                 os="alpine", criticality=Criticality.high)
+
+
+@pytest.fixture
+def vulnerabilities() -> list[Vulnerability]:
+    return [
+        Vulnerability(vuln_id=1, asset_id=1, cve_id="CVE-2021-44228", cvss=10.0,
+                      detected_at=NOW),
+        Vulnerability(vuln_id=2, asset_id=1, cve_id="CVE-2019-0708", cvss=None,
+                      detected_at=NOW),
+        Vulnerability(vuln_id=3, asset_id=1, cve_id="CVE-2020-1472", cvss=5.5,
+                      detected_at=NOW),
+    ]
+
+
+@pytest.fixture
 def action() -> ResponseAction:
     return ResponseAction(
         action_id=500,
@@ -228,6 +271,8 @@ def client(
     analyst: User,
     ml_engineer: User,
     alert: Alert,
+    asset: Asset,
+    vulnerabilities: list[Vulnerability],
     action: ResponseAction,
 ) -> Iterator[TestClient]:
     app = create_app()
@@ -241,6 +286,9 @@ def client(
         {analyst.username: analyst, ml_engineer.username: ml_engineer}
     )
     app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo([alert])
+    app.dependency_overrides[get_asset_repo] = lambda: FakeAssetRepo(
+        [asset], vulnerabilities
+    )
     app.dependency_overrides[get_action_repo] = lambda: FakeActionRepo([action])
 
     with TestClient(app) as test_client:

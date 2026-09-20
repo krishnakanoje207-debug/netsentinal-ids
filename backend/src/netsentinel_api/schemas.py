@@ -16,6 +16,7 @@ from netsentinel_api.db.models import (
     ActionType,
     AlertStatus,
     ApprovalDecision,
+    Criticality,
     IncidentStatus,
     Severity,
 )
@@ -117,6 +118,27 @@ class IncidentOut(BaseModel):
     status: IncidentStatus
     owner_id: int | None
     opened_at: datetime | None
+
+
+class VulnerabilityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    vuln_id: int
+    cve_id: str
+    cvss: float | None
+    detected_at: datetime
+
+
+class AssetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    asset_id: int
+    hostname: str
+    # INET comes back as a string; the dashboard renders it and never does
+    # arithmetic on it.
+    ip_address: str
+    os: str | None
+    criticality: Criticality
 
 
 class ApprovalOut(BaseModel):

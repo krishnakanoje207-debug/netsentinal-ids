@@ -18,6 +18,7 @@ from typing import Final
 ALERTS_READ: Final = "alerts:read"
 ALERTS_TRIAGE: Final = "alerts:triage"
 DETECTIONS_READ: Final = "detections:read"
+ASSETS_READ: Final = "assets:read"
 APPROVALS_DECIDE: Final = "approvals:decide"
 RESPONSE_PROPOSE: Final = "response:propose"
 SENSORS_MANAGE: Final = "sensors:manage"
@@ -31,6 +32,7 @@ ALL_PERMISSIONS: Final[frozenset[str]] = frozenset(
         ALERTS_READ,
         ALERTS_TRIAGE,
         DETECTIONS_READ,
+        ASSETS_READ,
         APPROVALS_DECIDE,
         RESPONSE_PROPOSE,
         SENSORS_MANAGE,
@@ -51,7 +53,8 @@ ML_ENGINEER: Final = "ml_engineer"
 DEFAULT_ROLE_PERMISSIONS: Final[dict[str, frozenset[str]]] = {
     # Monitors alerts, reads explanations, decides on responses.
     SOC_ANALYST: frozenset(
-        {ALERTS_READ, ALERTS_TRIAGE, DETECTIONS_READ, APPROVALS_DECIDE, MODELS_READ}
+        {ALERTS_READ, ALERTS_TRIAGE, DETECTIONS_READ, ASSETS_READ, APPROVALS_DECIDE,
+         MODELS_READ}
     ),
     # Manages sensors, thresholds and accounts, and reads the audit trail.
     # Notably not APPROVALS_DECIDE: administering the system and authorising action
@@ -60,6 +63,9 @@ DEFAULT_ROLE_PERMISSIONS: Final[dict[str, frozenset[str]]] = {
         {
             ALERTS_READ,
             DETECTIONS_READ,
+            # The estate and what is wrong with it is administration's business:
+            # patching is how most of these findings are answered.
+            ASSETS_READ,
             SENSORS_MANAGE,
             USERS_MANAGE,
             AUDIT_READ,

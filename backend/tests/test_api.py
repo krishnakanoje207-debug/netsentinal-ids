@@ -281,6 +281,36 @@ def test_an_ml_engineer_cannot_escalate(client, engineer_header, alert):
     assert alert.status is AlertStatus.new
 
 
+# --- assets and their vulnerabilities ---------------------------------------
+
+def test_assets_are_listed(client, auth_header):
+    response = client.get(f"{V1}/assets", headers=auth_header)
+    assert response.status_code == 200
+    assert [a["hostname"] for a in response.json()] == ["victim-web"]
+
+
+def test_what_a_scan_found_is_listed_per_asset(client, auth_header):
+    response = client.get(f"{V1}/assets/1/vulnerabilities", headers=auth_header)
+    assert response.status_code == 200
+    assert [v["cve_id"] for v in response.json()] == [
+        "CVE-2021-44228",  # 10.0
+        "CVE-2020-1472",   # 5.5
+        "CVE-2019-0708",   # unscored, and last: the list answers "patch what first"
+    ]
+
+
+def test_an_asset_that_does_not_exist_is_a_404(client, auth_header):
+    """Not an empty list: an unscanned machine must not read as a clean one."""
+    response = client.get(f"{V1}/assets/999/vulnerabilities", headers=auth_header)
+    assert response.status_code == 404
+
+
+def test_an_ml_engineer_cannot_read_the_estate(client, engineer_header):
+    response = client.get(f"{V1}/assets", headers=engineer_header)
+    assert response.status_code == 403
+    assert "assets:read" in response.json()["detail"]
+
+
 # --- the approval endpoint ------------------------------------------------
 
 def test_pending_queue_lists_the_action(client, auth_header):

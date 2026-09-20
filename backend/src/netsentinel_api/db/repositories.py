@@ -17,10 +17,12 @@ from sqlalchemy.orm import Session, joinedload
 from netsentinel_api.db.models import (
     Alert,
     AlertStatus,
+    Asset,
     Detection,
     ResponseAction,
     Severity,
     User,
+    Vulnerability,
 )
 
 #: Cap on a page of alerts. A SOC feed is unbounded; a response must not be.
@@ -75,6 +77,40 @@ class AlertRepository:
     def set_status(self, alert: Alert, status: AlertStatus) -> Alert:
         alert.status = status
         return alert
+
+
+class AssetRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list(self, limit: int = 50, offset: int = 0) -> list[Asset]:
+        return list(
+            self._session.scalars(
+                select(Asset)
+                .order_by(Asset.hostname)
+                .limit(min(limit, MAX_PAGE_SIZE))
+                .offset(offset)
+            )
+        )
+
+    def get(self, asset_id: int) -> Asset | None:
+        return self._session.get(Asset, asset_id)
+
+    def vulnerabilities(self, asset: Asset) -> list[Vulnerability]:
+        """What a scan found on this host, worst first.
+
+        Ordered by score rather than by date because the question asked of this
+        list is which host to patch first, and NULLS LAST keeps a finding with no
+        score from sitting above a critical one.
+        """
+        return list(
+            self._session.scalars(
+                select(Vulnerability)
+                .where(Vulnerability.asset_id == asset.asset_id)
+                .order_by(Vulnerability.cvss.desc().nullslast(),
+                          Vulnerability.cve_id)
+            )
+        )
 
 
 class ActionRepository:

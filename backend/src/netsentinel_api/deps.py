@@ -20,6 +20,7 @@ from netsentinel_api.db.models import User
 from netsentinel_api.db.repositories import (
     ActionRepository,
     AlertRepository,
+    AssetRepository,
     UserRepository,
 )
 from netsentinel_api.db.session import get_session
@@ -94,6 +95,12 @@ def get_alert_repo(
     return AlertRepository(session)
 
 
+def get_asset_repo(
+    session: Annotated[Session, Depends(get_session)],
+) -> AssetRepository:
+    return AssetRepository(session)
+
+
 def get_action_repo(
     session: Annotated[Session, Depends(get_session)],
 ) -> ActionRepository:
@@ -104,4 +111,5 @@ SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repo)]
 AlertRepoDep = Annotated[AlertRepository, Depends(get_alert_repo)]
+AssetRepoDep = Annotated[AssetRepository, Depends(get_asset_repo)]
 ActionRepoDep = Annotated[ActionRepository, Depends(get_action_repo)]
