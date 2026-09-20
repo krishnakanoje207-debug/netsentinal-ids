@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from conftest import EXPECTED_FLOWS, TCP_DPORT, TCP_SPORT, UDP_DPORT
 
-from netsentinel.features.contract import FEATURE_DIM, SPLT_N
-from netsentinel.features.extractor import FlowTracker, extract_from_pcap
+from netsentinel_core.features.contract import FEATURE_DIM, SPLT_N
+from netsentinel_core.features.extractor import FlowTracker, extract_from_pcap
 
 
 def _by_port(flows, dst_port):

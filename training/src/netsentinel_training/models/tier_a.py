@@ -1,6 +1,6 @@
 """D5 Tier A: gradient-boosted trees over flow aggregates.
 
-    python -m netsentinel.models.tier_a --data data/processed --out artefacts/tier_a
+    python -m netsentinel_training.models.tier_a --data data/processed --out artefacts/tier_a
 
 Produces the two things the schedule asks of D5 - a PR-AUC report and an ONNX
 model whose predictions match the native ones - plus the model card that fills
@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from netsentinel.features.contract import TIER_A_FEATURES
+from netsentinel_core.features.contract import TIER_A_FEATURES
 
 #: Share of benign flows we are willing to raise as alerts. The threshold is the
 #: strictest one meeting this budget on validation data.

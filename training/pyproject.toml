@@ -1,0 +1,37 @@
+[project]
+name = "netsentinel-training"
+version = "0.1.0"
+description = "Dataset preparation and model training for the four detection tiers"
+requires-python = "==3.11.*"
+dependencies = [
+    "netsentinel-core",
+    "lightgbm>=4.5",
+    "onnxmltools>=1.12",
+    "onnxruntime>=1.19",
+    "polars>=1.0",
+    "scikit-learn>=1.5",
+    "shap>=0.46",
+    "skl2onnx>=1.17",
+]
+
+[project.optional-dependencies]
+# Tiers B and C only. Not installed on the laptop: these train on Kaggle GPU and
+# come back as ONNX artefacts.
+deep = [
+    "torch>=2.4",
+    "torch-geometric>=2.6",
+]
+
+[project.scripts]
+netsentinel-prep = "netsentinel_training.data.prep:main"
+netsentinel-train-tier-a = "netsentinel_training.models.tier_a:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netsentinel_training"]
+
+[tool.uv.sources]
+netsentinel-core = { workspace = true }

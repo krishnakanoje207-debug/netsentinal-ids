@@ -1,34 +1,15 @@
-[project]
-name = "netsentinel"
-version = "0.1.0"
-description = "NetSentinel-AI: intrusion detection and cyber security monitoring using machine learning"
-requires-python = "==3.11.*"
-dependencies = [
-    "dpkt>=1.9.8",
-    "polars>=1.0",
-    "pydantic>=2.9",
-]
+# uv workspace root. Not a package itself - it exists to pin one interpreter, one
+# lockfile and one test command across the whole monorepo, while each member keeps
+# its own dependency list. That boundary is the point: the API must not be able to
+# import LightGBM by accident, and the sensor must stay installable without it.
+[tool.uv.workspace]
+members = ["core", "training"]
 
-[project.optional-dependencies]
+[tool.uv]
+package = false
+
+[dependency-groups]
 dev = ["pytest>=8.0"]
-# Tier A training. Deliberately excludes torch / torch-geometric: the deep and
-# graph tiers train on Kaggle GPU, not on an 8 GB laptop.
-train = [
-    "lightgbm>=4.5",
-    "scikit-learn>=1.5",
-    "onnxruntime>=1.19",
-    "onnxmltools>=1.12",
-    "skl2onnx>=1.17",
-    "shap>=0.46",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/netsentinel"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+testpaths = ["core/tests", "training/tests"]

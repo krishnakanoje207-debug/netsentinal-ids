@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from netsentinel.features.contract import TIER_A_FEATURES
+from netsentinel_core.features.contract import TIER_A_FEATURES
 
 #: Contract field -> NF column it is read from directly.
 DIRECT: dict[str, str] = {

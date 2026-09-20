@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from netsentinel.features.contract import (
+from netsentinel_core.features.contract import (
     FEATURE_DIM,
     FEATURE_ORDER,
     SCALAR_FIELDS,

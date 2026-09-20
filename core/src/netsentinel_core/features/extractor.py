@@ -17,7 +17,7 @@ from typing import Iterator
 
 import dpkt
 
-from netsentinel.features.contract import SPLT_N, FlowFeatures, FlowKey
+from netsentinel_core.features.contract import SPLT_N, FlowFeatures, FlowKey
 
 # A flow is closed after this much silence, or once it has been open this long,
 # mirroring standard NetFlow idle/active timeouts.

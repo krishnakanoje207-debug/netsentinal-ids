@@ -16,8 +16,8 @@ import numpy as np
 import polars as pl
 import pytest
 
-from netsentinel.features.contract import TIER_A_FEATURES
-from netsentinel.models.tier_a import (
+from netsentinel_core.features.contract import TIER_A_FEATURES
+from netsentinel_training.models.tier_a import (
     ONNX_TOLERANCE,
     TARGET_MAX_FPR,
     apply_platt,
