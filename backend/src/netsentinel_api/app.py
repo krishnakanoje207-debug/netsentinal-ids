@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from netsentinel_api.routes import actions, alerts, assets, auth, stream, system
+from netsentinel_api.routes import actions, alerts, assets, auth, models, stream, system
 
 API_PREFIX = "/api/v1"
 
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts.router, prefix=API_PREFIX)
     app.include_router(assets.router, prefix=API_PREFIX)
     app.include_router(actions.router, prefix=API_PREFIX)
+    app.include_router(models.router, prefix=API_PREFIX)
     app.include_router(stream.router, prefix=API_PREFIX)
 
     # No CORS middleware on purpose. The dashboard reaches the API through an SSH

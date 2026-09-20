@@ -17,6 +17,8 @@ from functools import lru_cache
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from netsentinel_api.services.shadow import MIN_LABELLED, MIN_SHADOW_DAYS
+
 ENV_PREFIX = "NETSENTINEL_"
 
 #: Local development default. Deployment overrides it; nothing sensitive here.
@@ -46,6 +48,15 @@ class Settings(BaseSettings):
     # Shadow mode is the safe default. Flipping the system to act on its own
     # verdicts should be a deliberate, recorded change, not an omission.
     default_model_mode: str = "shadow"
+
+    # How much evidence a model needs before the API will promote it. Deployment
+    # settings rather than request parameters, because a gate whose height the
+    # caller sets in the request body is not a gate: lowering the bar for a lab
+    # demo is a decision made once, by whoever configured the deployment, not by
+    # whoever is clicking. The values in force are written into the promotion's
+    # audit row, so a deployment that lowered them says so permanently.
+    promotion_min_labelled: int = Field(default=MIN_LABELLED, ge=1)
+    promotion_min_shadow_days: float = Field(default=MIN_SHADOW_DAYS, ge=0)
 
     # Threat intelligence and SOAR. All optional: the pipeline detects, triages and
     # alerts perfectly well without either, so an unconfigured MISP is a feature that

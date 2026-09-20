@@ -8,7 +8,7 @@ the configured user.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
 import pytest
@@ -28,6 +28,9 @@ from netsentinel_api.db.models import (
     Incident,
     IoC,
     IoCType,
+    MLModel,
+    ModelMode,
+    ModelTier,
     ResponseAction,
     Role,
     Severity,
@@ -39,6 +42,7 @@ from netsentinel_api.deps import (
     get_action_repo,
     get_alert_repo,
     get_asset_repo,
+    get_model_repo,
     get_user_repo,
 )
 from netsentinel_api.rbac import (
@@ -49,6 +53,7 @@ from netsentinel_api.rbac import (
     as_column,
 )
 from netsentinel_api.security import create_access_token, hash_password
+from netsentinel_api.services.shadow import Scored
 
 TEST_SECRET = "K7vQp2xR9mLt4wZn6bYc3sEdJf8hGa1uNqXrVoWiTyBk5Pz0"
 ANALYST_PASSWORD = "an-analyst-password"
@@ -174,6 +179,34 @@ class FakeActionRepo:
                 if a.status == ActionStatus.pending_approval][:limit]
 
 
+class FakeModelRepo:
+    """The registry plus the verdicts it would be judged on.
+
+    ``scored_since`` filters the verdicts by the window the same way the real
+    query's WHERE clause does, so a test can prove the window is actually applied
+    rather than accepted and ignored.
+    """
+
+    def __init__(self, models: list[MLModel], scored: list[Scored]) -> None:
+        self.models = models
+        self.scored = scored
+
+    def list(self) -> list[MLModel]:
+        return sorted(self.models, key=lambda m: m.model_id)
+
+    def get(self, model_id: int) -> MLModel | None:
+        return next((m for m in self.models if m.model_id == model_id), None)
+
+    def active_for(self, tier: ModelTier) -> MLModel | None:
+        return next(
+            (m for m in self.models if m.tier == tier and m.mode == ModelMode.active),
+            None,
+        )
+
+    def scored_since(self, start: datetime) -> list[Scored]:
+        return [s for s in self.scored if s.created_at >= start]
+
+
 def _role(name: str) -> Role:
     return Role(role_id=1, name=name, permissions=as_column(DEFAULT_ROLE_PERMISSIONS[name]))
 
@@ -272,6 +305,46 @@ def vulnerabilities() -> list[Vulnerability]:
 
 
 @pytest.fixture
+def models() -> list[MLModel]:
+    """One model deciding, one observing. The state the page exists to show."""
+    return [
+        MLModel(model_id=1, name="tier-a-lgbm", tier=ModelTier.A, version="1.0.0",
+                onnx_sha256="a" * 64, threshold=0.5, mode=ModelMode.active,
+                pr_auc=0.91, deployed_at=NOW - timedelta(days=30)),
+        MLModel(model_id=2, name="tier-a-lgbm", tier=ModelTier.A, version="1.1.0",
+                onnx_sha256="b" * 64, threshold=0.5, mode=ModelMode.shadow,
+                pr_auc=0.94, deployed_at=None),
+    ]
+
+
+@pytest.fixture
+def scored() -> list[Scored]:
+    """A shadow period the candidate wins: it ranks the true positives above the
+    false ones where the incumbent interleaves them.
+
+    Sixty labelled flows over eight days, which clears both default bars, so a test
+    that wants a refusal has to create the shortfall deliberately.
+
+    Anchored on the real clock rather than on ``NOW``. The window is computed from
+    ``datetime.now``, so a fixture pinned to a date in 2026 would silently fall out
+    of every window the day after it was written, and the suite would start
+    measuring nothing while still passing.
+    """
+    latest = datetime.now(timezone.utc) - timedelta(hours=1)
+    verdicts: list[Scored] = []
+    for index in range(60):
+        label = index % 3 == 0
+        moment = latest - timedelta(hours=(59 - index) * 3)
+        # The incumbent scores the true ones a little above the false ones; the
+        # candidate separates them cleanly.
+        verdicts.append(Scored(model_id=1, risk_score=0.6 if label else 0.55,
+                               created_at=moment, label=label))
+        verdicts.append(Scored(model_id=2, risk_score=0.9 if label else 0.1,
+                               created_at=moment, label=label))
+    return verdicts
+
+
+@pytest.fixture
 def action() -> ResponseAction:
     return ResponseAction(
         action_id=500,
@@ -300,6 +373,8 @@ def client(
     asset: Asset,
     vulnerabilities: list[Vulnerability],
     action: ResponseAction,
+    models: list[MLModel],
+    scored: list[Scored],
 ) -> Iterator[TestClient]:
     app = create_app()
 
@@ -320,6 +395,7 @@ def client(
         [asset], vulnerabilities
     )
     app.dependency_overrides[get_action_repo] = lambda: FakeActionRepo([action])
+    app.dependency_overrides[get_model_repo] = lambda: FakeModelRepo(models, scored)
 
     with TestClient(app) as test_client:
         yield test_client

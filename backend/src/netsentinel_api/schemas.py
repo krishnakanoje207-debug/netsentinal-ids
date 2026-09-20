@@ -18,6 +18,8 @@ from netsentinel_api.db.models import (
     ApprovalDecision,
     Criticality,
     IncidentStatus,
+    ModelMode,
+    ModelTier,
     Severity,
 )
 
@@ -184,6 +186,68 @@ class RollbackIn(BaseModel):
     # something about that judgement was wrong, and that is what the next analyst
     # needs to read.
     reason: str = Field(min_length=1, max_length=2000)
+
+
+class EvidenceOut(BaseModel):
+    """What one model did over the report window.
+
+    Not ground truth, and the field names refuse to pretend otherwise. These are
+    counts of agreement with analyst verdicts on the flows that were triaged, which
+    is a biased sample: nobody labels the traffic nothing fired on. ``unlabelled``
+    is served beside ``precision`` for exactly that reason - a tier that fires
+    constantly on flows no one ever opens reads as perfect precision and is not.
+
+    True negatives are unknowable here and so are absent rather than zero. A metric
+    with nothing to compute it from is null for the same reason: the dashboard must
+    be able to tell "no evidence" from "came out at zero".
+    """
+
+    scored: int = Field(description="verdicts recorded in the window")
+    labelled: int = Field(description="of those, ones an analyst closed a verdict on")
+    unlabelled: int
+    true_positives: int
+    false_positives: int
+    false_negatives: int
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    average_precision: float | None = Field(
+        description="threshold-free ranking quality; how candidates are compared"
+    )
+    false_positives_per_day: float | None = Field(
+        description="the number an analyst actually feels"
+    )
+    days: float = Field(description="span of shadow traffic observed in the window")
+
+
+class ModelOut(BaseModel):
+    """A registry row with the evidence for and against promoting it."""
+
+    # ``model_id`` and ``model_scores`` are column names, not Pydantic's namespace.
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: int
+    name: str
+    tier: ModelTier
+    version: str
+    threshold: float
+    mode: ModelMode
+    pr_auc: float | None = Field(description="from the training run, not from live traffic")
+    deployed_at: datetime | None
+    evidence: EvidenceOut
+    blocked_by: str | None = Field(
+        description=(
+            "why this model may not be promoted, or null if it may; a sentence "
+            "rather than a boolean, so the reason can be acted on"
+        )
+    )
+
+
+class PromoteIn(BaseModel):
+    # The window the decision is made on, spelled as the report and the MISP sync
+    # spell it. It travels in the request because the evidence recorded in the
+    # audit row has to come from the same query that justified the promotion.
+    since: str = Field(default="7d", max_length=10)
 
 
 class HealthOut(BaseModel):
