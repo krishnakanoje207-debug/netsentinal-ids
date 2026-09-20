@@ -205,6 +205,14 @@ The asymmetry between the two queues is deliberate. A refused execution is recor
 otherwise claim is the difference: `failed` means nothing is blocked, which is true
 after a failed execution and a dangerous lie after a failed unban.
 
+When the alert is being worked in a DFIR-IRIS case, the worker narrates the change
+onto that case's timeline after the commit — never inside the transaction, for the
+reason the writer forwards to Keep after its own commit. Only `executed` and
+`rolled_back` produce an entry, and the verb comes from the row rather than from what
+the worker believed it did: a timeline records what happened to the estate, not what
+was attempted. An action on an alert nobody escalated writes nothing, which is the
+ordinary case and not worth logging.
+
 An action the system cannot reverse is refused at the click rather than in a worker
 log an hour later — a killed process has nothing to restore, and the analyst is owed
 that answer while they can still do something else about the host.
@@ -228,6 +236,13 @@ So a case that cannot be opened is logged, `iris_case_id` stays null, and the
 escalation still happened. An alert that already belongs to an incident is a 409
 rather than a second case: two cases for one alert split the investigation in half and
 neither half knows about the other.
+
+The case then gets the rest of the story from the responder: every block applied and
+every ban lifted appears on its timeline, categorised as remediation and carrying the
+alert, the action and the analyst who approved it. IRIS files a timeline entry against
+the caller's current case — and failing that, case 1 — when no case id is supplied, so
+the client refuses to write an entry it cannot address rather than risk putting this
+system's response into somebody else's investigation.
 
 The case opens with the evidence rather than a reference — the addresses, the
 technique, the matched indicators and, when a model was involved, the risk score and

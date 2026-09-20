@@ -10,16 +10,33 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from netsentinel_api.config import Settings
-from netsentinel_api.db.models import Alert, Detection, IoC, IoCType, Severity
+from netsentinel_api.db.models import (
+    ActionStatus,
+    ActionType,
+    Alert,
+    Approval,
+    ApprovalDecision,
+    Detection,
+    IoC,
+    IoCType,
+    ResponseAction,
+    Severity,
+)
 from netsentinel_api.services.cases import (
+    EVENT_DATE_FORMAT,
+    REMEDIATION_CATEGORY,
     SOC_ID_PREFIX,
     TOP_FEATURE_COUNT,
+    CaseError,
     IrisClient,
     case_body,
     case_description,
     case_title,
     client_from,
+    response_event,
 )
 
 SECRET = "K7vQp2xR9mLt4wZn6bYc3sEdJf8hGa1uNqXrVoWiTyBk5Pz0"
@@ -191,3 +208,90 @@ def test_certificate_checking_is_on_unless_it_is_turned_off():
     base = {"jwt_secret": SECRET, "iris_url": "https://iris.local", "iris_api_key": "k"}
     assert client_from(Settings(**base))._verify_tls is True
     assert client_from(Settings(**base, iris_verify_tls=False))._verify_tls is False
+
+
+# --- the timeline ----------------------------------------------------------
+
+def _action(status: ActionStatus = ActionStatus.executed,
+            action_type: ActionType = ActionType.block_ip) -> ResponseAction:
+    action = ResponseAction(
+        action_id=500,
+        alert_id=100,
+        action_type=action_type,
+        target="203.0.113.9",
+        status=status,
+    )
+    action.approval = Approval(
+        approval_id=1, action_id=500, approver_id=7,
+        decision=ApprovalDecision.approved,
+    )
+    return action
+
+
+def test_an_executed_action_reads_as_applied():
+    event = response_event(_action(), when=NOW)
+    assert event["event_title"] == "Response applied: block_ip 203.0.113.9"
+    assert "was applied at the enforcement point" in event["event_content"]
+
+
+def test_a_rolled_back_action_reads_as_lifted():
+    """The verb comes from the row, so the timeline cannot contradict it."""
+    event = response_event(_action(status=ActionStatus.rolled_back), when=NOW)
+    assert event["event_title"].startswith("Response lifted:")
+    assert "was lifted at the enforcement point" in event["event_content"]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ActionStatus.approved, ActionStatus.failed, ActionStatus.rollback_requested,
+     ActionStatus.pending_approval, ActionStatus.rejected],
+)
+def test_an_action_that_changed_nothing_has_no_entry(status):
+    """A case timeline records what happened to the estate, not what was tried."""
+    with pytest.raises(CaseError, match="nothing to put on the timeline"):
+        response_event(_action(status=status), when=NOW)
+
+
+def test_the_entry_leads_back_to_the_alert_the_action_and_the_approver():
+    content = response_event(_action(), when=NOW)["event_content"]
+    assert "NetSentinel alert: 100" in content
+    assert "NetSentinel action: 500" in content
+    assert "Approved by user 7" in content
+
+
+def test_the_date_is_in_the_format_iris_parses():
+    event = response_event(_action(), when=NOW)
+    assert datetime.strptime(event["event_date"], EVENT_DATE_FORMAT) == NOW.replace(
+        tzinfo=None
+    )
+    # The format carries no offset, so the zone travels in its own field and the
+    # timestamp has to already be UTC.
+    assert event["event_tz"] == "+00:00"
+
+
+def test_a_local_time_is_converted_before_it_is_written():
+    from datetime import timedelta
+
+    local = NOW.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    assert response_event(_action(), when=local)["event_date"] == response_event(
+        _action(), when=NOW
+    )["event_date"]
+
+
+def test_the_entry_is_categorised_as_remediation():
+    """Uncategorised entries vanish from the case's own filters."""
+    assert response_event(_action(), when=NOW)["event_category_id"] == REMEDIATION_CATEGORY
+
+
+def test_the_entry_is_in_the_case_summary():
+    event = response_event(_action(), when=NOW)
+    assert event["event_in_summary"] is True
+    # Required by the IRIS schema even when there is nothing to link.
+    assert event["event_assets"] == [] and event["event_iocs"] == []
+
+
+def test_a_timeline_entry_refuses_a_case_id_that_is_not_one():
+    """Without a usable cid IRIS files the entry against somebody else's case."""
+    client = IrisClient("https://iris.local", "k", customer_id=1)
+    with pytest.raises(CaseError, match="refusing to write"):
+        client.add_timeline_event(None, response_event(_action(), when=NOW))

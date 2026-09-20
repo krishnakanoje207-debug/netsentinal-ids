@@ -88,6 +88,22 @@ class ActionRepository:
             .where(ResponseAction.action_id == action_id)
         )
 
+    def iris_case_for(self, action: ResponseAction) -> int | None:
+        """The IRIS case this action's alert is being worked in, if there is one.
+
+        None is the ordinary answer, not an error: most alerts are never escalated,
+        and an alert whose incident has no case has one because IRIS was
+        unreachable when it was escalated. Both mean the same thing here - there is
+        no timeline to write to.
+        """
+        from netsentinel_api.db.models import Incident
+
+        return self._session.scalar(
+            select(Incident.iris_case_id)
+            .join(Alert, Alert.incident_id == Incident.incident_id)
+            .where(Alert.alert_id == action.alert_id)
+        )
+
     def pending(self, limit: int = 50) -> list[ResponseAction]:
         """The approval queue the analyst works through."""
         from netsentinel_api.db.models import ActionStatus

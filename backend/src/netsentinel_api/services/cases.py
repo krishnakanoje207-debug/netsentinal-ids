@@ -30,10 +30,17 @@ is deliberately not used here.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Iterable
 
 from netsentinel_api.config import Settings
-from netsentinel_api.db.models import Alert, Detection, IoC
+from netsentinel_api.db.models import (
+    ActionStatus,
+    Alert,
+    Detection,
+    IoC,
+    ResponseAction,
+)
 
 logger = logging.getLogger("netsentinel.cases")
 
@@ -46,6 +53,23 @@ TOP_FEATURE_COUNT = 5
 #: IRIS keeps a free-text reference on every case for the system it came from. Ours
 #: is the alert id, so "which alert is this case" is answerable from IRIS alone.
 SOC_ID_PREFIX = "netsentinel-alert-"
+
+#: IRIS seeds fifteen event categories in a fixed order and 3 is "Remediation",
+#: which is what a block being applied or lifted is. Unspecified (1) would leave
+#: every response entry uncategorised in the case's own filters.
+REMEDIATION_CATEGORY = 3
+
+#: The format IRIS parses ``event_date`` with. It carries no offset - the zone is a
+#: separate field - so the timestamp is converted to UTC before it is written and
+#: ``event_tz`` says so.
+EVENT_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
+
+#: What a response action reaching the enforcement point is called in the timeline,
+#: by the state it has just arrived in.
+RESPONSE_VERBS: dict[ActionStatus, str] = {
+    ActionStatus.executed: "applied",
+    ActionStatus.rolled_back: "lifted",
+}
 
 
 class CaseError(RuntimeError):
@@ -122,6 +146,54 @@ def _evidence(detection: Detection | None) -> list[str]:
     return lines
 
 
+def response_event(action: ResponseAction, when: datetime | None = None) -> dict:
+    """A timeline entry for a response action that reached the enforcement point.
+
+    The entry is written from the state the action has just arrived in rather than
+    from a caller's argument, so the timeline cannot disagree with the row: an
+    action is described as lifted because it is ``rolled_back``, not because the
+    worker believed it had lifted it.
+
+    Only those two states produce an entry. An action that failed or is waiting has
+    changed nothing on the network, and a case timeline is a record of what happened
+    to the estate, not of what this system attempted.
+    """
+    verb = RESPONSE_VERBS.get(action.status)
+    if verb is None:
+        raise CaseError(
+            f"action {action.action_id} is {action.status.value}; nothing reached "
+            "the network, so there is nothing to put on the timeline"
+        )
+
+    moment = (when or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    lines = [
+        f"{action.action_type.value} on {action.target} was {verb} at the "
+        "enforcement point.",
+        "",
+        f"NetSentinel alert: {action.alert_id}",
+        f"NetSentinel action: {action.action_id}",
+    ]
+    if action.approval is not None:
+        # The authority for the change, in the case where the argument about it
+        # will happen.
+        lines.append(f"Approved by user {action.approval.approver_id}")
+
+    return {
+        "event_title": f"Response {verb}: {action.action_type.value} {action.target}",
+        "event_content": "\n".join(lines),
+        "event_date": moment.strftime(EVENT_DATE_FORMAT),
+        "event_tz": "+00:00",
+        "event_category_id": REMEDIATION_CATEGORY,
+        # Required by the schema and meaningless here: linking assets and IoCs is
+        # the analyst's work inside the case, not ours.
+        "event_assets": [],
+        "event_iocs": [],
+        # A containment action belongs in the summary an investigator reads first.
+        "event_in_summary": True,
+        "event_source": "NetSentinel",
+    }
+
+
 def case_body(alert: Alert, title: str, description: str, customer_id: int) -> dict:
     """The JSON ``POST /manage/cases/add`` accepts.
 
@@ -189,6 +261,39 @@ class IrisClient:
         if not isinstance(case_id, int):
             raise CaseError(f"IRIS opened a case with no usable id: {payload.get('data')}")
         return case_id
+
+    def add_timeline_event(self, case_id: int, event: dict) -> None:
+        """Write one entry onto a case's timeline.
+
+        ``cid`` is a query parameter and it is not optional here, whatever IRIS
+        thinks: asked without one it falls back to the caller's current case and
+        then to case 1, so a missing id does not fail - it files the entry against
+        somebody else's investigation.
+        """
+        import httpx
+
+        if not isinstance(case_id, int):
+            raise CaseError(f"refusing to write a timeline entry to case {case_id!r}")
+
+        with httpx.Client(timeout=self._timeout, verify=self._verify_tls) as client:
+            try:
+                response = client.post(
+                    f"{self._url}/case/timeline/events/add",
+                    params={"cid": case_id},
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json=event,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except httpx.HTTPError as exc:
+                raise CaseError(f"IRIS refused the timeline entry: {exc}") from exc
+            except ValueError as exc:
+                raise CaseError(f"IRIS returned a body that is not JSON: {exc}") from exc
+
+        if payload.get("status") != "success":
+            raise CaseError(
+                f"IRIS did not record the timeline entry: {payload.get('message')}"
+            )
 
 
 def client_from(settings: Settings) -> IrisClient | None:

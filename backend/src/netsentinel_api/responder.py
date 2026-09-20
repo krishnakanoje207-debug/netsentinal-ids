@@ -28,6 +28,12 @@ recorded as ``failed`` and left, while a refused undo is retried indefinitely. T
 difference is what the database would otherwise claim. A failed execution means
 nothing is blocked, which is true; a failed undo would mean the same thing while the
 address is still blocked, which is not.
+
+Once the transaction is committed, and only then, a change to the estate is narrated
+onto the timeline of the DFIR-IRIS case the alert is being worked in. That order is
+the third rule: a round trip to another system does not belong inside a transaction,
+and an investigator reading the case should see what happened rather than what was
+attempted.
 """
 
 from __future__ import annotations
@@ -42,6 +48,8 @@ from netsentinel_api.config import get_settings
 from netsentinel_api.db.models import ActionStatus, ActionType, ResponseAction
 from netsentinel_api.db.repositories import ActionRepository
 from netsentinel_api.db.session import get_sessionmaker
+from netsentinel_api.services.cases import CaseError, response_event
+from netsentinel_api.services.cases import client_from as case_client_from
 from netsentinel_api.services.enforcement import EnforcementError, enforcers_from
 from netsentinel_api.services.response import (
     mark_executed,
@@ -132,7 +140,37 @@ def roll_back_action(session, action: ResponseAction, point) -> bool:
     return True
 
 
-def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE) -> Stats:
+def record_in_case(session, action: ResponseAction, cases) -> None:
+    """Put a change to the estate on the timeline of the case it belongs to.
+
+    Called after the transaction has committed, never inside it: this is a round
+    trip to another system, and holding a row lock across it is how a worker turns
+    a slow IRIS into a stuck queue. The same reason the writer forwards to Keep
+    after its commit rather than before.
+
+    Best effort, and quietly skipped when there is nothing to write to. Most alerts
+    are never escalated, so an action with no case behind it is the normal case and
+    not a condition worth logging every pass.
+    """
+    if cases is None:
+        return
+
+    case_id = ActionRepository(session).iris_case_for(action)
+    if case_id is None:
+        return
+
+    try:
+        cases.add_timeline_event(case_id, response_event(action))
+    except CaseError as exc:
+        # Logged, never raised. The action reached the network and the database
+        # says so; the timeline entry is how a human reads about it afterwards,
+        # and losing it must not undo or repeat the action itself.
+        logger.error("could not add action %s to case %s: %s",
+                     action.action_id, case_id, exc)
+
+
+def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE,
+             cases=None) -> Stats:
     """Drain the approved queue, then the rollback queue.
 
     Approvals first. A block that has not been applied is an attacker still
@@ -152,6 +190,7 @@ def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE)
             continue
         if execute_action(session, action, point):
             stats.executed += 1
+            record_in_case(session, action, cases)
         else:
             stats.failed += 1
 
@@ -165,6 +204,7 @@ def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE)
             continue
         if roll_back_action(session, action, point):
             stats.rolled_back += 1
+            record_in_case(session, action, cases)
         else:
             stats.retrying += 1
 
@@ -210,14 +250,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    # Optional, and unlike the enforcement points its absence is not worth
+    # refusing to start over: with no IRIS the blocks still land, they are just not
+    # narrated into a case.
+    cases = case_client_from(settings)
+
     logger.info(
-        "responder ready for %s", ", ".join(sorted(t.value for t in points))
+        "responder ready for %s%s",
+        ", ".join(sorted(t.value for t in points)),
+        "" if cases is None else "; writing to IRIS case timelines",
     )
     sessionmaker = get_sessionmaker()
     try:
         while True:
             with sessionmaker() as session:
-                stats = run_once(session, points)
+                stats = run_once(session, points, cases=cases)
             if args.once:
                 print(f"responder: {stats.as_dict()}")
                 return 0

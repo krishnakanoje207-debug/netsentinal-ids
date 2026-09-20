@@ -24,6 +24,7 @@ from netsentinel_api.db.models import (
     ResponseAction,
 )
 from netsentinel_api.responder import execute_action, roll_back_action, run_once
+from netsentinel_api.services.cases import CaseError
 from netsentinel_api.services.enforcement import EnforcementError
 from netsentinel_api.services.response import ApprovalRequired, NotExecutable
 
@@ -35,6 +36,7 @@ class StubSession:
         self.added: list[object] = []
         self.commits = 0
         self.rollbacks = 0
+        self.case_id: int | None = None
         self._actions = actions or []
 
     def add(self, instance: object, /) -> None:
@@ -45,6 +47,10 @@ class StubSession:
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+    def scalar(self, *_args, **_kwargs) -> int | None:
+        # The one scalar read the worker performs: the IRIS case behind an action.
+        return self.case_id
 
     def scalars(self, statement, *_args, **_kwargs):
         # The repository's two queues differ only in the status they select, so the
@@ -264,3 +270,90 @@ def test_an_undo_with_no_enforcement_point_is_left_requested():
     assert stats.waiting == ["isolate_host"]
     assert action.status is ActionStatus.rollback_requested
     assert session.commits == 0
+
+
+# --- the case timeline -----------------------------------------------------
+
+class StubCases:
+    """Records what would have been written to a case, or refuses."""
+
+    def __init__(self, error: str | None = None) -> None:
+        self.entries: list[tuple[int, dict]] = []
+        self._error = error
+
+    def add_timeline_event(self, case_id: int, event: dict) -> None:
+        self.entries.append((case_id, event))
+        if self._error:
+            raise CaseError(self._error)
+
+
+def test_an_executed_action_is_narrated_onto_its_case():
+    action = _action()
+    session = StubSession([action])
+    session.case_id = 42
+    cases = StubCases()
+
+    run_once(session, {ActionType.block_ip: StubEnforcer()}, cases=cases)
+
+    case_id, event = cases.entries[0]
+    assert case_id == 42
+    assert event["event_title"].startswith("Response applied:")
+
+
+def test_a_lifted_ban_is_narrated_too():
+    action = _action(status=ActionStatus.rollback_requested)
+    session = StubSession([action])
+    session.case_id = 42
+    cases = StubCases()
+
+    run_once(session, {ActionType.block_ip: StubEnforcer()}, cases=cases)
+
+    assert cases.entries[0][1]["event_title"].startswith("Response lifted:")
+
+
+def test_an_action_on_an_unescalated_alert_writes_no_entry():
+    """Most alerts never become a case; that is not a condition to log about."""
+    session = StubSession([_action()])
+    session.case_id = None
+    cases = StubCases()
+
+    run_once(session, {ActionType.block_ip: StubEnforcer()}, cases=cases)
+
+    assert cases.entries == []
+
+
+def test_a_failed_action_is_not_narrated():
+    """The timeline records what happened to the estate, not what was attempted."""
+    session = StubSession([_action()])
+    session.case_id = 42
+    cases = StubCases()
+
+    run_once(session, {ActionType.block_ip: StubEnforcer(error="refused")}, cases=cases)
+
+    assert cases.entries == []
+
+
+def test_an_unreachable_iris_does_not_undo_the_action():
+    """The ban is in place and the row says so; the entry is only the narration."""
+    action = _action()
+    session = StubSession([action])
+    session.case_id = 42
+
+    stats = run_once(
+        session,
+        {ActionType.block_ip: StubEnforcer()},
+        cases=StubCases(error="IRIS refused the timeline entry: 503"),
+    )
+
+    assert stats.executed == 1
+    assert action.status is ActionStatus.executed
+
+
+def test_no_iris_configured_writes_nothing_and_still_executes():
+    action = _action()
+    session = StubSession([action])
+
+    stats = run_once(session, {ActionType.block_ip: StubEnforcer()}, cases=None)
+
+    assert stats.executed == 1
+    assert action.status is ActionStatus.executed
