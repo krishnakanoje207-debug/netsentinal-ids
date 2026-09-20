@@ -69,6 +69,39 @@ FEATURE_ORDER: tuple[str, ...] = SCALAR_FIELDS + SPLT_LEN_FIELDS + SPLT_IAT_FIEL
 
 FEATURE_DIM = len(FEATURE_ORDER)
 
+# Per-tier model inputs. A tier may only consume features that every one of its
+# training sources can produce exactly as the live extractor does.
+#
+# Tier A (LightGBM / XGBoost) trains on public NetFlow datasets
+# (NF-UNSW-NB15-v3, NF-UQ-NIDS-v2). Those are pre-aggregated, so they cannot
+# supply per-packet detail: no SPLT, no per-direction length spread, no
+# inter-arrival statistics, and TCP flags only as a cumulative bitmask rather
+# than counts. Those columns are therefore excluded here - training on them
+# would reintroduce exactly the train/serve skew the parity test guards against.
+# Widening Tier A means training from PCAPs (UNSW-NB15 raw captures or our own
+# lab traffic) instead of the NetFlow CSVs.
+TIER_A_FEATURES: tuple[str, ...] = (
+    "proto",
+    "l4_src_port",
+    "l4_dst_port",
+    "duration_ms",
+    "in_pkts",
+    "out_pkts",
+    "in_bytes",
+    "out_bytes",
+    "pkt_rate",
+    "byte_rate",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_ratio_out_in",
+    "min_ttl",
+    "max_ttl",
+)
+
+# Tier B (1D-CNN + BiLSTM) consumes the packet sequence, which only ever comes
+# from a real capture.
+TIER_B_FEATURES: tuple[str, ...] = SPLT_LEN_FIELDS + SPLT_IAT_FIELDS
+
 
 @dataclass(slots=True)
 class FlowKey:
