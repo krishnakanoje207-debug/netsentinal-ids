@@ -56,8 +56,21 @@ class Settings(BaseSettings):
                 "jwt_secret must be at least 32 characters; generate one with "
                 "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`"
             )
-        if raw.lower() in {"secret", "changeme", "please-change-me", "x" * len(raw)}:
-            raise ValueError("jwt_secret is a placeholder value")
+        # Checked as substrings and against low-entropy padding, because the
+        # realistic failure is someone padding a placeholder out to 32 characters
+        # to satisfy the length rule.
+        lowered = raw.lower()
+        if any(
+            marker in lowered
+            for marker in ("changeme", "change-me", "placeholder", "your-secret",
+                           "secret-key", "insecure", "example")
+        ):
+            raise ValueError("jwt_secret looks like a placeholder value")
+        if len(set(raw)) < 8:
+            raise ValueError(
+                f"jwt_secret uses only {len(set(raw))} distinct characters; "
+                "it is long but not random"
+            )
         return value
 
     @field_validator("jwt_algorithm")
