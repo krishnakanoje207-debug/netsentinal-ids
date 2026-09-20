@@ -1,0 +1,54 @@
+@import 'tailwindcss';
+
+/* A SOC dashboard is read for hours in a dim room, so dark is the default rather
+   than an option. Severity colours are the one place saturation is spent; everything
+   else stays low-contrast so that a critical row is the only thing that shouts. */
+@theme {
+  --color-surface: #0d1117;
+  --color-panel: #151b23;
+  --color-panel-raised: #1c232c;
+  --color-line: #2a3440;
+  --color-ink: #e6edf3;
+  --color-ink-dim: #9aa7b4;
+  --color-ink-faint: #6b7886;
+
+  --color-sev-info: #58a6ff;
+  --color-sev-low: #3fb950;
+  --color-sev-medium: #d29922;
+  --color-sev-high: #f85149;
+  --color-sev-critical: #ff7b72;
+
+  /* Undecided is deliberately colourless. It must not read as "safe", and giving it
+     a green would say exactly that. */
+  --color-undecided: #8b949e;
+
+  --color-accent: #388bfd;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures so a column of risk scores stays aligned while it updates. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
