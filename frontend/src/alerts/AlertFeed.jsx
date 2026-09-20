@@ -13,6 +13,7 @@ import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { SeverityBadge, StatusPill } from '../components/SeverityBadge'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { ExportButton } from './ExportButton'
 import { useAlertStream } from '../stream/useAlertStream'
 
 const POLL_MS = 5000
@@ -98,6 +99,7 @@ export function AlertFeed({ status, severity, onFilterChange }) {
               </option>
             ))}
           </select>
+          <ExportButton status={status} severity={severity} />
         </div>
       </header>
 

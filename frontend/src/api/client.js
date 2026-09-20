@@ -92,6 +92,46 @@ export async function request(path, options = {}) {
   return await response.json()
 }
 
+/**
+ * The same request, stopping at the response.
+ *
+ * `request` assumes JSON. A file download needs the headers and the raw body, and
+ * having one function guess which it is would make both harder to read.
+ *
+ * @param {string} path
+ * @param {{token?: string | null}} [options]
+ */
+export async function rawRequest(path, options = {}) {
+  const headers = {}
+  if (options.token) headers.Authorization = `Bearer ${options.token}`
+
+  let response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { headers })
+  } catch {
+    throw new ApiError('network', 0, 'cannot reach the API')
+  }
+
+  if (!response.ok) {
+    throw new ApiError(kindFor(response.status), response.status, await messageFrom(response))
+  }
+  return response
+}
+
+const FILENAME = /filename="([^"]+)"/
+
+/**
+ * The name the server chose, so a truncated export keeps saying so once it is on
+ * disk. Falls back to something recognisable rather than to the browser's default,
+ * which would be the word "export" with no date on it.
+ *
+ * @param {string | null} disposition
+ */
+export function filenameFrom(disposition) {
+  const match = disposition ? FILENAME.exec(disposition) : null
+  return match ? match[1] : 'netsentinel-alerts.csv'
+}
+
 // --- endpoints -------------------------------------------------------------
 
 export const api = {
@@ -116,6 +156,29 @@ export const api = {
 
   /** @returns {Promise<import('./types').AlertDetail>} */
   alert: (token, alertId) => request(`/alerts/${alertId}`, { token }),
+
+  /**
+   * The feed as a CSV file. Returns the body and the two things the caller needs to
+   * save it honestly: the name the server chose, and whether the file is partial.
+   *
+   * Not a plain link, because the API needs a bearer token and an anchor cannot
+   * carry one. The response is small by construction - the server caps the rows -
+   * so reading it into a blob is safe.
+   *
+   * @returns {Promise<{blob: Blob, filename: string, truncated: boolean}>}
+   */
+  exportAlerts: async (token, params = {}) => {
+    const query = new URLSearchParams()
+    if (params.status) query.set('status', params.status)
+    if (params.severity) query.set('severity', params.severity)
+
+    const response = await rawRequest(`/alerts/export?${query.toString()}`, { token })
+    return {
+      blob: await response.blob(),
+      filename: filenameFrom(response.headers.get('content-disposition')),
+      truncated: response.headers.get('x-export-truncated') === 'true',
+    }
+  },
 
   /** @returns {Promise<import('./types').Alert>} */
   setAlertStatus: (token, alertId, status) =>
