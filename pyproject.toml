@@ -23,6 +23,9 @@ dev = [
 # `uv pip install`, which `uv sync` prunes on the next run.
 deep = [
     "torch>=2.4",
+    # torch.onnx.export uses the dynamo exporter by default from 2.9 onward, which needs
+    # this. The alternative is dynamo=False, and the legacy exporter is on its way out.
+    "onnxscript>=0.1",
 ]
 
 # Explicit index: the default PyPI torch wheel bundles CUDA and is several gigabytes,
