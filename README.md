@@ -250,6 +250,39 @@ its strongest SHAP contributors. An analyst who has to return to the dashboard t
 learn why anything was escalated will read a case containing one alert id and close it
 again.
 
+## Vulnerability scanning
+
+```bash
+# on the VM, with the scan profile up and intel stopped
+gvm-cli socket --socketpath /run/gvmd/gvmd.sock --xml   '<get_reports report_id="REPORT-UUID" details="1"
+    filter="apply_overrides=0 min_qod=70 rows=-1"/>' > report.xml
+
+uv run netsentinel-import-vulns --report report.xml
+```
+
+Greenbone answers a different question from the rest of the pipeline: not what an
+attacker is doing, but what one would find. Its results are copied into the
+`vulnerabilities` table for the reason MISP indicators are copied into `iocs` — the
+scanner runs in a window and is stopped the rest of the time, and triage cannot depend
+on a service that is off.
+
+The import is file-based because gvmd speaks GMP over a local socket rather than HTTP;
+there is no REST client to write, its own `gvm-cli` produces the report, and parsing
+that XML needs no nine-container scanner running to test.
+
+Two filters decide what is let in. Findings below 70% quality of detection are
+dropped — Greenbone reports what it is unsure about, and a list of guesses is one an
+analyst stops opening — and a finding with no CVE is inventory rather than a
+vulnerability, which is why `cve_id` is NOT NULL. A re-scan updates the row it already
+has: the table has no unique constraint on (asset, CVE), and without that rule every
+scan would double every count on the dashboard.
+
+`GET /assets/{id}/vulnerabilities` lists them worst first, unscored last. A missing
+asset is a 404 rather than an empty list, because an unscanned machine must not read
+as a clean one. Reading the estate needs the `assets:read` permission, which analysts
+and administrators are seeded with — re-run `netsentinel-bootstrap` to grant it on a
+database created before this change.
+
 ## Design decisions that deviate from M2 §4
 
 | Document says | Built with | Why |

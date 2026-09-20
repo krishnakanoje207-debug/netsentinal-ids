@@ -156,6 +156,26 @@ docker compose exec crowdsec cscli decisions list -o human | grep 203.0.113.9 ||
 `netsentinel/block_ip`, so an address blocked by this system is distinguishable at a
 glance from one blocked by a CrowdSec scenario.
 
+## Greenbone / OpenVAS
+
+The third thing that ships its own compose, and the least negotiable of the three:
+Greenbone Community Edition is nine containers plus two feed volumes, and a fork of it
+would be a fork of somebody's release process. Clone
+`greenbone/docker-compose-community` and run it on its own.
+
+It needs 3-4 GB, which on the 16 GB VM means **stopping the `intel` profile first**:
+
+```bash
+docker compose --profile intel down
+# start Greenbone's own compose, let the NVT feed sync finish (it takes a while on
+# first run), then scan the lab subnet 172.30.0.0/24 from its UI or with gvm-cli
+```
+
+The feed sync is the slow part and it has to finish before a scan means anything — a
+scanner with no NVTs finds nothing and says so cheerfully. Once a scan is done, export
+the report and import it (see the root README); nothing in this system talks to gvmd
+directly, so Greenbone can be stopped again the moment the report is out.
+
 ## DFIR-IRIS
 
 Not in this compose file either, and for the reason Wazuh is not: `iris-web` ships its
