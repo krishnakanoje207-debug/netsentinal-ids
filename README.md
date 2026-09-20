@@ -8,35 +8,40 @@ Design and requirements live in [`deliverables/`](deliverables).
 A uv workspace. Folders follow the deployment boundaries in the M2 design rather
 than language conventions — each one ends up on a different node.
 
-| Package | Runs on | Contains |
-|---|---|---|
-| [`core/`](core) | everywhere | The feature contract and flow extraction. Imported by every other package. |
-| [`training/`](training) | Kaggle GPU | Dataset preparation and the four model tiers. Exports ONNX. |
-| [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate. Built D9. |
-| [`frontend/`](frontend) | browser | React SOC dashboard. Built D10. |
-| [`sensors/`](sensors) | cloud VM | Live capture agent, Suricata, Zeek, Wazuh config. Built D3/D8. |
-| [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana. Built D2 onwards. |
+| Package | Runs on | Contains | State |
+|---|---|---|---|
+| [`core/`](core) | everywhere | Feature contract and flow extraction | built |
+| [`training/`](training) | Kaggle GPU | Dataset prep, Tier A, Tier D | built |
+| [`scoring/`](scoring) | cloud VM | Model loader and fusion scorer | built |
+| [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
+| [`frontend/`](frontend) | browser | React SOC dashboard | D10 |
+| [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | D3/D8 |
+| [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | D2 onwards |
 
-`core` is deliberately the only shared dependency, and it is deliberately tiny —
-`dpkt` and nothing else. The API must not be able to import LightGBM by accident,
-and the sensor has to stay installable on a constrained host.
+Dependencies run one way only. `core` is the single shared package and is
+deliberately tiny — `dpkt` and nothing else — so the sensor stays installable on a
+constrained host and the API cannot import LightGBM by accident.
 
 ## The feature contract
 
-`netsentinel_core.features.contract.FEATURE_ORDER` is the single source of truth
-for the model input vector. Nothing else may hardcode a feature name, index or
-count.
+`netsentinel_core.features.contract.FEATURE_ORDER` is the single source of truth for
+the model input vector. Nothing else may hardcode a feature name, index or count.
 
-This exists because the largest risk in the design (M2 §5.4, High) is the
-training features drifting away from the live ones. Two things hold the line:
+This exists because the largest risk in the design (M2 §5.4, High) is training
+features drifting away from live ones. Three things hold the line:
 
 - one extractor serves both paths — `extract_from_pcap` for training data and
-  `FlowTracker.update` for the live sensor,
-- `test_offline_and_live_paths_agree` pushes the same packets through both and
-  fails if the vectors differ by a bit.
+  `FlowTracker.update` for the live sensor;
+- `test_offline_and_live_paths_agree` pushes the same packets through both and fails
+  if the vectors differ by a bit;
+- the scoring registry refuses to load a model whose card declares a different
+  feature order, naming the index where they diverge.
 
-If a contract test fails, that is the alarm working. Bump the model version;
-do not relax the test.
+A model also cannot load unless its ONNX file matches the SHA-256 in its card, so the
+served model is always the one that was evaluated.
+
+If a contract test fails, that is the alarm working. Bump the model version; do not
+relax the test.
 
 ## Setup
 
@@ -45,26 +50,58 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 43 tests
+uv run pytest            # 204 tests, no database or network needed
 ```
 
-On a machine with a full system drive, point the cache elsewhere first:
+On a machine with a full system drive, redirect the package cache first:
 
 ```bash
 export UV_CACHE_DIR=D:/uv-cache
 ```
 
-## Pipeline so far
+## Pipeline
 
 ```bash
-# D4 - NF-* CSV to leakage-safe train/val/test Parquet
+# D4 — NF-* CSV to leakage-safe train/val/test Parquet
 uv run netsentinel-prep --csv NF-UNSW-NB15-v3.csv --out data/processed
 
-# D5 - Tier A gradient-boosted trees, calibrated, explained, exported to ONNX
+# D5 — Tier A gradient-boosted trees: calibrated, explained, exported to ONNX
 uv run netsentinel-train-tier-a --data data/processed --out artefacts/tier_a
+
+# D6 — Tier D Isolation Forest, trained on benign flows only
+uv run python -m netsentinel_training.models.tier_d --data data/processed --out artefacts/tier_d
 ```
 
-Training refuses to emit artefacts unless the ONNX export agrees with LightGBM to
-within 1e-4, so the served model is always the model that was evaluated. It
-writes `model_card.json`, whose fields map onto the `ml_models` table, and every
-new model is born in `shadow` mode.
+Training refuses to emit artefacts unless the ONNX export agrees with the native
+model to within 1e-4. Each run writes a `model_card.json` whose fields map onto the
+`ml_models` table, and every model is born in `shadow` mode.
+
+Tiers B (1D-CNN + BiLSTM), C (E-GraphSAGE) and the Tier D autoencoder need PyTorch and
+belong in the Kaggle notebooks; they are not installed locally by design.
+
+## Backend
+
+```bash
+export NETSENTINEL_DATABASE_URL="postgresql+psycopg://user:pass@host:5432/netsentinel"
+export NETSENTINEL_JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+
+cd backend && uv run alembic upgrade head   # create the schema
+uv run netsentinel-bootstrap                # seed roles, create the admin
+uv run uvicorn netsentinel_api.app:app      # serve; docs at /api/v1/docs
+```
+
+`bootstrap` is idempotent and never resets an existing password, so it is safe to
+re-run from a deployment script. If no admin password is supplied one is generated
+and printed once.
+
+Every automated response passes a human gate. `services/response.mark_executed` is
+the only path to execution and refuses without an approval, so if it raises, nothing
+on the network changed. Approving does not execute — it moves the action to
+`approved` for the D12 executors to pick up.
+
+## Design decisions that deviate from M2 §4
+
+| Document says | Built with | Why |
+|---|---|---|
+| python-jose, passlib | PyJWT, bcrypt | python-jose is effectively unmaintained with a CVE history; passlib predates Python 3.11 |
+| Tier A on full NetFlow features | Tier A on the 15-feature intersection | NF-* datasets cannot supply SPLT, per-direction spread, IAT statistics or flag counts; training on them would recreate train/serve skew |
