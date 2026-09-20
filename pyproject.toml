@@ -3,10 +3,14 @@
 # its own dependency list. That boundary is the point: the API must not be able to
 # import LightGBM by accident, and the sensor must stay installable without it.
 [tool.uv.workspace]
-members = ["backend", "core", "scoring", "training"]
+members = ["backend", "core", "scoring", "sensors", "training"]
 
 [tool.uv]
 package = false
+# Both groups sync by default so the local environment is one command. Deployment installs
+# individual members (core, scoring, sensors) rather than syncing the whole workspace, so
+# the VM never pulls torch.
+default-groups = ["dev", "deep"]
 
 [dependency-groups]
 dev = [
@@ -14,6 +18,28 @@ dev = [
     # fastapi.testclient is built on httpx
     "httpx>=0.27",
 ]
+# Tiers B and C train on Kaggle GPU, but the training scripts are developed and tested
+# here, so a CPU build is needed locally. Declared as a group rather than left to a manual
+# `uv pip install`, which `uv sync` prunes on the next run.
+deep = [
+    "torch>=2.4",
+]
+
+# Explicit index: the default PyPI torch wheel bundles CUDA and is several gigabytes,
+# which will not fit on this machine's system drive.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests", "core/tests", "scoring/tests", "training/tests"]
+testpaths = [
+    "backend/tests",
+    "core/tests",
+    "scoring/tests",
+    "sensors/tests",
+    "training/tests",
+]
