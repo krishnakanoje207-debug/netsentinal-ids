@@ -140,6 +140,10 @@ class ActionStatus(str, enum.Enum):
     approved = "approved"
     rejected = "rejected"
     executed = "executed"
+    # A human has asked for the action to be undone; the responder has not lifted
+    # it yet. The ban is still in force in this state, which is why it is its own
+    # value rather than an early move to rolled_back.
+    rollback_requested = "rollback_requested"
     rolled_back = "rolled_back"
     failed = "failed"
 

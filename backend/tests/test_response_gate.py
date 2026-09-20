@@ -29,6 +29,7 @@ from netsentinel_api.services.response import (
     mark_failed,
     mark_rolled_back,
     record_decision,
+    request_rollback,
 )
 
 
@@ -133,13 +134,31 @@ def test_approved_action_executes(session, action, analyst):
 def test_executed_action_can_be_rolled_back(session, action, analyst):
     record_decision(session, action, analyst, ApprovalDecision.approved)
     mark_executed(session, action)
-    mark_rolled_back(session, action, analyst, reason="blocked a partner IP")
+
+    request_rollback(session, action, analyst, reason="blocked a partner IP")
+    # The ban is still in force here; only the request has been recorded.
+    assert action.status is ActionStatus.rollback_requested
+
+    mark_rolled_back(session, action)
     assert action.status is ActionStatus.rolled_back
 
 
-def test_only_an_executed_action_can_be_rolled_back(session, action, analyst):
+def test_a_rollback_cannot_be_requested_for_an_action_that_never_executed(
+    session, action, analyst
+):
     with pytest.raises(NotExecutable, match="nothing to roll back"):
-        mark_rolled_back(session, action, analyst, reason="premature")
+        request_rollback(session, action, analyst, reason="premature")
+    assert action.status is ActionStatus.pending_approval
+
+
+def test_an_unrequested_rollback_is_refused(session, action, analyst):
+    """The worker cannot lift a ban nobody asked it to lift."""
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_executed(session, action)
+
+    with pytest.raises(NotExecutable, match="no rollback was requested"):
+        mark_rolled_back(session, action)
+    assert action.status is ActionStatus.executed
 
 
 def test_failed_execution_is_recorded(session, action, analyst):
@@ -154,13 +173,35 @@ def test_failed_execution_is_recorded(session, action, analyst):
 def test_every_transition_writes_an_audit_row(session, action, analyst):
     record_decision(session, action, analyst, ApprovalDecision.approved)
     mark_executed(session, action)
-    mark_rolled_back(session, action, analyst, reason="undo")
+    request_rollback(session, action, analyst, reason="undo")
+    mark_rolled_back(session, action)
 
     actions = [entry.action for entry in session.audit_entries()]
-    assert actions == ["response.approved", "response.executed", "response.rolled_back"]
+    assert actions == [
+        "response.approved",
+        "response.executed",
+        "response.rollback_requested",
+        "response.rolled_back",
+    ]
     for entry in session.audit_entries():
         assert entry.entity == "response_action:42"
-        assert entry.user_id == analyst.user_id
+
+
+def test_the_rollback_is_attributed_to_the_human_and_the_lift_to_nobody(
+    session, action, analyst
+):
+    """Two questions, two rows: who asked, and when it was actually lifted."""
+    record_decision(session, action, analyst, ApprovalDecision.approved)
+    mark_executed(session, action)
+    request_rollback(session, action, analyst, reason="blocked a partner IP")
+    mark_rolled_back(session, action)
+
+    requested, lifted = session.audit_entries()[-2:]
+    assert requested.user_id == analyst.user_id
+    assert requested.details["reason"] == "blocked a partner IP"
+    # No user id: a worker lifted the ban, and saying otherwise would read as the
+    # analyst having gone to the firewall themselves.
+    assert lifted.user_id is None
 
 
 def test_a_refused_execution_leaves_no_audit_row(session, action):

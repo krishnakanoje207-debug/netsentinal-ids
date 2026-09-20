@@ -72,6 +72,16 @@ def test_enum_check_constraints_survive_the_migration(upgrade_sql):
     assert "CHECK (severity IN ('info'" in upgrade_sql
 
 
+def test_the_status_domain_ends_up_wide_enough_for_a_requested_rollback(upgrade_sql):
+    """0001 creates the narrow domain; 0002 widens it. Head is what deploys."""
+    assert (
+        "CHECK (status IN ('pending_approval', 'approved', 'rejected', 'executed', "
+        "'rollback_requested', 'rolled_back', 'failed'))"
+    ) in upgrade_sql
+    # The new value is longer than every old one, so the column has to grow with it.
+    assert "ALTER COLUMN status TYPE VARCHAR(18)" in upgrade_sql
+
+
 def test_named_check_constraints_survive_the_migration(upgrade_sql):
     for name in (
         "ck_risk_score_range",

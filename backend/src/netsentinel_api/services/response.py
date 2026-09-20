@@ -145,17 +145,46 @@ def mark_executed(
     )
 
 
-def mark_rolled_back(session: SupportsAdd, action: ResponseAction,
+def request_rollback(session: SupportsAdd, action: ResponseAction,
                      actor: User, reason: str) -> None:
-    """Undo an executed action. The one-click rollback from the risk register."""
+    """Ask for an executed action to be undone. The human half of the rollback.
+
+    Nothing on the network changes here: when this returns the ban is still in
+    force and the action is queued for the responder, which lifts it and calls
+    ``mark_rolled_back``. The split exists because "who asked for the ban to be
+    lifted" and "when was it actually lifted" are different questions, and one
+    audit row cannot answer both honestly - the second fact is not yet known when
+    the first is recorded.
+    """
     if action.status is not ActionStatus.executed:
         raise NotExecutable(
             f"action {action.action_id} is {action.status.value}, so there is "
             "nothing to roll back"
         )
+    action.status = ActionStatus.rollback_requested
+    _audit(session, actor.user_id, "response.rollback_requested", action.action_id,
+           {"action_type": action.action_type.value, "target": action.target,
+            "reason": reason})
+
+
+def mark_rolled_back(session: SupportsAdd, action: ResponseAction) -> None:
+    """Record that the undo reached the enforcement point.
+
+    Refuses an action nobody asked to roll back, which is what makes this the gate
+    check in front of the undo rather than a bookkeeping call after it.
+
+    The audit row carries no user id: a worker completed this, and the human who
+    asked for it is on the ``response.rollback_requested`` row. Attributing this
+    one to them as well would read as though they had lifted the ban by hand.
+    """
+    if action.status is not ActionStatus.rollback_requested:
+        raise NotExecutable(
+            f"action {action.action_id} is {action.status.value}, so no rollback "
+            "was requested for it"
+        )
     action.status = ActionStatus.rolled_back
-    _audit(session, actor.user_id, "response.rolled_back", action.action_id,
-           {"target": action.target, "reason": reason})
+    _audit(session, None, "response.rolled_back", action.action_id,
+           {"action_type": action.action_type.value, "target": action.target})
 
 
 def mark_failed(session: SupportsAdd, action: ResponseAction, error: str) -> None:
