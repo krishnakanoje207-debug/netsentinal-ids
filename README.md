@@ -55,7 +55,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 589 tests, no database or network needed
+uv run pytest            # 605 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -167,9 +167,26 @@ Promotion is refused on too few labels, too short a period, a window containing 
 true positive at all, or a candidate that ranks worse than the model already serving.
 Candidates are compared on average precision rather than precision, because the
 threshold can be moved afterwards and a model that ranks badly cannot be fixed by
-moving one. The bars are flags rather than constants — a lab demo and a production
-rollout are different evidential bars — but the numbers used are written into the
-audit row, so a promotion made on five labelled detections says so permanently.
+moving one. The bars are adjustable — a lab demo and a production rollout are
+different evidential bars — but the numbers used are written into the audit row, so a
+promotion made on five labelled detections says so permanently.
+
+The same decision is available on the dashboard. `GET /models` serves every
+registered model with what it did over a window, and `POST /models/{id}/promote`
+makes one active; both go through the queries and the refusal rule the CLI uses, so
+the two cannot drift into disagreeing about what a model has earned. `models:read` is
+held by every seeded role, because which model is deciding is context for every alert
+on the page; `models:deploy` is held only by the ML engineer.
+
+Over HTTP the bars are deployment settings (`NETSENTINEL_PROMOTION_MIN_LABELLED`,
+`NETSENTINEL_PROMOTION_MIN_SHADOW_DAYS`) rather than request parameters, which is the
+one place the API is deliberately stricter than the CLI: a gate whose height the
+caller sets in the request body is not a gate. Lowering it for a lab demo is a
+decision made once, by whoever configured the deployment, not by whoever is clicking.
+A refusal comes back as a 422 carrying the sentence that says what is missing, and
+the dashboard prints it under the disabled button — the engineer needs to know
+whether to keep triaging or to try a different candidate, and a greyed-out control
+answers neither.
 
 ## Threat intelligence and SOAR
 
