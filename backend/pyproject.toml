@@ -32,6 +32,7 @@ netsentinel-bootstrap = "netsentinel_api.bootstrap:main"
 netsentinel-register-model = "netsentinel_api.register:main"
 netsentinel-sync-intel = "netsentinel_api.sync_intel:main"
 netsentinel-respond = "netsentinel_api.responder:main"
+netsentinel-import-vulns = "netsentinel_api.sync_vulns:main"
 
 [build-system]
 requires = ["hatchling"]
