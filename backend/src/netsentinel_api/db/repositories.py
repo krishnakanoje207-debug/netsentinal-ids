@@ -34,6 +34,11 @@ from netsentinel_api.services.shadow import LABELS, Scored
 #: Cap on a page of alerts. A SOC feed is unbounded; a response must not be.
 MAX_PAGE_SIZE = 200
 
+#: Cap on an export. Far above a page, because a report built from two hundred rows
+#: is not a report, and still bounded: an unbounded export is a request that can be
+#: made to read the whole table into memory by anyone who may read one alert.
+MAX_EXPORT_ROWS = 10_000
+
 
 class UserRepository:
     def __init__(self, session: Session) -> None:
@@ -69,6 +74,60 @@ class AlertRepository:
             .offset(offset)
         )
         return list(self._session.scalars(statement))
+
+    def for_export(
+        self,
+        *,
+        status: AlertStatus | None = None,
+        severity: Severity | None = None,
+        limit: int = MAX_EXPORT_ROWS,
+    ) -> list[dict]:
+        """The same feed, flattened for a file, with the score and the model that
+        produced it.
+
+        The score is joined in rather than left to the detail view, because a table
+        of alerts with no risk score beside them is the one thing this system exists
+        to add. Outer joins throughout: an alert from Suricata or Wazuh has no
+        detection and no model, and dropping those rows would produce an export
+        that disagrees with the feed it was taken from.
+
+        One row more than asked for is fetched, so the caller can tell a truncated
+        export from one that happened to fill the cap exactly.
+        """
+        statement = (
+            select(
+                Alert,
+                Detection.risk_score,
+                MLModel.name,
+                MLModel.version,
+            )
+            .outerjoin(Detection, Detection.detection_id == Alert.detection_id)
+            .outerjoin(MLModel, MLModel.model_id == Detection.model_id)
+        )
+        if status is not None:
+            statement = statement.where(Alert.status == status)
+        if severity is not None:
+            statement = statement.where(Alert.severity == severity)
+        statement = statement.order_by(Alert.created_at.desc()).limit(
+            min(limit, MAX_EXPORT_ROWS) + 1
+        )
+
+        return [
+            {
+                "alert_id": alert.alert_id,
+                "created_at": alert.created_at,
+                "severity": alert.severity.value,
+                "status": alert.status.value,
+                "source": alert.source,
+                "src_ip": alert.src_ip,
+                "dst_ip": alert.dst_ip,
+                "mitre_technique": alert.mitre_technique,
+                "risk_score": risk_score,
+                "model": f"{name} {version}" if name else None,
+                "incident_id": alert.incident_id,
+            }
+            for alert, risk_score, name, version in self._session.execute(statement)
+        ]
 
     def get(self, alert_id: int) -> Alert | None:
         return self._session.scalar(

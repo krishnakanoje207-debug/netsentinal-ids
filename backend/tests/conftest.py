@@ -134,13 +134,44 @@ class FakeAlertRepo:
     def __init__(self, alerts: list[Alert]) -> None:
         self.alerts = alerts
 
-    def list(self, *, status=None, severity=None, limit=50, offset=0):
+    def _filtered(self, status, severity) -> list[Alert]:
         rows = self.alerts
         if status is not None:
             rows = [a for a in rows if a.status == status]
         if severity is not None:
             rows = [a for a in rows if a.severity == severity]
-        return rows[offset : offset + limit]
+        return rows
+
+    def list(self, *, status=None, severity=None, limit=50, offset=0):
+        return self._filtered(status, severity)[offset : offset + limit]
+
+    def for_export(self, *, status=None, severity=None, limit=10_000) -> list[dict]:
+        """Flattened the way the real join flattens it, including the extra row.
+
+        The cap is applied as ``limit + 1`` here too, because the route reads the
+        length of what comes back to decide whether the export was truncated. A fake
+        that quietly returned exactly ``limit`` rows would make that branch
+        untestable and the truncation notice permanently false.
+        """
+        rows = []
+        for alert in self._filtered(status, severity)[: limit + 1]:
+            detection = alert.detection
+            rows.append(
+                {
+                    "alert_id": alert.alert_id,
+                    "created_at": alert.created_at,
+                    "severity": alert.severity.value,
+                    "status": alert.status.value,
+                    "source": alert.source,
+                    "src_ip": alert.src_ip,
+                    "dst_ip": alert.dst_ip,
+                    "mitre_technique": alert.mitre_technique,
+                    "risk_score": detection.risk_score if detection else None,
+                    "model": "tier-a-lgbm 1.0.0" if detection else None,
+                    "incident_id": alert.incident_id,
+                }
+            )
+        return rows
 
     def get(self, alert_id: int) -> Alert | None:
         return next((a for a in self.alerts if a.alert_id == alert_id), None)
@@ -287,6 +318,17 @@ def alert(detection: Detection) -> Alert:
 
 
 @pytest.fixture
+def alerts(alert: Alert) -> list[Alert]:
+    """The feed the repository serves.
+
+    A list rather than the single ``alert`` fixture, so a test that needs more than
+    one - an export hitting its cap, for instance - can append to it instead of
+    rebuilding the application.
+    """
+    return [alert]
+
+
+@pytest.fixture
 def asset() -> Asset:
     return Asset(asset_id=1, hostname="victim-web", ip_address="172.30.0.10",
                  os="alpine", criticality=Criticality.high)
@@ -369,7 +411,7 @@ def client(
     analyst: User,
     ml_engineer: User,
     administrator: User,
-    alert: Alert,
+    alerts: list[Alert],
     asset: Asset,
     vulnerabilities: list[Vulnerability],
     action: ResponseAction,
@@ -390,7 +432,7 @@ def client(
             administrator.username: administrator,
         }
     )
-    app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo([alert])
+    app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo(alerts)
     app.dependency_overrides[get_asset_repo] = lambda: FakeAssetRepo(
         [asset], vulnerabilities
     )

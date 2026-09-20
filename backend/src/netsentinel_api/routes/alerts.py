@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 
 from netsentinel_api.db.models import (
     Alert,
@@ -17,6 +19,7 @@ from netsentinel_api.db.models import (
     ResponseAction,
     Severity,
 )
+from netsentinel_api.db.repositories import MAX_EXPORT_ROWS
 from netsentinel_api.deps import (
     AlertRepoDep,
     AssetRepoDep,
@@ -42,6 +45,7 @@ from netsentinel_api.services.cases import (
     case_title,
     client_from,
 )
+from netsentinel_api.services.export import alerts_csv, filename
 from netsentinel_api.services.response import (
     AlreadyProposed,
     InvalidTarget,
@@ -90,6 +94,66 @@ def list_alerts(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Alert]:
     return alerts.list(status=status_filter, severity=severity, limit=limit, offset=offset)
+
+
+# Declared before "/{alert_id}", because a path parameter would otherwise match
+# "export" first and answer this request by failing to parse it as an integer.
+@router.get("/export", response_class=Response)
+def export_alerts(
+    alerts: AlertRepoDep,
+    session: SessionDep,
+    user: Annotated[object, Depends(require(ALERTS_READ))],
+    status_filter: Annotated[AlertStatus | None, Query(alias="status")] = None,
+    severity: Annotated[Severity | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_EXPORT_ROWS)] = MAX_EXPORT_ROWS,
+) -> Response:
+    """The feed as a CSV file, with the risk score and the model beside each row.
+
+    The filters are the feed's filters, so what comes out is what the analyst was
+    looking at. An export that silently differs from the screen it was taken from is
+    evidence nobody can reproduce.
+
+    ``alerts:read`` and nothing more. A separate export permission would be theatre:
+    anyone who may page through the feed can already collect it a page at a time,
+    and the only thing a second permission would add is the belief that they cannot.
+
+    The read is recorded. Every alert in the estate leaving in one file is worth a
+    row in the audit log for the same reason closing one as a false positive is -
+    both are questions asked afterwards. An audit entry is a record that a read
+    happened rather than a change to what was read, so this stays a GET.
+    """
+    rows = alerts.for_export(status=status_filter, severity=severity, limit=limit)
+
+    # The repository fetches one more than the cap precisely so this can tell a
+    # truncated export from one that filled the cap exactly.
+    truncated = len(rows) > limit
+    rows = rows[:limit]
+
+    session.add(
+        AuditLog(
+            user_id=user.user_id,  # type: ignore[attr-defined]
+            action="alerts.exported",
+            entity="alerts",
+            details={
+                "rows": len(rows),
+                "truncated": truncated,
+                "status": status_filter.value if status_filter else None,
+                "severity": severity.value if severity else None,
+            },
+        )
+    )
+
+    name = filename(datetime.now(timezone.utc), truncated)
+    return Response(
+        content=alerts_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            # For the dashboard, which warns before the file is even opened. The
+            # name carries it too, for whoever opens the file next week.
+            "X-Export-Truncated": "true" if truncated else "false",
+        },
+    )
 
 
 @router.get("/{alert_id}", response_model=AlertDetailOut)
