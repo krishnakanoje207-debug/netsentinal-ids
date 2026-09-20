@@ -16,6 +16,7 @@ import json
 import numpy as np
 import pytest
 
+from netsentinel_api.db.models import Alert, Detection
 from netsentinel_core.features.contract import FEATURE_DIM, TIER_A_FEATURES
 
 VERSION = "0.1.0-test"
@@ -142,10 +143,15 @@ def make_payload():
 
 
 class FakeSession:
-    """Collects what was added. Hands out identities on flush, like the real one."""
+    """Collects what was added. Hands out identities on flush, like the real one.
+
+    ``iocs`` is what an IoC lookup returns, so an enrichment test seeds the table by
+    assigning to it rather than by running a query.
+    """
 
     def __init__(self) -> None:
         self.added: list = []
+        self.iocs: list = []
         self.flushes = 0
         self.commits = 0
         self.closed = False
@@ -156,8 +162,13 @@ class FakeSession:
     def flush(self) -> None:
         self.flushes += 1
         for index, row in enumerate(self.added, start=1):
-            if getattr(row, "detection_id", None) is None and hasattr(row, "risk_score"):
+            if isinstance(row, Detection) and row.detection_id is None:
                 row.detection_id = index
+            if isinstance(row, Alert) and row.alert_id is None:
+                row.alert_id = index
+
+    def scalars(self, _statement):
+        return list(self.iocs)
 
     def commit(self) -> None:
         self.commits += 1

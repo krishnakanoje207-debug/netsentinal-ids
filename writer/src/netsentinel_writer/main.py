@@ -24,8 +24,10 @@ import logging
 import signal
 import sys
 
+from netsentinel_api.config import get_settings
 from netsentinel_api.db.models import MLModel, Sensor
 from netsentinel_api.db.session import get_sessionmaker
+from netsentinel_api.services.soar import forwarder_from
 from sqlalchemy import select
 
 from netsentinel_writer.consumer import Consumer, RedpandaConsumer
@@ -102,7 +104,11 @@ def main(argv: list[str] | None = None) -> int:
         sensor_id,
     )
 
-    writer = DetectionWriter(session_factory, explainer, sensor_id, model_id)
+    forwarder = forwarder_from(get_settings())
+    if forwarder is None:
+        logger.info("Keep is not configured; alerts will be stored but not forwarded")
+
+    writer = DetectionWriter(session_factory, explainer, sensor_id, model_id, forwarder)
     consumer: Consumer = RedpandaConsumer(
         args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
     )

@@ -9,7 +9,15 @@ from __future__ import annotations
 
 import pytest
 
-from netsentinel_api.db.models import Alert, AlertStatus, Detection, Severity
+from netsentinel_api.db.models import (
+    Alert,
+    AlertIoC,
+    AlertStatus,
+    Detection,
+    IoC,
+    IoCType,
+    Severity,
+)
 from netsentinel_core.features.contract import TIER_A_FEATURES
 from netsentinel_writer.consumer import ReplayConsumer
 from netsentinel_writer.writer import (
@@ -165,6 +173,92 @@ def test_a_flow_the_explaining_tier_did_not_score_is_refused(writer, session, ma
                                   "version": "0.1.0", "mode": "active"}]),
         )
     assert session.added == []
+
+
+# --- threat intelligence ---------------------------------------------------
+
+def test_an_alert_is_linked_to_the_indicator_it_touched(writer, session, make_payload):
+    session.iocs = [IoC(ioc_id=9, value="198.51.100.7", type=IoCType.ip, threat_level=3)]
+    writer.handle(session, make_payload())
+
+    link = _rows(session, AlertIoC)[0]
+    assert link.ioc_id == 9
+    assert link.alert_id == _rows(session, Alert)[0].alert_id
+    assert writer.stats.enriched == 1
+
+
+def test_a_high_threat_indicator_raises_the_severity(writer, session, make_payload):
+    session.iocs = [IoC(ioc_id=9, value="198.51.100.7", type=IoCType.ip, threat_level=1)]
+    writer.handle(session, make_payload(risk_score=0.72))
+
+    # medium on the score alone, high once intelligence backs it.
+    assert _rows(session, Alert)[0].severity is Severity.high
+
+
+def test_an_alert_matching_nothing_is_stored_unenriched(writer, session, make_payload):
+    writer.handle(session, make_payload())
+    assert _rows(session, AlertIoC) == []
+    assert writer.stats.enriched == 0
+
+
+def test_a_detection_without_an_alert_is_not_enriched(writer, session, make_payload):
+    """Enrichment describes an alert; a detection nobody was told about has none."""
+    session.iocs = [IoC(ioc_id=9, value="198.51.100.7", type=IoCType.ip, threat_level=1)]
+    writer.handle(session, make_payload(risk_score=0.6, is_alert=False))
+    assert _rows(session, AlertIoC) == []
+
+
+# --- the SOAR hand-off -----------------------------------------------------
+
+class RecordingForwarder:
+    def __init__(self, fails: bool = False) -> None:
+        self.sent: list = []
+        self.fails = fails
+
+    def send(self, alert, iocs):
+        if self.fails:
+            raise RuntimeError("Keep is down")
+        self.sent.append((alert, list(iocs)))
+
+
+def test_an_alert_is_forwarded_after_the_transaction(explainer, session, make_payload):
+    """Never inside it: a network round trip must not hold a row lock."""
+    forwarder = RecordingForwarder()
+    writer = DetectionWriter(lambda: session, explainer, SENSOR_ID, MODEL_ID, forwarder)
+
+    writer.run(ReplayConsumer([make_payload()]))
+    assert len(forwarder.sent) == 1
+    assert forwarder.sent[0][0] is _rows(session, Alert)[0]
+
+
+def test_a_stored_detection_without_an_alert_forwards_nothing(
+    explainer, session, make_payload
+):
+    forwarder = RecordingForwarder()
+    writer = DetectionWriter(lambda: session, explainer, SENSOR_ID, MODEL_ID, forwarder)
+
+    writer.run(ReplayConsumer([make_payload(risk_score=0.6, is_alert=False)]))
+    assert forwarder.sent == []
+
+
+def test_a_soar_outage_does_not_stop_the_writer(explainer, session, make_payload):
+    """The database is the evidence; Keep is the notification."""
+    writer = DetectionWriter(
+        lambda: session, explainer, SENSOR_ID, MODEL_ID, RecordingForwarder(fails=True)
+    )
+
+    stats = writer.run(ReplayConsumer([make_payload(), make_payload()]))
+    assert stats.alerts == 2
+    assert len(_rows(session, Alert)) == 2
+
+
+def test_an_alert_is_forwarded_once(explainer, session, make_payload):
+    """The queue is drained, not appended to, or every message resends the backlog."""
+    forwarder = RecordingForwarder()
+    writer = DetectionWriter(lambda: session, explainer, SENSOR_ID, MODEL_ID, forwarder)
+
+    writer.run(ReplayConsumer([make_payload(), make_payload()]))
+    assert len(forwarder.sent) == 2
 
 
 # --- the loop --------------------------------------------------------------

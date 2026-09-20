@@ -26,7 +26,13 @@ flow the writer stops rather than inventing an empty explanation.
 Delivery is at-least-once: the bus offset is committed after the database
 transaction, so a crash between them replays a message rather than losing it. A
 duplicate detection is visible and reconcilable; a missing one is evidence that was
-never collected. De-duplicating the resulting alerts is the SOAR layer's job.
+never collected. De-duplicating the resulting alerts is the SOAR layer's job, which is
+what the stable fingerprint in ``services.soar`` is for.
+
+An alert is enriched inside the transaction and forwarded outside it. Matching against
+the IoC table is a local query and belongs with the write; posting to Keep is a call to
+another process, and a network round trip inside an open transaction holds a row lock
+for as long as a third party feels like taking.
 """
 
 from __future__ import annotations
@@ -35,7 +41,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
-from netsentinel_api.db.models import Alert, AlertStatus, Detection, Severity
+from netsentinel_api.db.models import Alert, AlertStatus, Detection, IoC, Severity
+from netsentinel_api.services.intel import find, link
+from netsentinel_api.services.soar import Forwarder
 from netsentinel_core.features.contract import FEATURE_DIM
 from sqlalchemy.orm import Session
 
@@ -82,6 +90,7 @@ class WriteStats:
     messages: int = 0
     detections: int = 0
     alerts: int = 0
+    enriched: int = 0
     shadow: int = 0
     below_threshold: int = 0
 
@@ -90,6 +99,7 @@ class WriteStats:
             "messages": self.messages,
             "detections": self.detections,
             "alerts": self.alerts,
+            "enriched": self.enriched,
             "shadow": self.shadow,
             "below_threshold": self.below_threshold,
         }
@@ -104,11 +114,15 @@ class DetectionWriter:
         explainer: Explainer,
         sensor_id: int,
         model_id: int,
+        forwarder: Forwarder | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._explainer = explainer
         self._sensor_id = sensor_id
         self._model_id = model_id
+        self._forwarder = forwarder
+        # Alerts raised by the message in flight, forwarded once it is committed.
+        self._to_forward: list[tuple[Alert, list[IoC]]] = []
         self.stats = WriteStats()
 
     def handle(self, session: Session, payload: Mapping[str, Any]) -> Detection | None:
@@ -178,19 +192,37 @@ class DetectionWriter:
         if verdict.get("is_alert") and not shadow:
             # Identities the alert needs, so it is flushed before the alert is built.
             session.flush()
-            session.add(
-                Alert(
-                    detection_id=detection.detection_id,
-                    source=str(flow.get("sensor") or "early_flow"),
-                    severity=severity_for(risk_score),
-                    status=AlertStatus.new,
-                    src_ip=flow.get("src_ip"),
-                    dst_ip=flow.get("dst_ip"),
-                )
+            alert = Alert(
+                detection_id=detection.detection_id,
+                source=str(flow.get("sensor") or "early_flow"),
+                severity=severity_for(risk_score),
+                status=AlertStatus.new,
+                src_ip=flow.get("src_ip"),
+                dst_ip=flow.get("dst_ip"),
             )
+            session.add(alert)
+            session.flush()
+            matches = self._enrich(session, alert)
             self.stats.alerts += 1
+            self.stats.enriched += 1 if matches else 0
+            self._to_forward.append((alert, matches))
 
         return detection
+
+    def _enrich(self, session: Session, alert: Alert) -> list[IoC]:
+        """Link the alert to any indicator it touches, escalating if one is high threat."""
+        return link(session, alert, find(session, alert))
+
+    def _forward(self) -> None:
+        """Hand committed alerts to the SOAR layer. Never fatal."""
+        pending, self._to_forward = self._to_forward, []
+        if self._forwarder is None:
+            return
+        for alert, iocs in pending:
+            try:
+                self._forwarder.send(alert, iocs)
+            except Exception:  # noqa: BLE001 - a SOAR outage is not a writer outage
+                logger.exception("could not forward alert %s", alert.alert_id)
 
     def run(self, consumer: Consumer) -> WriteStats:
         """Consume until the source is exhausted or closed."""
@@ -201,4 +233,5 @@ class DetectionWriter:
                 session.commit()
             # Only now. See the module docstring on at-least-once delivery.
             consumer.commit()
+            self._forward()
         return self.stats
