@@ -12,7 +12,7 @@ cloud VM.
 ```bash
 npm install
 npm run dev          # http://localhost:5173, proxying /api to 127.0.0.1:8000
-npm test             # 63 tests
+npm test             # 70 tests
 npm run build        # bundle for production
 npm run lint         # oxlint
 ```
@@ -33,7 +33,7 @@ completions, without type syntax in the way. The tests are the real safety net.
 |---|---|
 | `api/` | Client, plus JSDoc typedefs mirroring the backend schemas |
 | `auth/` | Session context and the login form |
-| `alerts/` | Feed, detail view, SHAP chart |
+| `alerts/` | Feed, detail view, SHAP chart, CSV export |
 | `actions/` | The approval queue |
 | `models/` | The registry, its shadow evidence and the promote control |
 | `stream/` | WebSocket alert feed with backoff |
@@ -75,6 +75,12 @@ and is not.
 disabled control with no reason sends an ML engineer to the logs to find out whether
 to keep triaging or to try a different candidate.
 
+**An export must match the screen it came from.** The export button sends the
+filters the feed is currently showing, and warns on screen when the server capped the
+rows — while the analyst is still looking at the list they thought they had exported.
+The file is saved under the server's filename rather than the browser's, because that
+name is where the truncation is recorded once the file is on disk.
+
 **A stopped feed must look stopped.** The stream indicator shows connecting, live or
 disconnected, because an analyst watching a feed that has silently died will read the
 absence of alerts as calm. Reconnection backs off to 30s, since a tunnel drop is
@@ -84,7 +90,7 @@ routine and a tight retry loop would be a self-inflicted denial of service.
 
 The document specifies **TypeScript** "for a type-safe UI"; this is JavaScript. Typed
 source is only an asset to someone who can read and maintain it, and this codebase has to
-be defended by its author. The 63 tests cover the behaviour that types would have caught
+be defended by its author. The 70 tests cover the behaviour that types would have caught
 at the boundaries - error mapping, permission gating, the undecided-vs-benign rule - and
 they are language-agnostic. **M2 §4 needs updating to match.**
 

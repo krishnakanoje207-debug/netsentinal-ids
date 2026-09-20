@@ -55,7 +55,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 605 tests, no database or network needed
+uv run pytest            # 630 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -187,6 +187,40 @@ A refusal comes back as a 422 carrying the sentence that says what is missing, a
 the dashboard prints it under the disabled button — the engineer needs to know
 whether to keep triaging or to try a different candidate, and a greyed-out control
 answers neither.
+
+## Taking the feed away
+
+```bash
+curl -H "Authorization: Bearer $TOKEN"   "http://127.0.0.1:8000/api/v1/alerts/export?severity=high" -OJ
+```
+
+`GET /alerts/export` is the feed as a CSV, with the risk score and the model that
+produced it beside each row — the column a table of alerts is worthless without, and
+the one thing an ML IDS adds over a rule engine. It takes the feed's own filters, so
+what comes out is what the analyst was looking at; an export that silently differs
+from the screen it was taken from is evidence nobody can reproduce.
+
+Two things the file has to be honest about. It is capped at 10,000 rows, and a
+truncated export says so in a response header **and in its own filename** — the
+header is gone by the time somebody opens the file next week, and a partial export
+that does not admit it misleads by omission. And a missing value is an empty cell
+rather than a dash or a zero: `--` is a string to every tool that opens a CSV, and a
+risk score of 0.0 is a real measurement that must not read as an absent one.
+
+The export is also the one place a spreadsheet becomes an interpreter. A cell
+beginning `=`, `+`, `-`, `@` or a control character is a formula to Excel and
+LibreOffice, and almost everything interesting in an alert — the address, the
+technique, the indicator — was written by whoever sent the traffic. Every field is
+prefixed with an apostrophe on the way out if it starts with one of those. Prefixing
+rather than stripping, because an indicator value that lost its leading character is
+evidence that has been quietly altered. Unlike the Copilot's prompt injection, the
+worst case here is not a misleading paragraph: it is code running on the analyst's
+laptop.
+
+`alerts:read` and nothing more. A separate export permission would be theatre —
+anyone who may page through the feed can already collect it a page at a time. The
+read *is* recorded, though: every alert in the estate leaving in one file is worth an
+audit row for the same reason closing one as a false positive is.
 
 ## Threat intelligence and SOAR
 
