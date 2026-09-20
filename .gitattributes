@@ -1,0 +1,10 @@
+# One line ending across the repo: LF. Without this, a Windows checkout and a
+# Linux VM disagree on every file and diffs become unreadable.
+* text=auto eol=lf
+
+# Binary artefacts git must not touch.
+*.pdf binary
+*.png binary
+*.docx binary
+*.onnx binary
+*.pcap binary
