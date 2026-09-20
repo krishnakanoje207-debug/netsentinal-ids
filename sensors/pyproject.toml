@@ -1,0 +1,30 @@
+[project]
+name = "netsentinel-sensor"
+version = "0.1.0"
+description = "Live capture agent: packets to scored flows"
+requires-python = "==3.11.*"
+# No lightgbm and no shap. The sensor scores through ONNX and publishes the feature
+# vector; the writer downstream computes the explanation, because TreeSHAP needs the tree
+# structure that an ONNX graph does not carry.
+dependencies = [
+    "netsentinel-core",
+    "netsentinel-scoring",
+]
+
+[project.optional-dependencies]
+# Only needed to publish for real; --dry-run works without it.
+bus = ["confluent-kafka>=2.5"]
+
+[project.scripts]
+netsentinel-sensor = "netsentinel_sensor.agent:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netsentinel_sensor"]
+
+[tool.uv.sources]
+netsentinel-core = { workspace = true }
+netsentinel-scoring = { workspace = true }
