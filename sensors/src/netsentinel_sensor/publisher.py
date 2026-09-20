@@ -17,10 +17,9 @@ import json
 import logging
 from typing import Any, Protocol
 
-logger = logging.getLogger(__name__)
+from netsentinel_core.bus import FLOW_TOPIC
 
-#: One topic, keyed by flow id, so a flow's records stay in order within a partition.
-FLOW_TOPIC = "netsentinel.flows"
+logger = logging.getLogger(__name__)
 
 
 class Publisher(Protocol):
