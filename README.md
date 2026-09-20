@@ -15,6 +15,7 @@ than language conventions — each one ends up on a different node.
 | [`scoring/`](scoring) | cloud VM | Model loader and fusion scorer | built |
 | [`writer/`](writer) | cloud VM | Bus consumer: explained detections into PostgreSQL | built |
 | [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
+| [`copilot/`](copilot) | laptop GPU | Read-only LLM summaries, schema-checked | built |
 | [`frontend/`](frontend) | browser | React SOC dashboard | D10 |
 | [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | D3/D8 |
 | [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | D2 onwards |
@@ -282,6 +283,34 @@ asset is a 404 rather than an empty list, because an unscanned machine must not 
 as a clean one. Reading the estate needs the `assets:read` permission, which analysts
 and administrators are seeded with — re-run `netsentinel-bootstrap` to grant it on a
 database created before this change.
+
+## The Copilot
+
+```bash
+ollama pull llama3.2:3b
+uv run netsentinel-copilot --alert 100
+```
+
+A read-only assistant: it turns one alert into a paragraph an analyst can skim, and
+it can do nothing else. It holds no credentials, calls no tools, and has no path to
+the response gate — so the worst a successful prompt injection achieves is a
+misleading paragraph sitting next to evidence the analyst can read for themselves.
+
+That matters because almost everything interesting in an alert was written by whoever
+sent the traffic: the hostname, the URI, the JA4 string, the indicator value. Any of
+them can contain a sentence addressed to a language model. The defence is layered —
+untrusted text goes after the instructions in a fenced block it cannot close, control
+characters and newlines are collapsed so a value cannot fake a turn, and every field
+is bounded — but the layer the design actually rests on is the last one: **the reply
+is validated against a Pydantic schema, and output that is not a summary never reaches
+an analyst**. A rejected reply is stored with `schema_valid = false` rather than
+discarded, because a run of invalid output says something about the model, the prompt,
+or somebody feeding the sensor sentences addressed to it.
+
+The model runs locally, on the laptop's GPU. A prompt containing an alert is an
+attacker's traffic described in detail against named hosts on a real estate, which is
+not something to post to a third party — and an assistant that needs an internet
+connection is one that stops working during the incident it was built for.
 
 ## Design decisions that deviate from M2 §4
 
