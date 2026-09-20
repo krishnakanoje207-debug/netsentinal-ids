@@ -124,6 +124,13 @@ export const api = {
   /** @returns {Promise<import('./types').ResponseAction[]>} */
   pendingActions: (token) => request('/actions/pending', { token }),
 
+  /** @returns {Promise<import('./types').MLModel[]>} */
+  models: (token, since = '7d') => request(`/models?since=${encodeURIComponent(since)}`, { token }),
+
+  /** @returns {Promise<import('./types').MLModel>} */
+  promoteModel: (token, modelId, since) =>
+    request(`/models/${modelId}/promote`, { token, method: 'POST', json: { since } }),
+
   /** @returns {Promise<import('./types').ResponseAction>} */
   decide: (token, actionId, decision, comment) =>
     request(`/actions/${actionId}/decision`, {

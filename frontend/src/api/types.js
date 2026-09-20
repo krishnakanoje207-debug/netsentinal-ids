@@ -103,6 +103,54 @@
  * @property {Approval | null} approval
  */
 
+/** @typedef {'A' | 'B' | 'C' | 'D'} ModelTier */
+
+/** @typedef {'shadow' | 'active' | 'retired'} ModelMode */
+
+/**
+ * What one model did over the report window.
+ *
+ * Not ground truth, and the UI must not present it as such. These are counts of
+ * agreement with analyst verdicts on the flows that were triaged - a biased sample,
+ * because nobody labels the traffic nothing fired on. `unlabelled` is rendered beside
+ * `precision` for that reason.
+ *
+ * A null metric means nothing could be computed for it, which is not the same as zero.
+ *
+ * @typedef {object} ModelEvidence
+ * @property {number} scored verdicts recorded in the window
+ * @property {number} labelled of those, ones an analyst closed a verdict on
+ * @property {number} unlabelled
+ * @property {number} true_positives
+ * @property {number} false_positives
+ * @property {number} false_negatives
+ * @property {number | null} precision
+ * @property {number | null} recall
+ * @property {number | null} f1
+ * @property {number | null} average_precision how candidates are compared
+ * @property {number | null} false_positives_per_day
+ * @property {number} days span of shadow traffic observed in the window
+ */
+
+/**
+ * A registry row with the evidence for and against promoting it.
+ *
+ * `blocked_by` is a sentence rather than a boolean, so the page can say what is
+ * missing instead of only disabling a button.
+ *
+ * @typedef {object} MLModel
+ * @property {number} model_id
+ * @property {string} name
+ * @property {ModelTier} tier
+ * @property {string} version
+ * @property {number} threshold
+ * @property {ModelMode} mode
+ * @property {number | null} pr_auc from the training run, not from live traffic
+ * @property {string | null} deployed_at
+ * @property {ModelEvidence} evidence
+ * @property {string | null} blocked_by
+ */
+
 /**
  * @typedef {object} Health
  * @property {string} status
@@ -120,5 +168,6 @@ export const PERMISSIONS = {
   alertsRead: 'alerts:read',
   alertsTriage: 'alerts:triage',
   approvalsDecide: 'approvals:decide',
+  modelsRead: 'models:read',
   modelsDeploy: 'models:deploy',
 }

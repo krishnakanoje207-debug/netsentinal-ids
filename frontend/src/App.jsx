@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { ApiError } from './api/client'
+import { PERMISSIONS } from './api/types'
 import { ApprovalQueue } from './actions/ApprovalQueue'
 import { AlertDetail } from './alerts/AlertDetail'
 import { AlertFeed } from './alerts/AlertFeed'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
+import { ModelsPage } from './models/ModelsPage'
 
 export function createQueryClient() {
   return new QueryClient({
@@ -46,13 +48,14 @@ function NavLink({ to, children }) {
 }
 
 function Shell({ children }) {
-  const { user, signOut } = useAuth()
+  const { user, signOut, can } = useAuth()
   return (
     <div className="min-h-full">
       <nav className="flex items-center gap-2 border-b border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2">
         <span className="mr-3 text-sm font-semibold">NetSentinel-AI</span>
         <NavLink to="/">Alerts</NavLink>
         <NavLink to="/approvals">Approvals</NavLink>
+        {can(PERMISSIONS.modelsRead) && <NavLink to="/models">Models</NavLink>}
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--color-ink-dim)]">
           <span>
             {user?.username}
@@ -85,6 +88,7 @@ function Authenticated() {
         />
         <Route path="/alerts/:alertId" element={<AlertDetail />} />
         <Route path="/approvals" element={<ApprovalQueue />} />
+        <Route path="/models" element={<ModelsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>
