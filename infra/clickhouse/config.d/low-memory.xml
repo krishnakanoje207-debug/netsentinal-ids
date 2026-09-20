@@ -1,0 +1,14 @@
+<!-- ClickHouse assumes it owns the machine. On a 16 GB VM shared with Wazuh, the
+     sensors and the bus, that assumption ends with the OOM killer picking a victim.
+     These caps are what keep it a good neighbour. -->
+<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>0.12</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>268435456</mark_cache_size>
+    <!-- Background merges are the usual cause of a memory spike here. -->
+    <background_pool_size>4</background_pool_size>
+    <logger>
+        <level>warning</level>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+</clickhouse>

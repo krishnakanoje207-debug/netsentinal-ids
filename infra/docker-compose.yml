@@ -1,0 +1,246 @@
+# NetSentinel-AI infrastructure.
+#
+# Profiles exist because of the 16 GB VM, not for elegance. Wazuh alone wants 4-5 GB,
+# so the rest of the stack has to be brought up in groups and the memory caps here are
+# deliberate: without them one runaway container takes the whole box down, and on a
+# single-VM deployment that means losing the sensors too.
+#
+#   docker compose --profile storage up -d     # PostgreSQL + ClickHouse
+#   docker compose --profile bus up -d         # Redpanda
+#   docker compose --profile ingest up -d      # Vector
+#   docker compose --profile lab up -d         # the victim/attacker lab
+#   docker compose --profile sensors up -d     # Suricata + Zeek on the lab bridge
+#   docker compose --profile dashboards up -d  # Grafana
+#
+# Rough budget: storage 2.5 GB, bus 1 GB, ingest 0.25 GB, sensors 2 GB, lab 0.5 GB,
+# dashboards 0.25 GB. About 6.5 GB, leaving room for Wazuh and the OS.
+
+name: netsentinel
+
+networks:
+  # A fixed bridge name so the sensors can be pointed at a predictable interface.
+  # Docker's default name is br-<hash>, which changes whenever the network is
+  # recreated and would silently leave Suricata sniffing nothing.
+  lab:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: netsentinel-lab
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  backplane:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  clickhouse-data:
+  redpanda-data:
+  grafana-data:
+  suricata-logs:
+  zeek-logs:
+
+services:
+  # --- storage --------------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: [storage]
+    environment:
+      POSTGRES_DB: netsentinel
+      POSTGRES_USER: ${POSTGRES_USER:-netsentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Bound to localhost only. Everything reaches this box through the SSH tunnel;
+    # publishing on 0.0.0.0 would expose it to the internet.
+    ports:
+      - "127.0.0.1:5432:5432"
+    mem_limit: 512m
+    networks: [backplane]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netsentinel} -d netsentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    profiles: [storage]
+    environment:
+      CLICKHOUSE_DB: netsentinel
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      # Generated from the feature contract; see core/features/clickhouse.py.
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    mem_limit: 2g
+    # ClickHouse opens a lot of files and the default container limit is too low.
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks: [backplane]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- bus ------------------------------------------------------------------
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    profiles: [bus]
+    command:
+      - redpanda
+      - start
+      # Sized for a shared 16 GB box: one core, a hard 1 GB cap, and
+      # --overprovisioned so it does not assume it owns the CPU.
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    ports:
+      - "127.0.0.1:9092:9092"
+    mem_limit: 1200m
+    networks: [backplane]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  # --- ingest ---------------------------------------------------------------
+
+  vector:
+    image: timberio/vector:0.41.1-alpine
+    profiles: [ingest]
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - suricata-logs:/var/log/suricata:ro
+      - zeek-logs:/var/log/zeek:ro
+    mem_limit: 256m
+    networks: [backplane]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- sensors --------------------------------------------------------------
+
+  suricata:
+    image: jasonish/suricata:7.0
+    profiles: [sensors]
+    # Host networking so it can see the lab bridge. A container on the lab network
+    # would only see traffic addressed to itself.
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
+    command: ["-i", "netsentinel-lab", "--set", "vars.address-groups.HOME_NET=[172.30.0.0/24]"]
+    volumes:
+      - suricata-logs:/var/log/suricata
+      - ./suricata/rules:/var/lib/suricata/rules
+    mem_limit: 1g
+    restart: unless-stopped
+
+  zeek:
+    image: zeek/zeek:6.0
+    profiles: [sensors]
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    command: ["zeek", "-i", "netsentinel-lab", "-C", "LogAscii::use_json=T"]
+    working_dir: /var/log/zeek
+    volumes:
+      - zeek-logs:/var/log/zeek
+    mem_limit: 1g
+    restart: unless-stopped
+
+  # --- the lab --------------------------------------------------------------
+
+  victim-web:
+    image: nginx:1.27-alpine
+    profiles: [lab]
+    networks:
+      lab:
+        ipv4_address: 172.30.0.10
+    mem_limit: 64m
+    restart: unless-stopped
+
+  victim-ssh:
+    image: linuxserver/openssh-server:9.7_p1-r4-ls171
+    profiles: [lab]
+    environment:
+      # A weak password on purpose: this is the brute-force target for the D14
+      # hydra run. It is reachable only from the lab bridge.
+      USER_NAME: labuser
+      USER_PASSWORD: password123
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    networks:
+      lab:
+        ipv4_address: 172.30.0.11
+    mem_limit: 128m
+    restart: unless-stopped
+
+  benign-traffic:
+    image: alpine:3.20
+    profiles: [lab]
+    # Steady, unremarkable traffic. Without it the models learn that "any traffic at
+    # all" means an attack, which is the classic way a lab-trained IDS fails.
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl >/dev/null 2>&1
+        while true; do
+          curl -s -o /dev/null http://172.30.0.10/ || true
+          sleep $$(( (RANDOM % 5) + 2 ))
+        done
+    networks: [lab]
+    mem_limit: 64m
+    restart: unless-stopped
+
+  attacker:
+    image: instrumentisto/nmap:7.95
+    profiles: [lab]
+    # Idles until driven by hand: docker compose exec attacker nmap -sS 172.30.0.10
+    entrypoint: ["sleep", "infinity"]
+    networks:
+      lab:
+        ipv4_address: 172.30.0.100
+    mem_limit: 128m
+    restart: unless-stopped
+
+  # --- dashboards -----------------------------------------------------------
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: [dashboards]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    mem_limit: 256m
+    networks: [backplane]
+    restart: unless-stopped

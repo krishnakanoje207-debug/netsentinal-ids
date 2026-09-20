@@ -1,0 +1,163 @@
+# Vector: Suricata and Zeek logs into ClickHouse.
+#
+# Vector rather than Filebeat or Logstash because it keeps its state in a small disk
+# buffer and idles at tens of megabytes. On this VM that difference decides whether the
+# sensors and the bus both fit.
+#
+# Writing straight to ClickHouse rather than through Redpanda. The bus earns its place
+# when a consumer can fall behind a producer; a log tail into a columnar store is not
+# that, and the extra hop would be a second thing to debug at 2am. The scored-flow
+# stream from the extractor does go through Redpanda, where replay actually matters.
+#
+# Validate after any edit, on the VM:
+#   docker compose run --rm --entrypoint vector vector validate \
+#     --no-environment /etc/vector/vector.yaml
+
+data_dir: /var/lib/vector
+
+api:
+  enabled: false
+
+sources:
+  suricata_eve:
+    type: file
+    include:
+      - /var/log/suricata/eve.json
+    # Suricata rotates eve.json; without this Vector keeps reading a deleted inode.
+    ignore_older_secs: 600
+    read_from: beginning
+
+  zeek_logs:
+    type: file
+    include:
+      - /var/log/zeek/*.log
+    ignore_older_secs: 600
+    read_from: beginning
+
+transforms:
+  # Parse first, decide later. Only genuine parse failures are rerouted as dropped.
+  suricata_parsed:
+    type: remap
+    inputs: [suricata_eve]
+    drop_on_error: true
+    reroute_dropped: true
+    source: |
+      parsed = parse_json!(string!(.message))
+      parsed.event_type = to_string(parsed.event_type) ?? "unknown"
+      . = parsed
+
+  # A filter, not an abort inside the remap. Suricata writes far more flow and stats
+  # records than alerts, and aborting on them would reroute every one into the dropped
+  # sink - filling the disk with events that were never errors.
+  suricata_alerts_only:
+    type: filter
+    inputs: [suricata_parsed]
+    condition: '.event_type == "alert"'
+
+  suricata_shaped:
+    type: remap
+    inputs: [suricata_alerts_only]
+    drop_on_error: true
+    reroute_dropped: true
+    source: |
+      # Built explicitly rather than by deletion; ClickHouse rejects unknown fields and
+      # Suricata adds new ones between releases.
+      . = {
+        "ts": to_timestamp!(.timestamp),
+        "event_type": .event_type,
+        "signature_id": to_int(.alert.signature_id) ?? 0,
+        "signature": to_string(.alert.signature) ?? "",
+        "severity": to_int(.alert.severity) ?? 3,
+        "src_ip": to_string(.src_ip) ?? "0.0.0.0",
+        "dst_ip": to_string(.dest_ip) ?? "0.0.0.0",
+        "flow_id": to_string(.flow_id) ?? "",
+        "raw": encode_json(.)
+      }
+
+  zeek_shaped:
+    type: remap
+    inputs: [zeek_logs]
+    drop_on_error: true
+    reroute_dropped: true
+    source: |
+      # The log type is the filename: conn.log, dns.log, http.log, ssl.log. Captured
+      # before the event is replaced, because the file source puts it in `.file` and
+      # reassigning `.` would discard it.
+      source_file = to_string(.file) ?? "unknown"
+      log_type = replace(source_file, r'^.*/', "")
+      log_type = replace(log_type, r'\.log$', "")
+
+      parsed = object!(parse_json!(string!(.message)))
+
+      # Anything outside the fixed columns goes into the fields map, so a new Zeek field
+      # never needs a migration.
+      fixed = ["ts", "uid", "id.orig_h", "id.resp_h"]
+      fields = {}
+      for_each(parsed) -> |key, value| {
+        if !includes(fixed, key) {
+          fields = set!(fields, [key], to_string(value) ?? "")
+        }
+      }
+
+      . = {
+        "ts": to_timestamp(to_float(parsed.ts) ?? 0.0, unit: "seconds") ?? now(),
+        "log_type": log_type,
+        "uid": to_string(parsed.uid) ?? "",
+        "id_orig_h": to_string(get!(value: parsed, path: ["id.orig_h"])) ?? "0.0.0.0",
+        "id_resp_h": to_string(get!(value: parsed, path: ["id.resp_h"])) ?? "0.0.0.0",
+        "fields": fields
+      }
+
+sinks:
+  clickhouse_suricata:
+    type: clickhouse
+    inputs: [suricata_shaped]
+    endpoint: http://clickhouse:8123
+    database: netsentinel
+    table: suricata_events
+    auth:
+      strategy: basic
+      user: ${CLICKHOUSE_USER}
+      password: ${CLICKHOUSE_PASSWORD}
+    # Batched so a port scan does not become one HTTP request per alert. ClickHouse
+    # strongly prefers few large inserts to many small ones.
+    batch:
+      max_events: 5000
+      timeout_secs: 5
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
+    skip_unknown_fields: false
+
+  clickhouse_zeek:
+    type: clickhouse
+    inputs: [zeek_shaped]
+    endpoint: http://clickhouse:8123
+    database: netsentinel
+    table: zeek_logs
+    auth:
+      strategy: basic
+      user: ${CLICKHOUSE_USER}
+      password: ${CLICKHOUSE_PASSWORD}
+    batch:
+      max_events: 5000
+      timeout_secs: 5
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
+    skip_unknown_fields: false
+
+  # Lines that genuinely failed to parse. Kept rather than discarded: a steady trickle
+  # here means a sensor changed its output format, which is worth knowing before a model
+  # notices.
+  parse_failures:
+    type: file
+    inputs:
+      - suricata_parsed.dropped
+      - suricata_shaped.dropped
+      - zeek_shaped.dropped
+    path: /var/lib/vector/parse-failures-%Y-%m-%d.log
+    encoding:
+      codec: json
