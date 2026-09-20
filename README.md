@@ -55,7 +55,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 630 tests, no database or network needed
+uv run pytest            # 661 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -188,6 +188,31 @@ the dashboard prints it under the disabled button — the engineer needs to know
 whether to keep triaging or to try a different candidate, and a greyed-out control
 answers neither.
 
+## Searching the feed
+
+```bash
+GET /alerts?q=203.0.113.9        # this host, either end of the alert
+GET /alerts?q=10.0.0.0/8         # anything on that network
+GET /alerts?q=T1046              # this MITRE technique
+```
+
+One box, because the two things anybody searches an alert feed for are an address
+and a technique, and asking which before typing it is a question the system can
+answer for itself.
+
+`src_ip` and `dst_ip` are `INET` columns rather than text, so a network is matched by
+containment in PostgreSQL (`<<=`) instead of by comparing strings. That is the
+difference between a search that understands `10.0.0.0/8` and one that finds it only
+where somebody typed it into a hostname. It is also why prefix matching on text is
+not offered: `203.0.11` matching both `203.0.113.9` and `203.0.110.0` looks like a
+feature until the host you were chasing is the one missing from the results.
+
+Either end matches — which column an address landed in is an accident of who opened
+the connection. Anything that is neither an address, a network nor a technique is a
+422 naming what would have worked, because a search box that silently returns nothing
+teaches an analyst that there is nothing there. The dashboard searches on submit
+rather than on each keystroke, since half a typed address is not an address.
+
 ## Taking the feed away
 
 ```bash
@@ -196,9 +221,10 @@ curl -H "Authorization: Bearer $TOKEN"   "http://127.0.0.1:8000/api/v1/alerts/ex
 
 `GET /alerts/export` is the feed as a CSV, with the risk score and the model that
 produced it beside each row — the column a table of alerts is worthless without, and
-the one thing an ML IDS adds over a rule engine. It takes the feed's own filters, so
-what comes out is what the analyst was looking at; an export that silently differs
-from the screen it was taken from is evidence nobody can reproduce.
+the one thing an ML IDS adds over a rule engine. It takes the feed's own filters and its
+search, so what comes out is what the analyst was looking at; an export that silently
+differs from the screen it was taken from is evidence nobody can reproduce. The
+search is recorded in the audit row too — "1,412 rows" answers nothing on its own.
 
 Two things the file has to be honest about. It is capped at 10,000 rows, and a
 truncated export says so in a response header **and in its own filename** — the
