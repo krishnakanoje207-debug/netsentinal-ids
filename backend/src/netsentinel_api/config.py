@@ -59,6 +59,25 @@ class Settings(BaseSettings):
     keep_url: str | None = None
     keep_api_key: SecretStr | None = None
 
+    # The enforcement points. Also optional, and for a stronger reason than the two
+    # above: with neither configured the approval queue still works and nothing on
+    # the network can change, which is the safe way for a deployment to be
+    # incomplete.
+    crowdsec_url: str | None = None
+    crowdsec_machine_id: str | None = None
+    crowdsec_password: SecretStr | None = None
+    # Bounded by default so a mistaken block expires on its own. See
+    # services.enforcement.DEFAULT_BAN_DURATION.
+    crowdsec_ban_duration: str = "4h"
+    crowdsec_verify_tls: bool = True
+    wazuh_url: str | None = None
+    wazuh_user: str | None = None
+    wazuh_password: SecretStr | None = None
+    # The Wazuh API serves a self-signed certificate out of the box. Same position
+    # as MISP: install the certificate, do not stop checking it - this channel
+    # isolates hosts and disables accounts.
+    wazuh_verify_tls: bool = True
+
     @field_validator("jwt_secret")
     @classmethod
     def _reject_weak_secret(cls, value: SecretStr) -> SecretStr:
