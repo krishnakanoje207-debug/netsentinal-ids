@@ -16,6 +16,7 @@ from netsentinel_api.db.models import (
     ActionType,
     AlertStatus,
     ApprovalDecision,
+    IncidentStatus,
     Severity,
 )
 
@@ -89,6 +90,33 @@ class AlertDetailOut(AlertOut):
 
 class AlertStatusUpdate(BaseModel):
     status: AlertStatus
+
+
+class EscalateIn(BaseModel):
+    # Both optional: the title falls back to one generated from the alert, and an
+    # analyst escalating a clear-cut finding has nothing to add that the evidence
+    # does not already say.
+    title: str | None = Field(default=None, max_length=255)
+    summary: str | None = Field(default=None, max_length=4000)
+
+
+class IncidentOut(BaseModel):
+    """An incident as the escalation endpoint returns it.
+
+    Two nullable ids, for different reasons. ``incident_id`` and ``opened_at`` are
+    unset until the row reaches the database, as with ``ApprovalOut``.
+    ``iris_case_id`` stays null when IRIS is unconfigured or could not be reached,
+    which is a state the dashboard has to be able to show rather than an error.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    incident_id: int | None
+    iris_case_id: int | None
+    title: str
+    status: IncidentStatus
+    owner_id: int | None
+    opened_at: datetime | None
 
 
 class ApprovalOut(BaseModel):

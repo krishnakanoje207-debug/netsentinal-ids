@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from netsentinel_api.db.models import ActionStatus, ActionType, AlertStatus
+from netsentinel_api.routes.alerts import case_client
+from netsentinel_api.services.cases import CaseError
 from netsentinel_core.features.contract import FEATURE_DIM
 
 V1 = "/api/v1"
@@ -179,6 +181,104 @@ def test_an_ml_engineer_cannot_triage(client, engineer_header):
     )
     assert response.status_code == 403
     assert "alerts:triage" in response.json()["detail"]
+
+
+# --- escalation ------------------------------------------------------------
+
+class _FailingIris:
+    """An IRIS that cannot be reached, which is the interesting case."""
+
+    def create_case(self, alert, title, description):
+        raise CaseError("connection refused")
+
+
+class _RecordingIris:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def create_case(self, alert, title, description):
+        self.calls.append((title, description))
+        return 4242
+
+
+def _with_iris(client, iris):
+    client.app.dependency_overrides[case_client] = lambda: iris
+    return iris
+
+
+def test_escalating_opens_an_incident_and_a_case(client, auth_header, alert, session):
+    iris = _with_iris(client, _RecordingIris())
+    response = client.post(
+        f"{V1}/alerts/100/escalate", json={"summary": "second host this week"},
+        headers=auth_header,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["iris_case_id"] == 4242
+    assert body["owner_id"] == 1
+    assert body["status"] == "open"
+
+    assert alert.status is AlertStatus.escalated
+    assert alert.incident_id == body["incident_id"]
+
+    # The analyst's note and the model's evidence both reach the case.
+    title, description = iris.calls[0]
+    assert title == body["title"]
+    assert description.startswith("second host this week")
+    assert "Risk score: 0.93" in description
+
+    entry = session.audit_entries()[-1]
+    assert entry.action == "alert.escalated"
+    assert entry.details["iris_case_id"] == 4242
+
+
+def test_a_given_title_beats_the_generated_one(client, auth_header):
+    _with_iris(client, _RecordingIris())
+    response = client.post(
+        f"{V1}/alerts/100/escalate", json={"title": "Recon from 203.0.113.9"},
+        headers=auth_header,
+    )
+    assert response.json()["title"] == "Recon from 203.0.113.9"
+
+
+def test_an_unreachable_iris_still_escalates(client, auth_header, alert, session):
+    """The database is the evidence; IRIS is where humans work the case."""
+    _with_iris(client, _FailingIris())
+    response = client.post(f"{V1}/alerts/100/escalate", json={}, headers=auth_header)
+
+    assert response.status_code == 201
+    assert response.json()["iris_case_id"] is None
+    assert response.json()["incident_id"] is not None
+    assert alert.status is AlertStatus.escalated
+    assert session.audit_entries()[-1].action == "alert.escalated"
+
+
+def test_an_unconfigured_iris_still_escalates(client, auth_header, alert):
+    """No override and no settings: client_from returns None and nothing breaks."""
+    response = client.post(f"{V1}/alerts/100/escalate", json={}, headers=auth_header)
+    assert response.status_code == 201
+    assert response.json()["iris_case_id"] is None
+    assert alert.status is AlertStatus.escalated
+
+
+def test_escalating_twice_is_a_conflict(client, auth_header, alert):
+    """Two incidents for one alert split the investigation in half."""
+    alert.incident_id = 77
+    response = client.post(f"{V1}/alerts/100/escalate", json={}, headers=auth_header)
+    assert response.status_code == 409
+    assert "77" in response.json()["detail"]
+
+
+def test_escalating_a_missing_alert_is_a_404(client, auth_header):
+    response = client.post(f"{V1}/alerts/999/escalate", json={}, headers=auth_header)
+    assert response.status_code == 404
+
+
+def test_an_ml_engineer_cannot_escalate(client, engineer_header, alert):
+    response = client.post(f"{V1}/alerts/100/escalate", json={}, headers=engineer_header)
+    assert response.status_code == 403
+    assert "alerts:triage" in response.json()["detail"]
+    assert alert.status is AlertStatus.new
 
 
 # --- the approval endpoint ------------------------------------------------

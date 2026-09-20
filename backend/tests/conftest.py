@@ -23,6 +23,7 @@ from netsentinel_api.db.models import (
     AlertStatus,
     AuditLog,
     Detection,
+    Incident,
     IoC,
     IoCType,
     ResponseAction,
@@ -65,9 +66,21 @@ class FakeSession:
         self.added: list[object] = []
         self.user: User | None = None
         self.committed = False
+        self._last_id = 900
 
     def add(self, instance: object, /) -> None:
         self.added.append(instance)
+
+    def flush(self) -> None:
+        """Hand out the primary keys a real flush would.
+
+        Escalation needs the incident's id before it can point the alert at it, so
+        a flush that changed nothing would hide the bug it exists to prevent.
+        """
+        for instance in self.added:
+            if isinstance(instance, Incident) and instance.incident_id is None:
+                self._last_id += 1
+                instance.incident_id = self._last_id
 
     def scalar(self, *_args, **_kwargs) -> User | None:
         return self.user

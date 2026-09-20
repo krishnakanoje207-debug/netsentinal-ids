@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     misp_verify_tls: bool = True
     keep_url: str | None = None
     keep_api_key: SecretStr | None = None
+    # Case management, and optional for the same reason: escalating an alert writes
+    # the incident row whether or not IRIS answers, so an unconfigured IRIS costs
+    # the case, not the escalation.
+    iris_url: str | None = None
+    iris_api_key: SecretStr | None = None
+    # IRIS files every case against a customer, by id. 1 is the one every IRIS
+    # installs with, which is what a single-tenant deployment wants.
+    iris_customer_id: int = 1
+    # On by default. IRIS is commonly deployed with a self-signed certificate, which
+    # is a reason to install the certificate, not to stop checking it: this channel
+    # carries the evidence an investigation is built on.
+    iris_verify_tls: bool = True
 
     # The enforcement points. Also optional, and for a stronger reason than the two
     # above: with neither configured the approval queue still works and nothing on
