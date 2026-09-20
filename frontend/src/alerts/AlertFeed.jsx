@@ -7,6 +7,7 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { api } from '../api/client'
@@ -45,10 +46,54 @@ function StreamIndicator({ status }) {
 }
 
 /**
- * @param {{status: string, severity: string,
- *   onFilterChange: (next: {status: string, severity: string}) => void}} props
+ * The search box.
+ *
+ * Submitted rather than searched on every keystroke, because half a typed address
+ * is not an address: searching as the analyst types "203.0.113.9" would refuse
+ * "203", "203.0" and "203.0.11" on the way, and a box that flashes errors while you
+ * use it is a box people stop reading.
+ *
+ * @param {{value: string, onSearch: (next: string) => void}} props
  */
-export function AlertFeed({ status, severity, onFilterChange }) {
+export function SearchBox({ value, onSearch }) {
+  const [draft, setDraft] = useState(value)
+
+  // The committed value can change without this box being touched - a cleared
+  // filter, or a restored session - and the field has to follow it.
+  useEffect(() => setDraft(value), [value])
+
+  return (
+    <form
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSearch(draft.trim())
+      }}
+      className="flex gap-1"
+    >
+      <input
+        type="search"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        aria-label="Search by address, network or technique"
+        placeholder="203.0.113.9, 10.0.0.0/8, T1046"
+        className="w-56 rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
+      />
+      <button
+        type="submit"
+        className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2.5 py-1 text-xs"
+      >
+        Search
+      </button>
+    </form>
+  )
+}
+
+/**
+ * @param {{status: string, severity: string, q: string,
+ *   onFilterChange: (next: {status: string, severity: string, q: string}) => void}} props
+ */
+export function AlertFeed({ status, severity, q, onFilterChange }) {
   const { token } = useAuth()
   const queryClient = useQueryClient()
 
@@ -59,9 +104,13 @@ export function AlertFeed({ status, severity, onFilterChange }) {
   })
 
   const { data, error, isLoading } = useQuery({
-    queryKey: ['alerts', status, severity],
+    queryKey: ['alerts', status, severity, q],
     queryFn: () =>
-      api.alerts(token, { status: status || undefined, severity: severity || undefined }),
+      api.alerts(token, {
+        status: status || undefined,
+        severity: severity || undefined,
+        q: q || undefined,
+      }),
     enabled: token !== null,
     refetchInterval: POLL_MS,
   })
@@ -72,11 +121,12 @@ export function AlertFeed({ status, severity, onFilterChange }) {
         <h1 className="text-lg font-semibold">Alerts</h1>
         <StreamIndicator status={stream.status} />
 
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap items-start gap-2">
+          <SearchBox value={q} onSearch={(next) => onFilterChange({ status, severity, q: next })} />
           <select
             aria-label="Filter by status"
             value={status}
-            onChange={(event) => onFilterChange({ status: event.target.value, severity })}
+            onChange={(event) => onFilterChange({ status: event.target.value, severity, q })}
             className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
           >
             <option value="">All statuses</option>
@@ -89,7 +139,7 @@ export function AlertFeed({ status, severity, onFilterChange }) {
           <select
             aria-label="Filter by severity"
             value={severity}
-            onChange={(event) => onFilterChange({ status, severity: event.target.value })}
+            onChange={(event) => onFilterChange({ status, severity: event.target.value, q })}
             className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
           >
             <option value="">All severities</option>
@@ -99,7 +149,7 @@ export function AlertFeed({ status, severity, onFilterChange }) {
               </option>
             ))}
           </select>
-          <ExportButton status={status} severity={severity} />
+          <ExportButton status={status} severity={severity} q={q} />
         </div>
       </header>
 
@@ -109,8 +159,8 @@ export function AlertFeed({ status, severity, onFilterChange }) {
 
       {data && data.length === 0 && (
         <p className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
-          No alerts match these filters. That is not the same as nothing happening - check
-          the stream indicator above is live.
+          No alerts match {q ? `"${q}"` : 'these filters'}. That is not the same as nothing
+          happening - check the stream indicator above is live.
         </p>
       )}
 

@@ -72,7 +72,7 @@ function Shell({ children }) {
 }
 
 function Authenticated() {
-  const [filters, setFilters] = useState({ status: '', severity: '' })
+  const [filters, setFilters] = useState({ status: '', severity: '', q: '' })
   return (
     <Shell>
       <Routes>
@@ -82,6 +82,7 @@ function Authenticated() {
             <AlertFeed
               status={filters.status}
               severity={filters.severity}
+              q={filters.q}
               onFilterChange={setFilters}
             />
           }

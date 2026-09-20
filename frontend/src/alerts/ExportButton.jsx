@@ -40,13 +40,17 @@ export function saveBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-/** @param {{status: string, severity: string, save?: typeof saveBlob}} props */
-export function ExportButton({ status, severity, save = saveBlob }) {
+/** @param {{status: string, severity: string, q?: string, save?: typeof saveBlob}} props */
+export function ExportButton({ status, severity, q, save = saveBlob }) {
   const { token } = useAuth()
 
   const exportAlerts = useMutation({
     mutationFn: () =>
-      api.exportAlerts(token, { status: status || undefined, severity: severity || undefined }),
+      api.exportAlerts(token, {
+        status: status || undefined,
+        severity: severity || undefined,
+        q: q || undefined,
+      }),
     onSuccess: (result) => save(result.blob, result.filename),
   })
 

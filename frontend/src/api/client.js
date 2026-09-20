@@ -118,6 +118,24 @@ export async function rawRequest(path, options = {}) {
   return response
 }
 
+/**
+ * The feed's filters as a query string.
+ *
+ * One builder for the feed and the export, because the export claims to be the
+ * screen it was taken from and two copies of this would eventually make that a lie.
+ *
+ * @param {{status?: string, severity?: string, q?: string}} params
+ * @param {number} [limit]
+ */
+function feedQuery(params, limit) {
+  const query = new URLSearchParams()
+  if (params.status) query.set('status', params.status)
+  if (params.severity) query.set('severity', params.severity)
+  if (params.q) query.set('q', params.q)
+  if (limit !== undefined) query.set('limit', String(limit))
+  return query.toString()
+}
+
 const FILENAME = /filename="([^"]+)"/
 
 /**
@@ -147,11 +165,7 @@ export const api = {
 
   /** @returns {Promise<import('./types').Alert[]>} */
   alerts: (token, params = {}) => {
-    const query = new URLSearchParams()
-    if (params.status) query.set('status', params.status)
-    if (params.severity) query.set('severity', params.severity)
-    query.set('limit', String(params.limit ?? 50))
-    return request(`/alerts?${query.toString()}`, { token })
+    return request(`/alerts?${feedQuery(params, params.limit ?? 50)}`, { token })
   },
 
   /** @returns {Promise<import('./types').AlertDetail>} */
@@ -168,11 +182,7 @@ export const api = {
    * @returns {Promise<{blob: Blob, filename: string, truncated: boolean}>}
    */
   exportAlerts: async (token, params = {}) => {
-    const query = new URLSearchParams()
-    if (params.status) query.set('status', params.status)
-    if (params.severity) query.set('severity', params.severity)
-
-    const response = await rawRequest(`/alerts/export?${query.toString()}`, { token })
+    const response = await rawRequest(`/alerts/export?${feedQuery(params)}`, { token })
     return {
       blob: await response.blob(),
       filename: filenameFrom(response.headers.get('content-disposition')),
