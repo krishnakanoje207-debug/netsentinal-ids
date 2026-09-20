@@ -28,8 +28,9 @@ forever.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from netsentinel_api.db.models import (
@@ -57,8 +58,21 @@ LABELS: dict[AlertStatus, bool] = {
 }
 
 
+_WINDOW = re.compile(r"^(\d+)([hd])$")
+
+
 class PromotionRefused(Exception):
     """The model has not earned promotion. The message says what is missing."""
+
+
+def window_start(since: str, now: datetime | None = None) -> datetime:
+    """Turn ``7d`` or ``12h`` into a moment. Same spelling as the MISP sync uses."""
+    match = _WINDOW.match(since.strip().lower())
+    if match is None:
+        raise ValueError(f"cannot read a window from {since!r}; use 7d or 12h")
+    amount, unit = int(match.group(1)), match.group(2)
+    delta = timedelta(days=amount) if unit == "d" else timedelta(hours=amount)
+    return (now or datetime.now(timezone.utc)) - delta
 
 
 @dataclass(frozen=True)

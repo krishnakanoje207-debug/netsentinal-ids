@@ -11,6 +11,8 @@ Two reasons, in order of importance:
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -19,11 +21,15 @@ from netsentinel_api.db.models import (
     AlertStatus,
     Asset,
     Detection,
+    MLModel,
+    ModelMode,
+    ModelTier,
     ResponseAction,
     Severity,
     User,
     Vulnerability,
 )
+from netsentinel_api.services.shadow import LABELS, Scored
 
 #: Cap on a page of alerts. A SOC feed is unbounded; a response must not be.
 MAX_PAGE_SIZE = 200
@@ -193,3 +199,76 @@ class ActionRepository:
                 .limit(min(limit, MAX_PAGE_SIZE))
             )
         )
+
+
+class ModelRepository:
+    """The registry, and the evidence a promotion is decided on.
+
+    The shadow queries live here rather than beside the report they were first
+    written for. The dashboard now asks the same questions the CLI does, and two
+    copies of this join would be two definitions of what a label is - which is the
+    one thing a promotion argument cannot afford.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list(self) -> list[MLModel]:
+        # By id, which is registration order: the tiers read down the page in the
+        # order somebody added them, and a model does not move when it is promoted.
+        return list(self._session.scalars(select(MLModel).order_by(MLModel.model_id)))
+
+    def get(self, model_id: int) -> MLModel | None:
+        return self._session.get(MLModel, model_id)
+
+    def active_for(self, tier: ModelTier) -> MLModel | None:
+        """The model currently deciding for this tier, if one is."""
+        return self._session.scalar(
+            select(MLModel).where(MLModel.tier == tier, MLModel.mode == ModelMode.active)
+        )
+
+    def labels_by_flow(self, start: datetime) -> dict[str, bool]:
+        """The analyst's conclusion per flow, from the alerts they closed.
+
+        A flow with two alerts closed differently is counted as a true positive: an
+        analyst concluding that something was there outranks another concluding it
+        was not, and the alternative is dropping the flow that generated the
+        disagreement - which is the most informative one in the set.
+        """
+        rows = self._session.execute(
+            select(Detection.flow_id, Alert.status)
+            .join(Alert, Alert.detection_id == Detection.detection_id)
+            .where(Alert.status.in_(list(LABELS)), Detection.created_at >= start)
+        )
+
+        labels: dict[str, bool] = {}
+        for flow_id, status in rows:
+            label = LABELS[status]
+            labels[flow_id] = labels.get(flow_id, False) or label
+        return labels
+
+    def scored_since(self, start: datetime) -> list[Scored]:
+        """Every verdict recorded in the window, carrying its label if it has one.
+
+        Labels are joined on ``flow_id``, not on the model: a shadow model raises no
+        alert of its own, so what it has is a score on a flow some other model
+        alerted on, and the analyst's verdict on that alert applies to every model
+        that scored it.
+        """
+        labels = self.labels_by_flow(start)
+        return [
+            Scored(
+                model_id=model_id,
+                risk_score=risk_score,
+                created_at=created_at,
+                label=labels.get(flow_id),
+            )
+            for model_id, risk_score, created_at, flow_id in self._session.execute(
+                select(
+                    Detection.model_id,
+                    Detection.risk_score,
+                    Detection.created_at,
+                    Detection.flow_id,
+                ).where(Detection.created_at >= start)
+            )
+        ]

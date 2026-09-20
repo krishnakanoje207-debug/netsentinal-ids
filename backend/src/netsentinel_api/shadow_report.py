@@ -17,97 +17,25 @@ from __future__ import annotations
 
 import argparse
 import logging
-import re
 import sys
-from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from netsentinel_api.db.models import (
-    Alert,
-    Detection,
-    MLModel,
-    ModelMode,
-    ModelTier,
-    User,
-)
+from netsentinel_api.db.models import User
+from netsentinel_api.db.repositories import ModelRepository
 from netsentinel_api.db.session import get_sessionmaker
 from netsentinel_api.services.shadow import (
-    LABELS,
     MIN_LABELLED,
     MIN_SHADOW_DAYS,
     Outcome,
     PromotionRefused,
-    Scored,
     evaluate,
     promote,
     refusal,
+    window_start,
 )
 
 logger = logging.getLogger("netsentinel.shadow")
-
-_WINDOW = re.compile(r"^(\d+)([hd])$")
-
-
-def window_start(since: str, now: datetime | None = None) -> datetime:
-    """Turn ``7d`` or ``12h`` into a moment. Same spelling as the MISP sync uses."""
-    match = _WINDOW.match(since.strip().lower())
-    if match is None:
-        raise ValueError(f"cannot read a window from {since!r}; use 7d or 12h")
-    amount, unit = int(match.group(1)), match.group(2)
-    delta = timedelta(days=amount) if unit == "d" else timedelta(hours=amount)
-    return (now or datetime.now(timezone.utc)) - delta
-
-
-def labels_by_flow(session, start: datetime) -> dict[str, bool]:
-    """The analyst's conclusion per flow, from the alerts they closed.
-
-    A flow with two alerts closed differently is counted as a true positive: an
-    analyst concluding that something was there outranks another concluding it was
-    not, and the alternative is dropping the flow that generated the disagreement -
-    which is the most informative one in the set.
-    """
-    rows = session.execute(
-        select(Detection.flow_id, Alert.status)
-        .join(Alert, Alert.detection_id == Detection.detection_id)
-        .where(Alert.status.in_(list(LABELS)), Detection.created_at >= start)
-    )
-
-    labels: dict[str, bool] = {}
-    for flow_id, status in rows:
-        label = LABELS[status]
-        labels[flow_id] = labels.get(flow_id, False) or label
-    return labels
-
-
-def collect(session, start: datetime) -> tuple[list[MLModel], list[Scored]]:
-    """Every model, and every verdict it recorded in the window."""
-    models = list(session.scalars(select(MLModel)))
-    labels = labels_by_flow(session, start)
-
-    scored = [
-        Scored(
-            model_id=model_id,
-            risk_score=risk_score,
-            created_at=created_at,
-            label=labels.get(flow_id),
-        )
-        for model_id, risk_score, created_at, flow_id in session.execute(
-            select(
-                Detection.model_id,
-                Detection.risk_score,
-                Detection.created_at,
-                Detection.flow_id,
-            ).where(Detection.created_at >= start)
-        )
-    ]
-    return models, scored
-
-
-def active_for(session, tier: ModelTier) -> MLModel | None:
-    return session.scalar(
-        select(MLModel).where(MLModel.tier == tier, MLModel.mode == ModelMode.active)
-    )
 
 
 def render(outcomes: list[Outcome]) -> str:
@@ -161,21 +89,21 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     with get_sessionmaker()() as session:
-        models, scored = collect(session, start)
-        outcomes = evaluate(models, scored)
+        models = ModelRepository(session)
+        outcomes = evaluate(models.list(), models.scored_since(start))
         print(f"shadow report since {start.isoformat()}\n")
         print(render(outcomes))
 
         if args.promote is None:
             return 0
 
-        candidate = session.get(MLModel, args.promote)
+        candidate = models.get(args.promote)
         if candidate is None:
             print(f"\nno model {args.promote}", file=sys.stderr)
             return 2
 
         outcome = next(o for o in outcomes if o.model_id == candidate.model_id)
-        active = active_for(session, candidate.tier)
+        active = models.active_for(candidate.tier)
         active_outcome = next(
             (o for o in outcomes if active is not None and o.model_id == active.model_id),
             None,
