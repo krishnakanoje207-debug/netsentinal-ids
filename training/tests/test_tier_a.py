@@ -23,6 +23,7 @@ from netsentinel_training.models.tier_a import (
     apply_platt,
     choose_threshold,
     load_split,
+    sha256,
     train,
 )
 
@@ -84,9 +85,14 @@ def data_dir(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def card(data_dir, tmp_path_factory):
+def artefacts(tmp_path_factory):
+    return tmp_path_factory.mktemp("artefacts")
+
+
+@pytest.fixture(scope="module")
+def card(data_dir, artefacts):
     """Train once; the assertions below all read the same run."""
-    return train(data_dir, tmp_path_factory.mktemp("artefacts"), version="0.1.0-test")
+    return train(data_dir, artefacts, version="0.1.0-test")
 
 
 # --- unit level ------------------------------------------------------------
@@ -167,6 +173,23 @@ def test_card_carries_every_ml_models_column(card):
         assert field in card, f"ml_models.{field} has nowhere to come from"
     assert card["mode"] == "shadow", "a new model must not go straight to active"
     assert len(card["onnx_sha256"]) == 64
+
+
+def test_booster_is_saved_and_matches_its_hash(card, artefacts, data_dir):
+    """The writer explains a detection from the tree structure ONNX does not carry.
+
+    Hashed like the ONNX is, so a detection cannot be explained by a model other
+    than the one that scored it.
+    """
+    import lightgbm as lgb
+
+    booster_path = artefacts / "tier_a.lgb.txt"
+    assert booster_path.exists(), "per-detection SHAP has no tree structure to read"
+    assert sha256(booster_path) == card["booster_sha256"]
+    assert len(card["booster_sha256"]) == 64
+
+    reloaded = lgb.Booster(model_file=str(booster_path))
+    assert reloaded.num_feature() == len(TIER_A_FEATURES)
 
 
 def test_card_pins_the_feature_order(card):

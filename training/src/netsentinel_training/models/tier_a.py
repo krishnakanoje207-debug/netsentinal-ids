@@ -236,6 +236,13 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
 
     onnx_path = out_dir / "tier_a.onnx"
     export_onnx(model, x_train.shape[1], onnx_path)
+
+    # The native booster is kept alongside the ONNX because TreeSHAP needs the tree
+    # structure, which an ONNX graph does not carry. Serving scores through ONNX; the
+    # writer explains through this file. Both are hashed into the card, so a detection
+    # can never be explained by a different model than the one that scored it.
+    booster_path = out_dir / "tier_a.lgb.txt"
+    model.booster_.save_model(str(booster_path))
     max_drift = verify_onnx_parity(model, onnx_path, x_test[:5000])
     if max_drift > ONNX_TOLERANCE:
         raise RuntimeError(
@@ -249,6 +256,7 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
         "tier": "A",
         "version": version,
         "onnx_sha256": sha256(onnx_path),
+        "booster_sha256": sha256(booster_path),
         "threshold": threshold,
         "mode": "shadow",
         "pr_auc": metrics["pr_auc"],
