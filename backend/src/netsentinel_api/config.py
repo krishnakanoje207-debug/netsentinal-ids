@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     # verdicts should be a deliberate, recorded change, not an omission.
     default_model_mode: str = "shadow"
 
+    # Threat intelligence and SOAR. All optional: the pipeline detects, triages and
+    # alerts perfectly well without either, so an unconfigured MISP is a feature that
+    # is off rather than a deployment that will not start.
+    misp_url: str | None = None
+    misp_api_key: SecretStr | None = None
+    # On by default. MISP is commonly deployed with a self-signed certificate, which
+    # is a reason to install the certificate, not to stop checking it: this channel
+    # decides what the system treats as known-bad.
+    misp_verify_tls: bool = True
+    keep_url: str | None = None
+    keep_api_key: SecretStr | None = None
+
     @field_validator("jwt_secret")
     @classmethod
     def _reject_weak_secret(cls, value: SecretStr) -> SecretStr:

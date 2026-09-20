@@ -9,6 +9,8 @@ dependencies = [
     "netsentinel-core",
     "alembic>=1.13",
     "fastapi>=0.115",
+    # Outbound HTTP: MISP attribute sync and the Keep webhook.
+    "httpx>=0.27",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.5",
     "pydantic>=2.9",
@@ -25,12 +27,10 @@ dependencies = [
     "pyjwt>=2.9",
 ]
 
-[project.optional-dependencies]
-dev = ["httpx>=0.27"]
-
 [project.scripts]
 netsentinel-bootstrap = "netsentinel_api.bootstrap:main"
 netsentinel-register-model = "netsentinel_api.register:main"
+netsentinel-sync-intel = "netsentinel_api.sync_intel:main"
 
 [build-system]
 requires = ["hatchling"]
