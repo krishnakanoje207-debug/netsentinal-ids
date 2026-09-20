@@ -11,6 +11,16 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Tier A training. Deliberately excludes torch / torch-geometric: the deep and
+# graph tiers train on Kaggle GPU, not on an 8 GB laptop.
+train = [
+    "lightgbm>=4.5",
+    "scikit-learn>=1.5",
+    "onnxruntime>=1.19",
+    "onnxmltools>=1.12",
+    "skl2onnx>=1.17",
+    "shap>=0.46",
+]
 
 [build-system]
 requires = ["hatchling"]
