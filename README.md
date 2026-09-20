@@ -130,6 +130,40 @@ the only path to execution and refuses without an approval, so if it raises, not
 on the network changed. Approving does not execute — it moves the action to
 `approved` for the D12 executors to pick up.
 
+## Shadow mode and promotion
+
+```bash
+uv run netsentinel-shadow-report --since 7d
+uv run netsentinel-shadow-report --since 7d --promote 3 --by analyst
+```
+
+Every model is born in `shadow`: it scores live traffic, its verdicts are stored, and
+it pages nobody. Promotion is where that stops being true, so it is the one decision
+in the system gated on measurement rather than on someone being confident. Reporting
+and promoting are the same command because they are the same decision — the numbers
+printed are the numbers recorded in the promotion's audit row, from the same window
+and the same query.
+
+Labels come per flow, not per model. A shadow model raises no alert, so it has no
+closed alerts of its own; what it has is a score on a flow some other model alerted
+on, and an analyst's verdict on that alert. Whatever the analyst concluded is applied
+to every model that scored the flow, joined on `flow_id`.
+
+These are not ground-truth metrics and the report does not pretend otherwise. They
+measure agreement with analyst verdicts on the flows that were triaged, which is a
+biased sample: nobody labels the traffic nothing fired on. So unlabelled volume is
+printed next to precision — a tier that fires constantly on flows no one ever looks at
+reads as perfect precision and is not — and true negatives, which are unknowable here,
+are not invented.
+
+Promotion is refused on too few labels, too short a period, a window containing no
+true positive at all, or a candidate that ranks worse than the model already serving.
+Candidates are compared on average precision rather than precision, because the
+threshold can be moved afterwards and a model that ranks badly cannot be fixed by
+moving one. The bars are flags rather than constants — a lab demo and a production
+rollout are different evidential bars — but the numbers used are written into the
+audit row, so a promotion made on five labelled detections says so permanently.
+
 ## Threat intelligence and SOAR
 
 ```bash
