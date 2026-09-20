@@ -101,3 +101,24 @@ class ActionRepository:
                 .limit(min(limit, MAX_PAGE_SIZE))
             )
         )
+
+    def approved(self, limit: int = 50) -> list[ResponseAction]:
+        """The execution queue the responder drains.
+
+        The approval is loaded with the action, not left to lazy loading: the gate
+        refuses an action whose approval it cannot see, and an execution that fails
+        because a relationship was not populated would look exactly like one a human
+        never authorised.
+        """
+        from netsentinel_api.db.models import ActionStatus
+
+        return list(
+            self._session.scalars(
+                select(ResponseAction)
+                .options(joinedload(ResponseAction.approval))
+                .where(ResponseAction.status == ActionStatus.approved)
+                # Oldest first: the queue is worked in the order it was approved.
+                .order_by(ResponseAction.action_id)
+                .limit(min(limit, MAX_PAGE_SIZE))
+            )
+        )

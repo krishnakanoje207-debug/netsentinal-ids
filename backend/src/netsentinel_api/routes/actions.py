@@ -5,9 +5,9 @@ itself stays in ``services.response``, so the only way to reach execution is sti
 through ``mark_executed``.
 
 Execution is not performed here. Approving an action moves it to ``approved``; the
-CrowdSec and Wazuh executors (D12) pick it up and call ``mark_executed``. Reporting
-a block as done before anything touched nftables would be a lie the dashboard then
-shows to an analyst.
+responder worker picks it up, applies it at CrowdSec or Wazuh and calls
+``mark_executed``. Reporting a block as done before anything touched nftables would be
+a lie the dashboard then shows to an analyst.
 """
 
 from __future__ import annotations
