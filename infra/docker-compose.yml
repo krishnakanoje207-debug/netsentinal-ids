@@ -11,9 +11,14 @@
 #   docker compose --profile lab up -d         # the victim/attacker lab
 #   docker compose --profile sensors up -d     # Suricata + Zeek on the lab bridge
 #   docker compose --profile dashboards up -d  # Grafana
+#   docker compose --profile intel up -d       # MISP + Keep
 #
 # Rough budget: storage 2.5 GB, bus 1 GB, ingest 0.25 GB, sensors 2 GB, lab 0.5 GB,
 # dashboards 0.25 GB. About 6.5 GB, leaving room for Wazuh and the OS.
+#
+# intel adds about 2.5 GB and does not fit alongside Wazuh. It is its own profile for
+# that reason: threat intelligence enriches alerts, it does not produce them, so the
+# detection path runs without it and the two can take turns on a single VM.
 
 name: netsentinel
 
@@ -38,6 +43,9 @@ volumes:
   grafana-data:
   suricata-logs:
   zeek-logs:
+  misp-data:
+  misp-db:
+  keep-data:
 
 services:
   # --- storage --------------------------------------------------------------
@@ -242,5 +250,84 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     mem_limit: 256m
+    networks: [backplane]
+    restart: unless-stopped
+
+  # --- threat intelligence and SOAR -----------------------------------------
+  #
+  # Both are enrichment. The pipeline detects, stores, explains and alerts with this
+  # profile down; what it loses is the "known-bad" label on an alert and the
+  # de-duplication in front of the analyst.
+
+  misp-db:
+    image: mariadb:10.11
+    profiles: [intel]
+    environment:
+      MYSQL_DATABASE: misp
+      MYSQL_USER: misp
+      MYSQL_PASSWORD: ${MISP_DB_PASSWORD:?set MISP_DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MISP_DB_ROOT_PASSWORD:?set MISP_DB_ROOT_PASSWORD in .env}
+    command: --innodb-buffer-pool-size=256M --innodb-change-buffering=none
+    volumes:
+      - misp-db:/var/lib/mysql
+    mem_limit: 768m
+    networks: [backplane]
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  misp-redis:
+    image: redis:7-alpine
+    profiles: [intel]
+    command: redis-server --save "" --maxmemory 128mb --maxmemory-policy allkeys-lru
+    mem_limit: 192m
+    networks: [backplane]
+    restart: unless-stopped
+
+  misp:
+    image: ghcr.io/misp/misp-docker/misp-core:v2.5.17
+    profiles: [intel]
+    depends_on:
+      misp-db:
+        condition: service_healthy
+      misp-redis:
+        condition: service_started
+    environment:
+      BASE_URL: ${MISP_BASE_URL:-http://localhost:8081}
+      ADMIN_EMAIL: ${MISP_ADMIN_EMAIL:-admin@netsentinel.local}
+      ADMIN_PASSWORD: ${MISP_ADMIN_PASSWORD:?set MISP_ADMIN_PASSWORD in .env}
+      MYSQL_HOST: misp-db
+      MYSQL_DATABASE: misp
+      MYSQL_USER: misp
+      MYSQL_PASSWORD: ${MISP_DB_PASSWORD:?set MISP_DB_PASSWORD in .env}
+      REDIS_HOST: misp-redis
+      # Warninglists are what keep 8.8.8.8 out of the feed, and the sync asks MISP to
+      # enforce them. They have to be loaded for that request to mean anything.
+      ENABLE_DB_SETTINGS: "true"
+    volumes:
+      - misp-data:/var/www/MISP/app/files
+    ports:
+      - "127.0.0.1:8081:80"
+    mem_limit: 1536m
+    networks: [backplane]
+    restart: unless-stopped
+
+  keep:
+    image: us-central1-docker.pkg.dev/keephq/keep/keep-api:0.33.6
+    profiles: [intel]
+    environment:
+      DATABASE_CONNECTION_STRING: sqlite:////state/keep.db
+      KEEP_API_KEY: ${KEEP_API_KEY:?set KEEP_API_KEY in .env}
+      AUTH_TYPE: ${KEEP_AUTH_TYPE:-NO_AUTH}
+      SECRET_MANAGER_TYPE: FILE
+      SECRET_MANAGER_DIRECTORY: /state
+    volumes:
+      - keep-data:/state
+    ports:
+      - "127.0.0.1:8082:8080"
+    mem_limit: 512m
     networks: [backplane]
     restart: unless-stopped

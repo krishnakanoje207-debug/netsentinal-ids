@@ -54,7 +54,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 319 tests, no database or network needed
+uv run pytest            # 376 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -128,6 +128,34 @@ Every automated response passes a human gate. `services/response.mark_executed` 
 the only path to execution and refuses without an approval, so if it raises, nothing
 on the network changed. Approving does not execute — it moves the action to
 `approved` for the D12 executors to pick up.
+
+## Threat intelligence and SOAR
+
+```bash
+export NETSENTINEL_MISP_URL="https://misp.local"
+export NETSENTINEL_MISP_API_KEY="..."
+uv run netsentinel-sync-intel --since 7d    # MISP attributes into the iocs table
+```
+
+Both are optional, and the profile that runs them is separate for a reason: they
+enrich alerts rather than produce them. With MISP and Keep down the pipeline still
+detects, explains, stores and shows — what it loses is the known-bad label on an alert
+and the de-duplication in front of the analyst.
+
+The sync asks MISP for `to_ids` attributes with the warninglists enforced. Without
+those two flags a public feed hands over addresses like 8.8.8.8, and an afternoon later
+every DNS lookup in the lab is an alert with intelligence behind it.
+
+Enrichment runs inside the writer's transaction — a local query belongs with the write
+— and forwarding to Keep runs after the commit, because a network round trip should
+never hold a row lock. A match links the alert to the indicator; a match on a
+high-threat indicator also raises the severity one band, once, however many indicators
+matched.
+
+Keep de-duplicates on a fingerprint covering the source, the two addresses and the
+technique. Severity, score and time are deliberately outside it: a scan that resumes an
+hour later with a higher score is the same finding, and at-least-once delivery means
+the same alert can legitimately be written twice.
 
 ## Design decisions that deviate from M2 §4
 
