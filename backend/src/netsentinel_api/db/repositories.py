@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import cast, literal, or_, select
+from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.sql import Select
 
 from netsentinel_api.db.models import (
     Alert,
@@ -29,7 +31,36 @@ from netsentinel_api.db.models import (
     User,
     Vulnerability,
 )
+from netsentinel_api.services.search import AddressQuery, TechniqueQuery
 from netsentinel_api.services.shadow import LABELS, Scored
+
+
+def _matching(
+    statement: Select,
+    search: AddressQuery | TechniqueQuery | None,
+) -> Select:
+    """Narrow a query by what the analyst typed.
+
+    Shared by the feed and the export on purpose. The export claims to be the screen
+    it was taken from, and two copies of this clause would eventually make that claim
+    false.
+
+    An address is matched with ``<<=`` - contained within or equal to - against the
+    INET columns, so 203.0.113.0/24 finds every host on that network and a bare
+    address finds itself. Matching addresses as text would make the network case
+    impossible and the host case quietly wrong.
+    """
+    if search is None:
+        return statement
+    if isinstance(search, TechniqueQuery):
+        return statement.where(Alert.mitre_technique == search.technique)
+
+    network = cast(literal(str(search.network)), INET)
+    # Either end: an analyst chasing a host wants what it sent and what was sent to
+    # it, and which column it landed in is an accident of who opened the connection.
+    return statement.where(
+        or_(Alert.src_ip.op("<<=")(network), Alert.dst_ip.op("<<=")(network))
+    )
 
 #: Cap on a page of alerts. A SOC feed is unbounded; a response must not be.
 MAX_PAGE_SIZE = 200
@@ -59,6 +90,7 @@ class AlertRepository:
         *,
         status: AlertStatus | None = None,
         severity: Severity | None = None,
+        search: AddressQuery | TechniqueQuery | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Alert]:
@@ -67,6 +99,7 @@ class AlertRepository:
             statement = statement.where(Alert.status == status)
         if severity is not None:
             statement = statement.where(Alert.severity == severity)
+        statement = _matching(statement, search)
         # Newest first, which is what ix_alerts_created_at is ordered for.
         statement = (
             statement.order_by(Alert.created_at.desc())
@@ -80,6 +113,7 @@ class AlertRepository:
         *,
         status: AlertStatus | None = None,
         severity: Severity | None = None,
+        search: AddressQuery | TechniqueQuery | None = None,
         limit: int = MAX_EXPORT_ROWS,
     ) -> list[dict]:
         """The same feed, flattened for a file, with the score and the model that
@@ -108,6 +142,7 @@ class AlertRepository:
             statement = statement.where(Alert.status == status)
         if severity is not None:
             statement = statement.where(Alert.severity == severity)
+        statement = _matching(statement, search)
         statement = statement.order_by(Alert.created_at.desc()).limit(
             min(limit, MAX_EXPORT_ROWS) + 1
         )

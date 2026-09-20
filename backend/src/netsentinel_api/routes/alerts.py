@@ -46,6 +46,12 @@ from netsentinel_api.services.cases import (
     client_from,
 )
 from netsentinel_api.services.export import alerts_csv, filename
+from netsentinel_api.services.search import (
+    AddressQuery,
+    TechniqueQuery,
+    Unsearchable,
+    parse as parse_search,
+)
 from netsentinel_api.services.response import (
     AlreadyProposed,
     InvalidTarget,
@@ -84,16 +90,45 @@ def _explanation(detection: Detection | None) -> ExplanationOut | None:
     )
 
 
+#: What the search box accepts, in the words the refusal uses.
+SEARCH_HELP = "an address (203.0.113.9), a network (203.0.113.0/24) or a technique (T1046)"
+
+
+def _searched(query: str | None) -> AddressQuery | TechniqueQuery | None:
+    """Read the search box, or refuse with a sentence saying what it accepts.
+
+    An empty box is not a refusal - it is the unfiltered feed, which is what the
+    dashboard sends when the analyst clears the field.
+    """
+    if query is None or not query.strip():
+        return None
+    try:
+        return parse_search(query)
+    except Unsearchable as exc:
+        # 422 rather than an empty list: a search box that silently returns nothing
+        # teaches an analyst that there is nothing there.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
     alerts: AlertRepoDep,
     _: Annotated[object, Depends(require(ALERTS_READ))],
     status_filter: Annotated[AlertStatus | None, Query(alias="status")] = None,
     severity: Annotated[Severity | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=60, description=SEARCH_HELP)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Alert]:
-    return alerts.list(status=status_filter, severity=severity, limit=limit, offset=offset)
+    return alerts.list(
+        status=status_filter,
+        severity=severity,
+        search=_searched(q),
+        limit=limit,
+        offset=offset,
+    )
 
 
 # Declared before "/{alert_id}", because a path parameter would otherwise match
@@ -105,6 +140,7 @@ def export_alerts(
     user: Annotated[object, Depends(require(ALERTS_READ))],
     status_filter: Annotated[AlertStatus | None, Query(alias="status")] = None,
     severity: Annotated[Severity | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=60, description=SEARCH_HELP)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_EXPORT_ROWS)] = MAX_EXPORT_ROWS,
 ) -> Response:
     """The feed as a CSV file, with the risk score and the model beside each row.
@@ -122,7 +158,10 @@ def export_alerts(
     both are questions asked afterwards. An audit entry is a record that a read
     happened rather than a change to what was read, so this stays a GET.
     """
-    rows = alerts.for_export(status=status_filter, severity=severity, limit=limit)
+    search = _searched(q)
+    rows = alerts.for_export(
+        status=status_filter, severity=severity, search=search, limit=limit
+    )
 
     # The repository fetches one more than the cap precisely so this can tell a
     # truncated export from one that filled the cap exactly.
@@ -139,6 +178,9 @@ def export_alerts(
                 "truncated": truncated,
                 "status": status_filter.value if status_filter else None,
                 "severity": severity.value if severity else None,
+                # Recorded so the audit row says which alerts left, not just how
+                # many. "1,412 rows" answers nothing on its own.
+                "search": str(search) if search is not None else None,
             },
         )
     )

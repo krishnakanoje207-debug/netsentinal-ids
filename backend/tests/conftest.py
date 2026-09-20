@@ -8,6 +8,7 @@ the configured user.
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
@@ -53,6 +54,7 @@ from netsentinel_api.rbac import (
     as_column,
 )
 from netsentinel_api.security import create_access_token, hash_password
+from netsentinel_api.services.search import AddressQuery, TechniqueQuery
 from netsentinel_api.services.shadow import Scored
 
 TEST_SECRET = "K7vQp2xR9mLt4wZn6bYc3sEdJf8hGa1uNqXrVoWiTyBk5Pz0"
@@ -130,22 +132,41 @@ class FakeUserRepo:
         return self._users.get(username)
 
 
+def _matches(alert: Alert, search: AddressQuery | TechniqueQuery) -> bool:
+    """Containment, the way PostgreSQL's ``<<=`` does it on the INET columns.
+
+    The real filter is SQL and never runs in this suite, so the semantics are
+    reproduced here rather than approximated: an address is a single-host network,
+    and either end of the alert can match.
+    """
+    if isinstance(search, TechniqueQuery):
+        return alert.mitre_technique == search.technique
+    return any(
+        address is not None and ipaddress.ip_address(address) in search.network
+        for address in (alert.src_ip, alert.dst_ip)
+    )
+
+
 class FakeAlertRepo:
     def __init__(self, alerts: list[Alert]) -> None:
         self.alerts = alerts
 
-    def _filtered(self, status, severity) -> list[Alert]:
+    def _filtered(self, status, severity, search=None) -> list[Alert]:
         rows = self.alerts
         if status is not None:
             rows = [a for a in rows if a.status == status]
         if severity is not None:
             rows = [a for a in rows if a.severity == severity]
+        if search is not None:
+            rows = [a for a in rows if _matches(a, search)]
         return rows
 
-    def list(self, *, status=None, severity=None, limit=50, offset=0):
-        return self._filtered(status, severity)[offset : offset + limit]
+    def list(self, *, status=None, severity=None, search=None, limit=50, offset=0):
+        return self._filtered(status, severity, search)[offset : offset + limit]
 
-    def for_export(self, *, status=None, severity=None, limit=10_000) -> list[dict]:
+    def for_export(
+        self, *, status=None, severity=None, search=None, limit=10_000
+    ) -> list[dict]:
         """Flattened the way the real join flattens it, including the extra row.
 
         The cap is applied as ``limit + 1`` here too, because the route reads the
@@ -154,7 +175,7 @@ class FakeAlertRepo:
         untestable and the truncation notice permanently false.
         """
         rows = []
-        for alert in self._filtered(status, severity)[: limit + 1]:
+        for alert in self._filtered(status, severity, search)[: limit + 1]:
             detection = alert.detection
             rows.append(
                 {

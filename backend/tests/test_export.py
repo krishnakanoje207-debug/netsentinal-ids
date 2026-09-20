@@ -185,6 +185,7 @@ def test_the_read_is_recorded(client, auth_header, session, analyst):
         "truncated": False,
         "status": None,
         "severity": "high",
+        "search": None,
     }
 
 
