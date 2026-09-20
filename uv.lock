@@ -12,6 +12,7 @@ resolution-markers = [
 members = [
     "netsentinel-api",
     "netsentinel-core",
+    "netsentinel-scoring",
     "netsentinel-training",
 ]
 
@@ -682,6 +683,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "dpkt", specifier = ">=1.9.8" }]
+
+[[package]]
+name = "netsentinel-scoring"
+version = "0.1.0"
+source = { editable = "scoring" }
+dependencies = [
+    { name = "netsentinel-core" },
+    { name = "numpy" },
+    { name = "onnxruntime" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "netsentinel-core", editable = "core" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "onnxruntime", specifier = ">=1.19" },
+]
 
 [[package]]
 name = "netsentinel-training"
