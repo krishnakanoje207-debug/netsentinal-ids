@@ -9,7 +9,11 @@ members = ["backend", "core", "training"]
 package = false
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    # fastapi.testclient is built on httpx
+    "httpx>=0.27",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "core/tests", "training/tests"]

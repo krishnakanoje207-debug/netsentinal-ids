@@ -12,6 +12,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.5",
     "pydantic>=2.9",
+    # OAuth2PasswordRequestForm parses a form body, which FastAPI cannot do without it.
+    "python-multipart>=0.0.9",
     "sqlalchemy>=2.0",
     "uvicorn[standard]>=0.30",
     # Deviating from M2 s4, which names python-jose and implies passlib:

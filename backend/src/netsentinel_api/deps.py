@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from netsentinel_api.config import Settings, get_settings
 from netsentinel_api.db.models import User
+from netsentinel_api.db.repositories import (
+    ActionRepository,
+    AlertRepository,
+    UserRepository,
+)
 from netsentinel_api.db.session import get_session
 from netsentinel_api.rbac import permissions_for
 from netsentinel_api.security import TokenError, decode_access_token, subject_id
@@ -75,3 +80,28 @@ def require(*required: str) -> Callable[[User], User]:
         return user
 
     return guard
+
+
+def get_user_repo(
+    session: Annotated[Session, Depends(get_session)],
+) -> UserRepository:
+    return UserRepository(session)
+
+
+def get_alert_repo(
+    session: Annotated[Session, Depends(get_session)],
+) -> AlertRepository:
+    return AlertRepository(session)
+
+
+def get_action_repo(
+    session: Annotated[Session, Depends(get_session)],
+) -> ActionRepository:
+    return ActionRepository(session)
+
+
+SessionDep = Annotated[Session, Depends(get_session)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+UserRepoDep = Annotated[UserRepository, Depends(get_user_repo)]
+AlertRepoDep = Annotated[AlertRepository, Depends(get_alert_repo)]
+ActionRepoDep = Annotated[ActionRepository, Depends(get_action_repo)]
