@@ -41,6 +41,8 @@ torch = { index = "pytorch-cpu" }
 [tool.pytest.ini_options]
 testpaths = [
     "backend/tests",
+    # The chain across packages: see tests/e2e.
+    "tests/e2e",
     "copilot/tests",
     "core/tests",
     "scoring/tests",

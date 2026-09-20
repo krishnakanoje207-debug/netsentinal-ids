@@ -55,7 +55,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 538 tests, no database or network needed
+uv run pytest            # 589 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -352,6 +352,32 @@ The model runs locally, on the laptop's GPU. A prompt containing an alert is an
 attacker's traffic described in detail against named hosts on a real estate, which is
 not something to post to a third party — and an assistant that needs an internet
 connection is one that stops working during the incident it was built for.
+
+## The chain, tested end to end
+
+```bash
+uv run pytest tests/e2e
+```
+
+Every link in the pipeline is covered where it lives. What `tests/e2e` covers is that
+they join up: the alert the writer raises is the one the analyst escalates, the case
+the responder narrates into is the one that escalation opened, and the block that
+reaches the enforcement point is the one somebody approved. Four scenarios — scan,
+brute force, C2, DNS exfiltration — run detected → explained → enriched → case →
+proposed → approved → blocked, plus the negative cases that matter more: a block aimed
+at the estate's own asset never reaches the queue, and with the approval removed
+nothing reaches the network at all.
+
+Everything is real except four edges — the bus, the database, IRIS and the enforcement
+point — because a test that needs Redpanda, PostgreSQL, DFIR-IRIS and CrowdSec running
+is a test nobody runs.
+
+One gap is recorded there as a passing test rather than papered over: **nothing in the
+ML path assigns a MITRE technique.** The sensor publishes flow features and the writer
+stores a score; neither has anything to map to ATT&CK with, so `mitre_technique` is
+null on every ML-raised alert. It shows up in the Keep fingerprint (empty for those
+alerts) and as a missing line in the case description. Both degrade rather than break,
+and the fix is a mapping somebody has to design — not a field somebody forgot.
 
 ## Design decisions that deviate from M2 §4
 
