@@ -156,6 +156,19 @@ docker compose exec crowdsec cscli decisions list -o human | grep 203.0.113.9 ||
 `netsentinel/block_ip`, so an address blocked by this system is distinguishable at a
 glance from one blocked by a CrowdSec scenario.
 
+## DFIR-IRIS
+
+Not in this compose file either, and for the reason Wazuh is not: `iris-web` ships its
+own multi-container deployment (app, worker, database, RabbitMQ, nginx) and forking it
+buys nothing. Clone `dfir-iris/iris-web` at v2.4.29 — the version this project's API
+client was written against — and run its compose, then point the API at it with
+`NETSENTINEL_IRIS_URL`, `NETSENTINEL_IRIS_API_KEY` and `NETSENTINEL_IRIS_CUSTOMER_ID`.
+Budget about 1 GB, which on a 16 GB VM means it and MISP take turns.
+
+The customer id is worth checking before the demo: IRIS files every case against one,
+rejects an id it does not know, and ships with exactly one. A wrong id surfaces as an
+escalation that succeeds with no case attached rather than as an error.
+
 ## Wazuh
 
 Wazuh is not in this compose file. It ships its own multi-container stack, and rewriting

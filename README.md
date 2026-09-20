@@ -209,6 +209,32 @@ An action the system cannot reverse is refused at the click rather than in a wor
 log an hour later — a killed process has nothing to restore, and the analyst is owed
 that answer while they can still do something else about the host.
 
+## Case management
+
+```bash
+export NETSENTINEL_IRIS_URL="https://iris.local"
+export NETSENTINEL_IRIS_API_KEY="..."
+export NETSENTINEL_IRIS_CUSTOMER_ID=1
+```
+
+`POST /alerts/{id}/escalate` is where a finding stops being a row in a feed and
+becomes work somebody owns: it opens an incident here and a DFIR-IRIS case to work it
+in, and moves the alert to `escalated`.
+
+The incident is written first and IRIS is called after. The two are not equally
+important — this database records that a named analyst escalated a specific alert at a
+specific time, and that record has to survive IRIS being down, unconfigured or slow.
+So a case that cannot be opened is logged, `iris_case_id` stays null, and the
+escalation still happened. An alert that already belongs to an incident is a 409
+rather than a second case: two cases for one alert split the investigation in half and
+neither half knows about the other.
+
+The case opens with the evidence rather than a reference — the addresses, the
+technique, the matched indicators and, when a model was involved, the risk score and
+its strongest SHAP contributors. An analyst who has to return to the dashboard to
+learn why anything was escalated will read a case containing one alert id and close it
+again.
+
 ## Design decisions that deviate from M2 §4
 
 | Document says | Built with | Why |
