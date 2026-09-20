@@ -120,6 +120,14 @@ class DecisionIn(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
 
 
+class RollbackIn(BaseModel):
+    # Mandatory, unlike a decision's comment: an executed action is a block a human
+    # already authorised on the evidence, so undoing it is always a claim that
+    # something about that judgement was wrong, and that is what the next analyst
+    # needs to read.
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 class HealthOut(BaseModel):
     status: str
     version: str

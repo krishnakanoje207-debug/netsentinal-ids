@@ -22,6 +22,12 @@ agreement.
 request and the commit leaves the action ``approved``, and the next pass applies it
 again. Banning an address twice is the same address banned; recording a ban that was
 never applied, or never retrying one that was, is not recoverable from the database.
+
+The same two rules run the undo queue, with one asymmetry: a refused execution is
+recorded as ``failed`` and left, while a refused undo is retried indefinitely. The
+difference is what the database would otherwise claim. A failed execution means
+nothing is blocked, which is true; a failed undo would mean the same thing while the
+address is still blocked, which is not.
 """
 
 from __future__ import annotations
@@ -33,11 +39,15 @@ import time
 from dataclasses import dataclass, field
 
 from netsentinel_api.config import get_settings
-from netsentinel_api.db.models import ActionType, ResponseAction
+from netsentinel_api.db.models import ActionStatus, ActionType, ResponseAction
 from netsentinel_api.db.repositories import ActionRepository
 from netsentinel_api.db.session import get_sessionmaker
 from netsentinel_api.services.enforcement import EnforcementError, enforcers_from
-from netsentinel_api.services.response import mark_executed, mark_failed
+from netsentinel_api.services.response import (
+    mark_executed,
+    mark_failed,
+    mark_rolled_back,
+)
 
 logger = logging.getLogger("netsentinel.responder")
 
@@ -52,11 +62,17 @@ DEFAULT_INTERVAL_SECONDS = 10.0
 class Stats:
     executed: int = 0
     failed: int = 0
-    #: Approved, but no enforcement point is configured for its type. Left alone.
+    rolled_back: int = 0
+    #: Undos the enforcement point refused. The action stays in the queue and the
+    #: next pass tries again, so this is counted rather than logged and forgotten:
+    #: a number that never falls is a ban nobody is managing to lift.
+    retrying: int = 0
+    #: Queued, but no enforcement point is configured for the type. Left alone.
     waiting: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {"executed": self.executed, "failed": self.failed,
+                "rolled_back": self.rolled_back, "retrying": self.retrying,
                 "waiting": len(self.waiting)}
 
 
@@ -84,10 +100,49 @@ def execute_action(session, action: ResponseAction, point) -> bool:
     return True
 
 
+def roll_back_action(session, action: ResponseAction, point) -> bool:
+    """Undo one action a human asked to have lifted. Returns whether it was lifted.
+
+    This mirrors ``execute_action`` and differs from it in one place that matters.
+    When the enforcement point refuses, the action is left in
+    ``rollback_requested`` for the next pass instead of being marked ``failed``.
+    The ban is still in force, so a row reading ``failed`` would tell an analyst
+    that nothing is blocked while the address still is - the more dangerous of the
+    two lies. Retrying is safe: deleting a decision that has already expired is a
+    success at CrowdSec, and re-running an unisolate is the host already reachable.
+    """
+    # The gate check: refuses an action nobody asked to roll back, before anything
+    # leaves this process.
+    mark_rolled_back(session, action)
+
+    try:
+        receipt = point.undo(action)
+    except EnforcementError as exc:
+        session.rollback()
+        # Where execute_action writes 'failed' after its rollback, the equivalent
+        # here is putting the row back where it was, so this process keeps seeing
+        # the action in the undo queue.
+        action.status = ActionStatus.rollback_requested
+        logger.error("rollback of action %s refused, will retry: %s",
+                     action.action_id, exc)
+        return False
+
+    session.commit()
+    logger.info("action %s rolled back: %s", action.action_id, receipt)
+    return True
+
+
 def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE) -> Stats:
-    """Drain the approved queue once."""
+    """Drain the approved queue, then the rollback queue.
+
+    Approvals first. A block that has not been applied is an attacker still
+    reaching the network; an undo that waits one interval is a ban that lasts ten
+    seconds longer.
+    """
     stats = Stats()
-    for action in ActionRepository(session).approved(limit=limit):
+    actions = ActionRepository(session)
+
+    for action in actions.approved(limit=limit):
         point = points.get(action.action_type)
         if point is None:
             # Not a failure: an unconfigured backend is a gap in the deployment, not
@@ -100,9 +155,22 @@ def run_once(session, points: dict[ActionType, object], limit: int = BATCH_SIZE)
         else:
             stats.failed += 1
 
+    for action in actions.rollback_requested(limit=limit):
+        point = points.get(action.action_type)
+        if point is None:
+            # Same reasoning, and it bites harder here: the request stays queued, so
+            # configuring the backend lifts the ban rather than asking the analyst
+            # to notice it is still in place.
+            stats.waiting.append(action.action_type.value)
+            continue
+        if roll_back_action(session, action, point):
+            stats.rolled_back += 1
+        else:
+            stats.retrying += 1
+
     if stats.waiting:
         logger.warning(
-            "%s approved action(s) have no enforcement point configured: %s",
+            "%s queued action(s) have no enforcement point configured: %s",
             len(stats.waiting),
             ", ".join(sorted(set(stats.waiting))),
         )

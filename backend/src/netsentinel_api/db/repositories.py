@@ -122,3 +122,22 @@ class ActionRepository:
                 .limit(min(limit, MAX_PAGE_SIZE))
             )
         )
+
+    def rollback_requested(self, limit: int = 50) -> list[ResponseAction]:
+        """The undo queue the responder drains.
+
+        A second queue rather than a status argument on ``approved``: the two are
+        worked by different code paths, because an undo that fails is retried
+        where an execution that fails is not.
+        """
+        from netsentinel_api.db.models import ActionStatus
+
+        return list(
+            self._session.scalars(
+                select(ResponseAction)
+                .options(joinedload(ResponseAction.approval))
+                .where(ResponseAction.status == ActionStatus.rollback_requested)
+                .order_by(ResponseAction.action_id)
+                .limit(min(limit, MAX_PAGE_SIZE))
+            )
+        )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from netsentinel_api.db.models import ActionStatus, AlertStatus
+import pytest
+
+from netsentinel_api.db.models import ActionStatus, ActionType, AlertStatus
 from netsentinel_core.features.contract import FEATURE_DIM
 
 V1 = "/api/v1"
@@ -244,5 +246,57 @@ def test_an_ml_engineer_cannot_approve_a_response(client, engineer_header, actio
 def test_deciding_on_a_missing_action_is_a_404(client, auth_header):
     response = client.post(
         f"{V1}/actions/999/decision", json={"decision": "approved"}, headers=auth_header
+    )
+    assert response.status_code == 404
+
+
+# --- the rollback endpoint -------------------------------------------------
+
+def test_rolling_back_queues_the_undo(client, auth_header, action, session):
+    action.status = ActionStatus.executed
+    response = client.post(
+        f"{V1}/actions/500/rollback",
+        json={"reason": "blocked a partner IP"},
+        headers=auth_header,
+    )
+    assert response.status_code == 200
+    # Requested, not done: the responder lifts the ban and marks it rolled back.
+    assert action.status is ActionStatus.rollback_requested
+    assert response.json()["status"] == "rollback_requested"
+    assert [e.action for e in session.audit_entries()] == ["response.rollback_requested"]
+
+
+def test_rolling_back_an_action_that_never_executed_is_a_422(client, auth_header, action):
+    response = client.post(
+        f"{V1}/actions/500/rollback", json={"reason": "changed my mind"}, headers=auth_header
+    )
+    assert response.status_code == 422
+    assert "nothing to roll back" in response.json()["detail"]
+    assert action.status is ActionStatus.pending_approval
+
+
+def test_a_killed_process_cannot_be_rolled_back(client, auth_header, action):
+    """Answered at the click, not in a worker log an hour later."""
+    action.action_type = ActionType.kill_process
+    action.status = ActionStatus.executed
+    response = client.post(
+        f"{V1}/actions/500/rollback", json={"reason": "wrong process"}, headers=auth_header
+    )
+    assert response.status_code == 422
+    assert "cannot be undone" in response.json()["detail"]
+    assert action.status is ActionStatus.executed
+
+
+@pytest.mark.parametrize("body", [{}, {"reason": ""}], ids=["missing", "empty"])
+def test_a_rollback_requires_a_reason(client, auth_header, action, body):
+    action.status = ActionStatus.executed
+    response = client.post(f"{V1}/actions/500/rollback", json=body, headers=auth_header)
+    assert response.status_code == 422
+    assert action.status is ActionStatus.executed
+
+
+def test_rolling_back_a_missing_action_is_a_404(client, auth_header):
+    response = client.post(
+        f"{V1}/actions/999/rollback", json={"reason": "wrong host"}, headers=auth_header
     )
     assert response.status_code == 404
