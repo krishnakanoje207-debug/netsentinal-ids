@@ -19,6 +19,7 @@ Rough budget:
 | `sensors` | Suricata, Zeek | 2 GB |
 | `lab` | victims, benign traffic, attacker | 0.4 GB |
 | `dashboards` | Grafana | 0.25 GB |
+| `response` | CrowdSec Local API | 0.25 GB |
 
 About 6.6 GB, leaving room for Wazuh and the OS.
 
@@ -108,9 +109,66 @@ worth a conversion on every write.
 `risk_score` is nullable. An undecided flow must not be storable as `0`, which would read
 as "confidently benign".
 
+## Response: CrowdSec and the nftables bouncer
+
+The `response` profile runs the CrowdSec **Local API only** — `DISABLE_AGENT` is set,
+because CrowdSec's own parsers and scenarios are a second detection engine and this
+system already has one. Decisions here arrive from an analyst approving an action, and
+from nowhere else.
+
+The enforcement is split in two on purpose. The LAPI holds the decisions; the
+**firewall bouncer runs on the host**, not in a container, because it writes nftables
+sets in the host's network namespace. A bouncer inside Docker would filter its own
+namespace and block nothing.
+
+```bash
+# 1. the API needs a watcher account to write decisions with
+docker compose --profile response up -d
+docker compose exec crowdsec cscli machines add netsentinel-api --password '<generated>'
+
+# 2. the bouncer needs its own key, and runs on the VM itself
+docker compose exec crowdsec cscli bouncers add nftables-bouncer
+sudo apt install crowdsec-firewall-bouncer-nftables
+sudo sed -i 's|^api_url:.*|api_url: http://127.0.0.1:8080/|'   /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+# paste the key into api_key in the same file, then
+sudo systemctl restart crowdsec-firewall-bouncer
+
+# 3. point the responder at the LAPI (in the API's environment, not .env here)
+export NETSENTINEL_CROWDSEC_URL="http://127.0.0.1:8080"
+export NETSENTINEL_CROWDSEC_MACHINE_ID="netsentinel-api"
+export NETSENTINEL_CROWDSEC_PASSWORD="<the password from step 1>"
+uv run netsentinel-respond --once
+```
+
+Verifying the D11 exit gate, end to end:
+
+```bash
+# an approved block reached the edge
+docker compose exec crowdsec cscli decisions list -o human
+# and the bouncer wrote it into the kernel
+sudo nft list set inet crowdsec crowdsec-blacklists | head
+```
+
+`cscli decisions list` shows the origin as `netsentinel` and the reason as
+`netsentinel/block_ip`, so an address blocked by this system is distinguishable at a
+glance from one blocked by a CrowdSec scenario.
+
 ## Wazuh
 
 Wazuh is not in this compose file. It ships its own multi-container stack, and rewriting
 it would mean maintaining a fork of somebody else's deployment for no gain. Clone
 `wazuh/wazuh-docker` at the matching tag and run its single-node compose, then keep its
 memory settings in mind against the budget above.
+
+Its Active Response side needs two commands declared in the manager's `ossec.conf`,
+because Wazuh ships no stock equivalent of either:
+
+| Action type | Command | Script |
+|---|---|---|
+| `isolate_host` | `!netsentinel-isolate` | deployed with the agent |
+| `kill_process` | `!netsentinel-kill-process` | deployed with the agent |
+| `disable_account` | `!disable-account` | ships with Wazuh |
+
+The map lives in `services/enforcement.py`, and `enforcers_from` offers Wazuh only the
+action types it appears in — so an action type with no command waits in the queue
+rather than being sent to an agent that would ignore it.

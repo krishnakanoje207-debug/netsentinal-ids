@@ -12,6 +12,7 @@
 #   docker compose --profile sensors up -d     # Suricata + Zeek on the lab bridge
 #   docker compose --profile dashboards up -d  # Grafana
 #   docker compose --profile intel up -d       # MISP + Keep
+#   docker compose --profile response up -d    # CrowdSec Local API
 #
 # Rough budget: storage 2.5 GB, bus 1 GB, ingest 0.25 GB, sensors 2 GB, lab 0.5 GB,
 # dashboards 0.25 GB. About 6.5 GB, leaving room for Wazuh and the OS.
@@ -46,6 +47,8 @@ volumes:
   misp-data:
   misp-db:
   keep-data:
+  crowdsec-config:
+  crowdsec-data:
 
 services:
   # --- storage --------------------------------------------------------------
@@ -330,4 +333,31 @@ services:
       - "127.0.0.1:8082:8080"
     mem_limit: 512m
     networks: [backplane]
+    restart: unless-stopped
+
+  # --- response -------------------------------------------------------------
+
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.6.3
+    profiles: [response]
+    environment:
+      # The Local API only. CrowdSec's own log parsers and scenarios are a second
+      # detection engine, and this deployment already has one: decisions here come
+      # from an analyst approving an action, not from CrowdSec deciding by itself.
+      DISABLE_AGENT: "true"
+      DISABLE_ONLINE_API: "true"
+    volumes:
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+    ports:
+      # The responder reaches this over the backplane; the port is published so
+      # `cscli` on the host can register machines and bouncers.
+      - "127.0.0.1:8080:8080"
+    mem_limit: 256m
+    networks: [backplane]
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped

@@ -54,7 +54,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 376 tests, no database or network needed
+uv run pytest            # 406 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -156,6 +156,40 @@ Keep de-duplicates on a fingerprint covering the source, the two addresses and t
 technique. Severity, score and time are deliberately outside it: a scan that resumes an
 hour later with a higher score is the same finding, and at-least-once delivery means
 the same alert can legitimately be written twice.
+
+## Active response
+
+```bash
+export NETSENTINEL_CROWDSEC_URL="http://127.0.0.1:8080"
+export NETSENTINEL_CROWDSEC_MACHINE_ID="netsentinel-api"
+export NETSENTINEL_CROWDSEC_PASSWORD="..."
+uv run netsentinel-respond --interval 10   # execute what analysts have approved
+```
+
+Approving still does not execute. The API moves an action to `approved` and stops;
+this worker is what turns that into a ban at the edge or a command on a host. The
+split is the reason a route handler never holds a database transaction open across a
+network round trip, and an analyst clicking approve never waits on CrowdSec.
+
+The order inside the worker is the part worth reading. `mark_executed` runs first,
+uncommitted, so the gate refuses an unapproved action *before* anything leaves the
+process; then the request goes out; only an accepted request is committed. A refusal
+rolls the transaction back and records the action as `failed`, so the row and the
+network never disagree. A crash between the accepted request and the commit leaves the
+action `approved` and the next pass applies it again — banning an address twice is the
+same address banned, while a ban recorded but never applied is not recoverable.
+
+Two enforcement points, because they enforce in different places: CrowdSec owns the
+edge (its bouncer writes the nftables set, which is why nothing here shells out to
+`nft`), and Wazuh Active Response owns the host. Both are optional in the same sense
+MISP and Keep are — with neither configured the queue still fills and nothing on the
+network can change, which is the safe way for a deployment to be incomplete. Approved
+actions then wait instead of failing, so configuring the backend later executes them
+rather than sending the analyst back to approve a second time.
+
+Bans expire (four hours by default). A decision that lapses fails open: a mistaken
+block costs an afternoon rather than leaving a permanent hole in the lab that nobody
+remembers punching.
 
 ## Design decisions that deviate from M2 §4
 
