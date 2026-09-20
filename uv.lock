@@ -12,6 +12,7 @@ resolution-markers = [
 [manifest]
 members = [
     "netsentinel-api",
+    "netsentinel-copilot",
     "netsentinel-core",
     "netsentinel-scoring",
     "netsentinel-sensor",
@@ -617,6 +618,25 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+]
+
+[[package]]
+name = "netsentinel-copilot"
+version = "0.1.0"
+source = { editable = "copilot" }
+dependencies = [
+    { name = "httpx" },
+    { name = "netsentinel-api" },
+    { name = "pydantic" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "netsentinel-api", editable = "backend" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [[package]]

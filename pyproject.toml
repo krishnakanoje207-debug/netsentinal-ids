@@ -3,7 +3,7 @@
 # its own dependency list. That boundary is the point: the API must not be able to
 # import LightGBM by accident, and the sensor must stay installable without it.
 [tool.uv.workspace]
-members = ["backend", "core", "scoring", "sensors", "training", "writer"]
+members = ["backend", "copilot", "core", "scoring", "sensors", "training", "writer"]
 
 [tool.uv]
 package = false
@@ -41,6 +41,7 @@ torch = { index = "pytorch-cpu" }
 [tool.pytest.ini_options]
 testpaths = [
     "backend/tests",
+    "copilot/tests",
     "core/tests",
     "scoring/tests",
     "sensors/tests",
