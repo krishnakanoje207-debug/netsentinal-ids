@@ -9,47 +9,49 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type StreamStatus = 'connecting' | 'open' | 'closed'
+/** @typedef {'connecting' | 'open' | 'closed'} StreamStatus */
 
 const FIRST_RETRY_MS = 1000
 const MAX_RETRY_MS = 30_000
 
 /** Backoff doubles per attempt and then holds, so a long outage stops hammering. */
-export function retryDelay(attempt: number): number {
+export function retryDelay(attempt) {
   return Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
 }
 
-export function streamUrl(token: string, base: string = '/api/v1'): string {
+export function streamUrl(token, base = '/api/v1') {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
   // The token goes in the query string because a browser cannot set headers on a
   // WebSocket handshake. See the note in backend routes/stream.py.
   return `${scheme}://${window.location.host}${base}/alerts/stream?token=${encodeURIComponent(token)}`
 }
 
-export interface AlertStreamState {
-  status: StreamStatus
-  /** Alert ids received since mounting, newest first. */
-  received: number[]
-  lastMessageAt: number | null
-}
-
-export function useAlertStream(
-  token: string | null,
-  onAlert?: (message: Record<string, unknown>) => void,
-): AlertStreamState {
-  const [status, setStatus] = useState<StreamStatus>('closed')
-  const [received, setReceived] = useState<number[]>([])
-  const [lastMessageAt, setLastMessageAt] = useState<number | null>(null)
+/**
+ * @param {string | null} token
+ * @param {(message: Record<string, unknown>) => void} [onAlert]
+ */
+export function useAlertStream(token, onAlert) {
+  const [status, setStatus] = useState('closed')
+  const [received, setReceived] = useState([])
+  const [lastMessageAt, setLastMessageAt] = useState(null)
 
   const attemptRef = useRef(0)
-  const socketRef = useRef<WebSocket | null>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const socketRef = useRef(null)
+  const timerRef = useRef(null)
   const closedByUsRef = useRef(false)
   const handlerRef = useRef(onAlert)
-  handlerRef.current = onAlert
+  // Written in an effect, not during render: a ref assigned while rendering is read by
+  // React's own rules as a side effect, and under StrictMode's double render it is one.
+  useEffect(() => {
+    handlerRef.current = onAlert
+  }, [onAlert])
+
+  // Held in a ref so onclose can reconnect without the callback capturing itself while
+  // it is still being initialised.
+  const connectRef = useRef(null)
 
   const connect = useCallback(
-    (authToken: string) => {
+    (authToken) => {
       setStatus('connecting')
       const socket = new WebSocket(streamUrl(authToken))
       socketRef.current = socket
@@ -59,12 +61,12 @@ export function useAlertStream(
         setStatus('open')
       }
 
-      socket.onmessage = (event: MessageEvent) => {
+      socket.onmessage = (event) => {
         setLastMessageAt(Date.now())
         try {
-          const message = JSON.parse(String(event.data)) as Record<string, unknown>
+          const message = JSON.parse(String(event.data))
           if (typeof message.alert_id === 'number') {
-            setReceived((previous) => [message.alert_id as number, ...previous])
+            setReceived((previous) => [message.alert_id, ...previous])
           }
           handlerRef.current?.(message)
         } catch {
@@ -77,7 +79,7 @@ export function useAlertStream(
         if (closedByUsRef.current) return
         const delay = retryDelay(attemptRef.current)
         attemptRef.current += 1
-        timerRef.current = setTimeout(() => connect(authToken), delay)
+        timerRef.current = setTimeout(() => connectRef.current?.(authToken), delay)
       }
 
       // onerror is always followed by onclose, so reconnection is handled there only.
@@ -85,6 +87,10 @@ export function useAlertStream(
     },
     [],
   )
+
+  useEffect(() => {
+    connectRef.current = connect
+  }, [connect])
 
   useEffect(() => {
     if (!token) {

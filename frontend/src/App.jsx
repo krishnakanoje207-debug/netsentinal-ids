@@ -9,7 +9,7 @@ import { AlertFeed } from './alerts/AlertFeed'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
 
-export function createQueryClient(): QueryClient {
+export function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
@@ -28,7 +28,7 @@ export function createQueryClient(): QueryClient {
   })
 }
 
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+function NavLink({ to, children }) {
   const { pathname } = useLocation()
   const active = to === '/' ? pathname === '/' : pathname.startsWith(to)
   return (
@@ -45,7 +45,7 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   )
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children }) {
   const { user, signOut } = useAuth()
   return (
     <div className="min-h-full">
@@ -107,7 +107,7 @@ function Gate() {
   return <Authenticated />
 }
 
-export function App({ queryClient = createQueryClient() }: { queryClient?: QueryClient }) {
+export function App({ queryClient = createQueryClient() }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

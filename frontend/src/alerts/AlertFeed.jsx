@@ -10,7 +10,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
 import { api } from '../api/client'
-import type { Alert, AlertStatus, Severity } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { SeverityBadge, StatusPill } from '../components/SeverityBadge'
 import { ErrorNotice } from '../components/ErrorNotice'
@@ -18,8 +17,8 @@ import { useAlertStream } from '../stream/useAlertStream'
 
 const POLL_MS = 5000
 
-const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
-const STATUSES: AlertStatus[] = [
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info']
+const STATUSES = [
   'new',
   'triaging',
   'escalated',
@@ -27,7 +26,8 @@ const STATUSES: AlertStatus[] = [
   'closed_false_positive',
 ]
 
-function StreamIndicator({ status }: { status: 'connecting' | 'open' | 'closed' }) {
+/** @param {{status: import('../stream/useAlertStream').StreamStatus}} props */
+function StreamIndicator({ status }) {
   const label = status === 'open' ? 'live' : status === 'connecting' ? 'connecting' : 'disconnected'
   const colour =
     status === 'open'
@@ -43,15 +43,11 @@ function StreamIndicator({ status }: { status: 'connecting' | 'open' | 'closed' 
   )
 }
 
-export function AlertFeed({
-  status,
-  severity,
-  onFilterChange,
-}: {
-  status: string
-  severity: string
-  onFilterChange: (next: { status: string; severity: string }) => void
-}) {
+/**
+ * @param {{status: string, severity: string,
+ *   onFilterChange: (next: {status: string, severity: string}) => void}} props
+ */
+export function AlertFeed({ status, severity, onFilterChange }) {
   const { token } = useAuth()
   const queryClient = useQueryClient()
 
@@ -63,7 +59,8 @@ export function AlertFeed({
 
   const { data, error, isLoading } = useQuery({
     queryKey: ['alerts', status, severity],
-    queryFn: () => api.alerts(token as string, { status: status || undefined, severity: severity || undefined }),
+    queryFn: () =>
+      api.alerts(token, { status: status || undefined, severity: severity || undefined }),
     enabled: token !== null,
     refetchInterval: POLL_MS,
   })
@@ -129,7 +126,7 @@ export function AlertFeed({
             </tr>
           </thead>
           <tbody>
-            {data.map((alert: Alert) => (
+            {data.map((alert) => (
               <tr
                 key={alert.alert_id}
                 className="border-b border-[var(--color-line)]/50 hover:bg-[var(--color-panel)]"

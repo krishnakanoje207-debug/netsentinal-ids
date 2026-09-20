@@ -17,29 +17,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { api } from '../api/client'
-import type { ApprovalDecision, ResponseAction } from '../api/types'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
 
-const ACTION_LABEL: Record<string, string> = {
+const ACTION_LABEL = {
   block_ip: 'Block IP address',
   isolate_host: 'Isolate host',
   kill_process: 'Kill process',
   disable_account: 'Disable account',
 }
 
-export function ActionCard({
-  action,
-  onDecide,
-  pending,
-  canDecide,
-}: {
-  action: ResponseAction
-  onDecide: (decision: ApprovalDecision, comment: string | null) => void
-  pending: boolean
-  canDecide: boolean
-}) {
+/**
+ * @param {{action: import('../api/types').ResponseAction,
+ *   onDecide: (decision: import('../api/types').ApprovalDecision,
+ *              comment: string | null) => void,
+ *   pending: boolean, canDecide: boolean}} props
+ */
+export function ActionCard({ action, onDecide, pending, canDecide }) {
   const [comment, setComment] = useState('')
   const rejectionReady = comment.trim().length > 0
 
@@ -119,21 +114,14 @@ export function ApprovalQueue() {
 
   const { data, error, isLoading } = useQuery({
     queryKey: ['pending-actions'],
-    queryFn: () => api.pendingActions(token as string),
+    queryFn: () => api.pendingActions(token),
     enabled: token !== null,
     refetchInterval: 5000,
   })
 
   const decide = useMutation({
-    mutationFn: ({
-      actionId,
-      decision,
-      comment,
-    }: {
-      actionId: number
-      decision: ApprovalDecision
-      comment: string | null
-    }) => api.decide(token as string, actionId, decision, comment),
+    mutationFn: ({ actionId, decision, comment }) =>
+      api.decide(token, actionId, decision, comment),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['pending-actions'] })
     },

@@ -3,35 +3,23 @@
  *
  * The token lives in memory plus sessionStorage, not localStorage. sessionStorage dies
  * with the tab, which suits a shared analyst workstation, and the token's own lifetime
- * is 30 minutes. Neither defends against XSS - nothing in a browser really does - so
- * the real mitigations stay where they are: a short expiry, and an API reachable only
- * through the SSH tunnel.
+ * is 30 minutes. Neither defends against XSS - nothing in a browser really does - so the
+ * real mitigations stay where they are: a short expiry, and an API reachable only through
+ * the SSH tunnel.
  *
- * Permissions come from the API, never from decoding the token here. The server owns
- * the role-to-permission table; a second copy in TypeScript would drift from it.
+ * Permissions come from the API, never from decoding the token here. The server owns the
+ * role-to-permission table; a second copy in JavaScript would drift from it.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 
 import { ApiError, api } from '../api/client'
-import type { CurrentUser } from '../api/types'
 
 const STORAGE_KEY = 'netsentinel.token'
 
-export interface AuthState {
-  token: string | null
-  user: CurrentUser | null
-  loading: boolean
-  error: string | null
-  signIn: (username: string, password: string) => Promise<void>
-  signOut: () => void
-  can: (permission: string) => boolean
-}
+const AuthContext = createContext(null)
 
-const AuthContext = createContext<AuthState | null>(null)
-
-function readStoredToken(): string | null {
+function readStoredToken() {
   try {
     return sessionStorage.getItem(STORAGE_KEY)
   } catch {
@@ -40,7 +28,7 @@ function readStoredToken(): string | null {
   }
 }
 
-function storeToken(token: string | null): void {
+function storeToken(token) {
   try {
     if (token === null) sessionStorage.removeItem(STORAGE_KEY)
     else sessionStorage.setItem(STORAGE_KEY, token)
@@ -49,11 +37,11 @@ function storeToken(token: string | null): void {
   }
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(readStoredToken)
-  const [user, setUser] = useState<CurrentUser | null>(null)
-  const [loading, setLoading] = useState<boolean>(token !== null)
-  const [error, setError] = useState<string | null>(null)
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(readStoredToken)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(token !== null)
+  const [error, setError] = useState(null)
 
   const signOut = useCallback(() => {
     setToken(null)
@@ -77,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((me) => {
         if (!cancelled) setUser(me)
       })
-      .catch((cause: unknown) => {
+      .catch((cause) => {
         if (cancelled) return
         if (cause instanceof ApiError && cause.kind === 'unauthenticated') signOut()
         else setError(cause instanceof Error ? cause.message : 'cannot verify the session')
@@ -90,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [token, signOut])
 
-  const signIn = useCallback(async (username: string, password: string) => {
+  const signIn = useCallback(async (username, password) => {
     setError(null)
     try {
       const response = await api.login(username, password)
@@ -109,11 +97,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const can = useCallback(
-    (permission: string) => user?.permissions.includes(permission) ?? false,
+    (permission) => user?.permissions.includes(permission) ?? false,
     [user],
   )
 
-  const value = useMemo<AuthState>(
+  const value = useMemo(
     () => ({ token, user, loading, error, signIn, signOut, can }),
     [token, user, loading, error, signIn, signOut, can],
   )
@@ -121,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth(): AuthState {
+export function useAuth() {
   const context = useContext(AuthContext)
   if (context === null) throw new Error('useAuth must be used inside an AuthProvider')
   return context

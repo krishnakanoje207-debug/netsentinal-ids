@@ -8,10 +8,9 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ResponseAction } from '../api/types'
 import { ActionCard } from './ApprovalQueue'
 
-const ACTION: ResponseAction = {
+const ACTION = {
   action_id: 500,
   alert_id: 100,
   action_type: 'block_ip',

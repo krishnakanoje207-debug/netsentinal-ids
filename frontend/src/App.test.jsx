@@ -36,7 +36,7 @@ describe('App', () => {
       status: 401,
       statusText: 'Unauthorized',
       json: async () => ({ detail: 'not authenticated' }),
-    } as Response)
+    })
 
     render(<App queryClient={createQueryClient()} />)
 
@@ -63,14 +63,14 @@ describe('App', () => {
             role: 'soc_analyst',
             permissions: ['alerts:read', 'approvals:decide'],
           }),
-        } as Response
+        }
       }
       return {
         ok: true,
         status: 200,
         statusText: 'OK',
         json: async () => [],
-      } as Response
+      }
     })
 
     render(<App queryClient={createQueryClient()} />)
@@ -81,7 +81,7 @@ describe('App', () => {
 })
 
 describe('createQueryClient', () => {
-  function shouldRetry(error: unknown, attempt = 0): boolean {
+  function shouldRetry(error, attempt = 0) {
     const retry = createQueryClient().getDefaultOptions().queries?.retry
     if (typeof retry !== 'function') throw new Error('retry should be a predicate')
     return Boolean(retry(attempt, error))

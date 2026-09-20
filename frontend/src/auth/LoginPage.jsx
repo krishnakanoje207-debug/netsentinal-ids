@@ -8,7 +8,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event) {
     event.preventDefault()
     setSubmitting(true)
     try {

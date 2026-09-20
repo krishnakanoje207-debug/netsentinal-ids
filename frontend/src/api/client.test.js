@@ -8,13 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, api, request } from './client'
 
-function respond(status: number, body: unknown = {}, ok = false): Response {
+function respond(status, body = {}, ok = false) {
   return {
     ok,
     status,
     statusText: `status ${status}`,
     json: async () => body,
-  } as Response
+  }
 }
 
 describe('request', () => {
@@ -36,7 +36,7 @@ describe('request', () => {
     await request('/alerts', { token: 'abc' })
 
     const [, init] = vi.mocked(fetch).mock.calls[0]
-    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer abc')
+    expect(init.headers.Authorization).toBe('Bearer abc')
   })
 
   it('sends no Authorization header without a token', async () => {
@@ -44,7 +44,7 @@ describe('request', () => {
     await request('/health')
 
     const [, init] = vi.mocked(fetch).mock.calls[0]
-    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined()
+    expect(init.headers.Authorization).toBeUndefined()
   })
 
   it.each([
@@ -83,7 +83,7 @@ describe('request', () => {
       json: async () => {
         throw new Error('not json')
       },
-    } as unknown as Response)
+    })
     await expect(request('/alerts')).rejects.toThrow('Bad Gateway')
   })
 
@@ -98,10 +98,8 @@ describe('request', () => {
     await api.login('analyst', 'secret')
 
     const [, init] = vi.mocked(fetch).mock.calls[0]
-    expect((init?.headers as Record<string, string>)['Content-Type']).toBe(
-      'application/x-www-form-urlencoded',
-    )
-    expect(String(init?.body)).toContain('username=analyst')
+    expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded')
+    expect(String(init.body)).toContain('username=analyst')
   })
 
   it('never puts credentials in the URL', async () => {

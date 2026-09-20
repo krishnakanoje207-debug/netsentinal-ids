@@ -12,7 +12,8 @@ cloud VM.
 npm install
 npm run dev          # http://localhost:5173, proxying /api to 127.0.0.1:8000
 npm test             # 55 tests
-npm run build        # type-check then bundle
+npm run build        # bundle for production
+npm run lint         # oxlint
 ```
 
 Point the proxy somewhere else with `NETSENTINEL_API=http://host:port npm run dev`.
@@ -23,9 +24,13 @@ backend deliberately ships no CORS middleware.
 
 ## Layout
 
+Plain JavaScript with JSX, not TypeScript. Shapes are written down as JSDoc typedefs in
+`api/types.js` - comments, so they read as plain English and still drive editor
+completions, without type syntax in the way. The tests are the real safety net.
+
 | Path | What it is |
 |---|---|
-| `api/` | Typed client and the hand-written mirror of the backend schemas |
+| `api/` | Client, plus JSDoc typedefs mirroring the backend schemas |
 | `auth/` | Session context and the login form |
 | `alerts/` | Feed, detail view, SHAP chart |
 | `actions/` | The approval queue |
@@ -60,9 +65,15 @@ disconnected, because an analyst watching a feed that has silently died will rea
 absence of alerts as calm. Reconnection backs off to 30s, since a tunnel drop is
 routine and a tight retry loop would be a self-inflicted denial of service.
 
-## Deviation from M2 §4
+## Deviations from M2 §4
 
-The document specifies React 18; this is React 19, which is what `create vite` now
+The document specifies **TypeScript** "for a type-safe UI"; this is JavaScript. Typed
+source is only an asset to someone who can read and maintain it, and this codebase has to
+be defended by its author. The 55 tests cover the behaviour that types would have caught
+at the boundaries - error mapping, permission gating, the undecided-vs-benign rule - and
+they are language-agnostic. **M2 §4 needs updating to match.**
+
+The document also specifies React 18; this is React 19, which is what `create vite` now
 scaffolds and is the current stable release. Nothing in the design depends on 18.
 
 Recharts is loaded lazily, so the feed — the landing page — does not pay for it. That

@@ -1,6 +1,4 @@
-import type { AlertStatus, Severity } from '../api/types'
-
-const SEVERITY_CLASS: Record<Severity, string> = {
+const SEVERITY_CLASS = {
   info: 'border-[var(--color-sev-info)] text-[var(--color-sev-info)]',
   low: 'border-[var(--color-sev-low)] text-[var(--color-sev-low)]',
   medium: 'border-[var(--color-sev-medium)] text-[var(--color-sev-medium)]',
@@ -10,7 +8,8 @@ const SEVERITY_CLASS: Record<Severity, string> = {
   critical: 'border-[var(--color-sev-critical)] bg-[var(--color-sev-critical)] text-[#1b0d0c]',
 }
 
-export function SeverityBadge({ severity }: { severity: Severity }) {
+/** @param {{severity: import('../api/types').Severity}} props */
+export function SeverityBadge({ severity }) {
   return (
     <span
       className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${SEVERITY_CLASS[severity]}`}
@@ -21,7 +20,7 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   )
 }
 
-const STATUS_LABEL: Record<AlertStatus, string> = {
+const STATUS_LABEL = {
   new: 'New',
   triaging: 'Triaging',
   escalated: 'Escalated',
@@ -29,11 +28,13 @@ const STATUS_LABEL: Record<AlertStatus, string> = {
   closed_false_positive: 'Closed - false positive',
 }
 
-export function statusLabel(status: AlertStatus): string {
+/** @param {import('../api/types').AlertStatus} status */
+export function statusLabel(status) {
   return STATUS_LABEL[status] ?? status
 }
 
-export function StatusPill({ status }: { status: AlertStatus }) {
+/** @param {{status: import('../api/types').AlertStatus}} props */
+export function StatusPill({ status }) {
   const closed = status.startsWith('closed_')
   return (
     <span

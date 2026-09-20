@@ -16,7 +16,6 @@ import { Suspense, lazy } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { api } from '../api/client'
-import type { AlertStatus } from '../api/types'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
@@ -28,7 +27,7 @@ const ShapChart = lazy(() =>
   import('./ShapChart').then((module) => ({ default: module.ShapChart })),
 )
 
-const TRIAGE_OPTIONS: AlertStatus[] = [
+const TRIAGE_OPTIONS = [
   'new',
   'triaging',
   'escalated',
@@ -36,7 +35,7 @@ const TRIAGE_OPTIONS: AlertStatus[] = [
   'closed_false_positive',
 ]
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }) {
   return (
     <div>
       <dt className="text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">{label}</dt>
@@ -46,19 +45,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function AlertDetail() {
-  const { alertId } = useParams<{ alertId: string }>()
+  const { alertId } = useParams()
   const { token, can } = useAuth()
   const queryClient = useQueryClient()
   const id = Number(alertId)
 
   const { data: alert, error, isLoading } = useQuery({
     queryKey: ['alert', id],
-    queryFn: () => api.alert(token as string, id),
+    queryFn: () => api.alert(token, id),
     enabled: token !== null && Number.isFinite(id),
   })
 
   const triage = useMutation({
-    mutationFn: (status: AlertStatus) => api.setAlertStatus(token as string, id, status),
+    mutationFn: (status) => api.setAlertStatus(token, id, status),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['alert', id] })
       void queryClient.invalidateQueries({ queryKey: ['alerts'] })

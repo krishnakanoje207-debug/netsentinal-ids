@@ -8,10 +8,15 @@
  * reached. Both render as a dash in neutral grey, with a reason on hover.
  */
 
-export type RiskTone = 'undecided' | 'low' | 'medium' | 'high' | 'critical'
+/** @typedef {'undecided' | 'low' | 'medium' | 'high' | 'critical'} RiskTone */
 
-/** Thresholds for how a decided score is coloured. */
-export function toneFor(score: number | null | undefined): RiskTone {
+/**
+ * How a decided score is coloured.
+ *
+ * @param {number | null | undefined} score
+ * @returns {RiskTone}
+ */
+export function toneFor(score) {
   if (score === null || score === undefined || Number.isNaN(score)) return 'undecided'
   if (score >= 0.9) return 'critical'
   if (score >= 0.7) return 'high'
@@ -19,7 +24,7 @@ export function toneFor(score: number | null | undefined): RiskTone {
   return 'low'
 }
 
-const TONE_CLASS: Record<RiskTone, string> = {
+const TONE_CLASS = {
   undecided: 'text-[var(--color-undecided)]',
   low: 'text-[var(--color-sev-low)]',
   medium: 'text-[var(--color-sev-medium)]',
@@ -27,20 +32,17 @@ const TONE_CLASS: Record<RiskTone, string> = {
   critical: 'text-[var(--color-sev-critical)]',
 }
 
-export function formatRisk(score: number | null | undefined): string {
+/** @param {number | null | undefined} score */
+export function formatRisk(score) {
   if (score === null || score === undefined || Number.isNaN(score)) return '--'
   return `${(score * 100).toFixed(0)}%`
 }
 
-export interface RiskScoreProps {
-  score: number | null | undefined
-  /** True when a model scored this flow but was in shadow mode. */
-  shadow?: boolean
-  /** Why there is no score, shown on hover. */
-  undecidedReason?: string
-}
-
-export function RiskScore({ score, shadow = false, undecidedReason }: RiskScoreProps) {
+/**
+ * @param {{score: number | null | undefined, shadow?: boolean,
+ *   undecidedReason?: string}} props
+ */
+export function RiskScore({ score, shadow = false, undecidedReason }) {
   const tone = toneFor(score)
   const undecided = tone === 'undecided'
 

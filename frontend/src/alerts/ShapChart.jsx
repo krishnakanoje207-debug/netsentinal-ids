@@ -12,10 +12,11 @@
 
 import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-export interface Contribution {
-  feature: string
-  value: number
-}
+/**
+ * @typedef {object} Contribution
+ * @property {string} feature
+ * @property {number} value
+ */
 
 /** Default number of features shown; the rest are summarised as a remainder. */
 export const DEFAULT_LIMIT = 10
@@ -26,10 +27,7 @@ export const DEFAULT_LIMIT = 10
  * Ties break on the feature name so the order is stable between renders - a chart that
  * reshuffles on every poll is unreadable.
  */
-export function rankContributions(
-  contributions: Record<string, number>,
-  limit: number = DEFAULT_LIMIT,
-): Contribution[] {
+export function rankContributions(contributions, limit = DEFAULT_LIMIT) {
   return Object.entries(contributions)
     .map(([feature, value]) => ({ feature, value }))
     .sort((a, b) => {
@@ -40,10 +38,7 @@ export function rankContributions(
 }
 
 /** Total absolute weight left out of a truncated chart, so nothing is hidden silently. */
-export function remainingWeight(
-  contributions: Record<string, number>,
-  limit: number = DEFAULT_LIMIT,
-): number {
+export function remainingWeight(contributions, limit = DEFAULT_LIMIT) {
   const all = Object.values(contributions).map(Math.abs)
   if (all.length <= limit) return 0
   const shown = rankContributions(contributions, limit).map((c) => Math.abs(c.value))
@@ -55,13 +50,8 @@ export function remainingWeight(
 const TOWARD_ATTACK = 'var(--color-sev-high)'
 const TOWARD_BENIGN = 'var(--color-sev-info)'
 
-export function ShapChart({
-  contributions,
-  limit = DEFAULT_LIMIT,
-}: {
-  contributions: Record<string, number>
-  limit?: number
-}) {
+/** @param {{contributions: Record<string, number>, limit?: number}} props */
+export function ShapChart({ contributions, limit = DEFAULT_LIMIT }) {
   const data = rankContributions(contributions, limit)
   const omitted = remainingWeight(contributions, limit)
 
