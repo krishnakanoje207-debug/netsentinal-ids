@@ -30,6 +30,7 @@ dev = ["httpx>=0.27"]
 
 [project.scripts]
 netsentinel-bootstrap = "netsentinel_api.bootstrap:main"
+netsentinel-register-model = "netsentinel_api.register:main"
 
 [build-system]
 requires = ["hatchling"]
