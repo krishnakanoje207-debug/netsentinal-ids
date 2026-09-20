@@ -18,6 +18,8 @@ Rough budget:
 | `ingest` | Vector | 0.25 GB |
 | `sensors` | Suricata, Zeek | 2 GB |
 | `lab` | victims, benign traffic, attacker | 0.4 GB |
+
+The attack traffic that drives these victims — scan, brute force, C2 beacon, exfil — and the API load test live in [`../lab`](../lab), scoped to the `172.30.0.0/24` bridge by a guard that refuses any other target.
 | `dashboards` | Grafana | 0.25 GB |
 | `response` | CrowdSec Local API | 0.25 GB |
 

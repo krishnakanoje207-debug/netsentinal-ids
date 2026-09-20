@@ -372,6 +372,10 @@ Everything is real except four edges — the bus, the database, IRIS and the enf
 point — because a test that needs Redpanda, PostgreSQL, DFIR-IRIS and CrowdSec running
 is a test nobody runs.
 
+The traffic that produces those flows on a live VM lives in [`lab/`](lab): scan, brute
+force, C2-beacon cadence and exfil pattern, each scoped to the isolated lab bridge, plus
+a Locust load test for the API's read path.
+
 One gap is recorded there as a passing test rather than papered over: **nothing in the
 ML path assigns a MITRE technique.** The sensor publishes flow features and the writer
 stores a score; neither has anything to map to ATT&CK with, so `mitre_technique` is
