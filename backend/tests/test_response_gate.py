@@ -15,19 +15,25 @@ import pytest
 from netsentinel_api.db.models import (
     ActionStatus,
     ActionType,
+    Alert,
     Approval,
     ApprovalDecision,
     AuditLog,
     ResponseAction,
+    Severity,
     User,
 )
 from netsentinel_api.services.response import (
     AlreadyDecided,
+    AlreadyProposed,
     ApprovalRequired,
+    InvalidTarget,
     NotExecutable,
+    ProtectedTarget,
     mark_executed,
     mark_failed,
     mark_rolled_back,
+    propose,
     record_decision,
     request_rollback,
 )
@@ -209,3 +215,81 @@ def test_a_refused_execution_leaves_no_audit_row(session, action):
     with pytest.raises(ApprovalRequired):
         mark_executed(session, action)
     assert session.audit_entries() == []
+
+
+# --- the other end of the gate: proposing -----------------------------------
+
+def _alert(**overrides) -> Alert:
+    fields = {
+        "alert_id": 100,
+        "source": "early_flow",
+        "severity": Severity.high,
+        "src_ip": "203.0.113.9",
+        "dst_ip": "10.0.0.9",
+    }
+    fields.update(overrides)
+    return Alert(**fields)
+
+
+def test_a_proposal_arrives_awaiting_a_decision(session, analyst):
+    action = propose(session, _alert(), ActionType.block_ip, None, analyst)
+
+    assert action.status is ActionStatus.pending_approval
+    assert action.approval is None
+    assert "response.proposed" in [e.action for e in session.audit_entries()]
+
+
+def test_blocking_defaults_to_the_address_the_traffic_came_from(session, analyst):
+    action = propose(session, _alert(), ActionType.block_ip, None, analyst)
+    assert action.target == "203.0.113.9"
+
+
+def test_an_alert_with_no_source_address_cannot_default_to_one(session, analyst):
+    with pytest.raises(InvalidTarget, match="does not supply one"):
+        propose(session, _alert(src_ip=None), ActionType.block_ip, None, analyst)
+
+
+def test_a_host_action_has_no_default_target(session, analyst):
+    """Guessing which machine to isolate is not a default worth having."""
+    with pytest.raises(InvalidTarget):
+        propose(session, _alert(), ActionType.isolate_host, None, analyst)
+
+
+def test_a_block_on_something_that_is_not_an_address_is_refused(session, analyst):
+    with pytest.raises(InvalidTarget, match="not an IP address"):
+        propose(session, _alert(), ActionType.block_ip, "attacker.test", analyst)
+
+
+def test_the_estate_cannot_be_blocked_at_its_own_edge(session, analyst):
+    """A response that blackholes your own DNS server is the outage it prevented."""
+    with pytest.raises(ProtectedTarget, match="Isolate the host instead"):
+        propose(session, _alert(), ActionType.block_ip, "10.0.0.9", analyst,
+                protected=["10.0.0.9", "10.0.0.10"])
+
+
+def test_an_internal_host_can_still_be_isolated(session, analyst):
+    """The protection is about blast radius, not about the address."""
+    action = propose(session, _alert(), ActionType.isolate_host, "001", analyst,
+                     protected=["10.0.0.9"])
+    assert action.target == "001"
+
+
+def test_the_same_proposal_twice_is_refused(session, analyst, action):
+    """Approving both bans the address twice and tells two analysts they decided."""
+    with pytest.raises(AlreadyProposed, match="already proposes"):
+        propose(session, _alert(), ActionType.block_ip, "203.0.113.9", analyst,
+                existing=[action])
+
+
+def test_a_rejected_proposal_can_be_made_again(session, analyst, action):
+    """A rejection is a judgement about that moment, not a permanent veto."""
+    action.status = ActionStatus.rejected
+    again = propose(session, _alert(), ActionType.block_ip, "203.0.113.9", analyst,
+                    existing=[action])
+    assert again.status is ActionStatus.pending_approval
+
+
+def test_a_different_action_on_the_same_alert_is_not_a_duplicate(session, analyst, action):
+    other = propose(session, _alert(), ActionType.isolate_host, "001", analyst,
+                    existing=[action])
+    assert other.action_type is ActionType.isolate_host

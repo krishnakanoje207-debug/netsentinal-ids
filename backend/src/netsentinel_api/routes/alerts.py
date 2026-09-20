@@ -14,17 +14,26 @@ from netsentinel_api.db.models import (
     Detection,
     Incident,
     IncidentStatus,
+    ResponseAction,
     Severity,
 )
-from netsentinel_api.deps import AlertRepoDep, SessionDep, SettingsDep, require
-from netsentinel_api.rbac import ALERTS_READ, ALERTS_TRIAGE
+from netsentinel_api.deps import (
+    AlertRepoDep,
+    AssetRepoDep,
+    SessionDep,
+    SettingsDep,
+    require,
+)
+from netsentinel_api.rbac import ALERTS_READ, ALERTS_TRIAGE, RESPONSE_PROPOSE
 from netsentinel_api.schemas import (
+    ActionOut,
     AlertDetailOut,
     AlertOut,
     AlertStatusUpdate,
     EscalateIn,
     ExplanationOut,
     IncidentOut,
+    ProposeActionIn,
 )
 from netsentinel_api.services.cases import (
     CaseError,
@@ -32,6 +41,12 @@ from netsentinel_api.services.cases import (
     case_description,
     case_title,
     client_from,
+)
+from netsentinel_api.services.response import (
+    AlreadyProposed,
+    InvalidTarget,
+    ProtectedTarget,
+    propose,
 )
 
 logger = logging.getLogger("netsentinel.alerts")
@@ -186,3 +201,53 @@ def escalate(
         )
     )
     return incident
+
+
+@router.post(
+    "/{alert_id}/actions",
+    response_model=ActionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def propose_action(
+    alert_id: int,
+    payload: ProposeActionIn,
+    alerts: AlertRepoDep,
+    assets: AssetRepoDep,
+    session: SessionDep,
+    user: Annotated[object, Depends(require(RESPONSE_PROPOSE))],
+) -> ResponseAction:
+    """Propose containment for this alert. It executes when somebody else agrees.
+
+    The permission is deliberately not the analyst's. No role holds both
+    ``response:propose`` and ``approvals:decide`` - ``rbac`` asserts it and the
+    tests enforce it - because a gate one account can open on both sides is not a
+    gate. A 201 here means the action is in the approval queue and nothing has
+    touched the network.
+    """
+    alert = alerts.get(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
+
+    try:
+        action = propose(
+            session,
+            alert,
+            payload.action_type,
+            payload.target,
+            user,  # type: ignore[arg-type]
+            existing=alert.actions,
+            # The estate's own addresses, so a block aimed at one is refused before
+            # an analyst is asked to approve it at three in the morning.
+            protected=[asset.ip_address for asset in assets.list(limit=200)],
+        )
+    except AlreadyProposed as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (InvalidTarget, ProtectedTarget) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    # The id is what the approver will decide on, so it has to be in the reply;
+    # sessions are created with autoflush off, so it has to be asked for.
+    session.flush()
+    return action

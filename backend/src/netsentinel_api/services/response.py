@@ -12,16 +12,32 @@ transition writes an audit row.
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Iterable, Protocol
 
 from netsentinel_api.db.models import (
     ActionStatus,
+    ActionType,
+    Alert,
     Approval,
     ApprovalDecision,
     AuditLog,
     ResponseAction,
     User,
+)
+
+#: Statuses in which an action is still somebody's business: awaiting a decision,
+#: waiting to be carried out, or in force. A second proposal for the same thing is
+#: a duplicate only against these - a rejected or failed one is worth proposing
+#: again.
+OPEN_STATUSES = frozenset(
+    {
+        ActionStatus.pending_approval,
+        ActionStatus.approved,
+        ActionStatus.executed,
+        ActionStatus.rollback_requested,
+    }
 )
 
 
@@ -47,6 +63,18 @@ class NotExecutable(ResponseError):
     """Refused: the action is not in a state from which it could execute."""
 
 
+class AlreadyProposed(ResponseError):
+    """Refused: this alert already carries an open proposal for the same thing."""
+
+
+class InvalidTarget(ResponseError):
+    """Refused: the action names nothing this system could act on."""
+
+
+class ProtectedTarget(ResponseError):
+    """Refused: the target is part of the estate this system defends."""
+
+
 def _audit(session: SupportsAdd, user_id: int | None, action_name: str,
            entity_id: int, details: dict) -> None:
     session.add(
@@ -57,6 +85,93 @@ def _audit(session: SupportsAdd, user_id: int | None, action_name: str,
             details=details,
         )
     )
+
+
+def propose(
+    session: SupportsAdd,
+    alert: Alert,
+    action_type: ActionType,
+    target: str | None,
+    actor: User,
+    existing: Iterable[ResponseAction] = (),
+    protected: Iterable[str] = (),
+) -> ResponseAction:
+    """Put a containment action in front of a human. Nothing is executed here.
+
+    This is the other end of the gate: the proposal. The role that proposes is
+    never the role that approves - ``rbac`` asserts that - so this function creates
+    something somebody else has to agree with.
+
+    ``protected`` is the estate's own addresses. Proposing to blackhole one of them
+    is how a response causes the outage it was meant to prevent, and an analyst
+    approving a plausible-looking block at three in the morning is not a reliable
+    last line of defence. An internal host that needs containing is isolated, which
+    is a different action with a different blast radius.
+    """
+    if action_type is ActionType.block_ip and not target:
+        # The obvious default, and the only one worth having: the address the alert
+        # says the traffic came from.
+        target = str(alert.src_ip) if alert.src_ip else None
+    if not target:
+        raise InvalidTarget(
+            f"a {action_type.value} action needs a target, and alert "
+            f"{alert.alert_id} does not supply one"
+        )
+    target = target.strip()
+
+    if action_type is ActionType.block_ip:
+        # Checked again at the enforcement point, deliberately: that check asks
+        # whether it is safe to send, this one asks whether it is a sane thing to
+        # ask a human to approve.
+        try:
+            ipaddress.ip_address(target)
+        except ValueError as exc:
+            raise InvalidTarget(f"{target!r} is not an IP address") from exc
+
+        if target in {str(address) for address in protected}:
+            raise ProtectedTarget(
+                f"{target} is an asset of this estate; blocking it at the edge "
+                "would take it off the network. Isolate the host instead"
+            )
+
+    duplicate = next(
+        (
+            action
+            for action in existing
+            if action.action_type is action_type
+            and action.target == target
+            and action.status in OPEN_STATUSES
+        ),
+        None,
+    )
+    if duplicate is not None:
+        # A second identical proposal would sit in the queue next to the first, and
+        # approving both bans the same address twice while telling two analysts
+        # they each decided something.
+        raise AlreadyProposed(
+            f"action {duplicate.action_id} already proposes {action_type.value} on "
+            f"{target} for alert {alert.alert_id} and is {duplicate.status.value}"
+        )
+
+    action = ResponseAction(
+        alert_id=alert.alert_id,
+        action_type=action_type,
+        target=target,
+        status=ActionStatus.pending_approval,
+    )
+    action.alert = alert
+    session.add(action)
+    # Not ``_audit``: that names a response_action, and this row has no id until it
+    # is flushed. The alert is what identifies the proposal until then.
+    session.add(
+        AuditLog(
+            user_id=actor.user_id,
+            action="response.proposed",
+            entity=f"alert:{alert.alert_id}",
+            details={"action_type": action_type.value, "target": target},
+        )
+    )
+    return action
 
 
 def record_decision(

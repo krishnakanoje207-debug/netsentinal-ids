@@ -41,7 +41,13 @@ from netsentinel_api.deps import (
     get_asset_repo,
     get_user_repo,
 )
-from netsentinel_api.rbac import DEFAULT_ROLE_PERMISSIONS, ML_ENGINEER, SOC_ANALYST, as_column
+from netsentinel_api.rbac import (
+    ADMINISTRATOR,
+    DEFAULT_ROLE_PERMISSIONS,
+    ML_ENGINEER,
+    SOC_ANALYST,
+    as_column,
+)
 from netsentinel_api.security import create_access_token, hash_password
 
 TEST_SECRET = "K7vQp2xR9mLt4wZn6bYc3sEdJf8hGa1uNqXrVoWiTyBk5Pz0"
@@ -82,13 +88,18 @@ class FakeSession:
     def flush(self) -> None:
         """Hand out the primary keys a real flush would.
 
-        Escalation needs the incident's id before it can point the alert at it, so
-        a flush that changed nothing would hide the bug it exists to prevent.
+        Escalation needs the incident's id before it can point the alert at it, and
+        a proposal needs the action's before it can be returned to whoever will
+        approve it. A flush that changed nothing would hide the bug it exists to
+        prevent.
         """
         for instance in self.added:
             if isinstance(instance, Incident) and instance.incident_id is None:
                 self._last_id += 1
                 instance.incident_id = self._last_id
+            elif isinstance(instance, ResponseAction) and instance.action_id is None:
+                self._last_id += 1
+                instance.action_id = self._last_id
 
     def scalar(self, *_args, **_kwargs) -> User | None:
         return self.user
@@ -194,6 +205,20 @@ def ml_engineer() -> User:
 
 
 @pytest.fixture
+def administrator() -> User:
+    """Proposes actions, and deliberately cannot approve them."""
+    return User(
+        user_id=3,
+        username="admin",
+        email="admin@example.test",
+        password_hash=ENGINEER_HASH,
+        role_id=3,
+        is_active=True,
+        role=_role(ADMINISTRATOR),
+    )
+
+
+@pytest.fixture
 def detection() -> Detection:
     return Detection(
         detection_id=10,
@@ -270,6 +295,7 @@ def client(
     session: FakeSession,
     analyst: User,
     ml_engineer: User,
+    administrator: User,
     alert: Alert,
     asset: Asset,
     vulnerabilities: list[Vulnerability],
@@ -283,7 +309,11 @@ def client(
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_session] = _session
     app.dependency_overrides[get_user_repo] = lambda: FakeUserRepo(
-        {analyst.username: analyst, ml_engineer.username: ml_engineer}
+        {
+            analyst.username: analyst,
+            ml_engineer.username: ml_engineer,
+            administrator.username: administrator,
+        }
     )
     app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo([alert])
     app.dependency_overrides[get_asset_repo] = lambda: FakeAssetRepo(
@@ -306,4 +336,12 @@ def engineer_header(settings: Settings, ml_engineer: User, session: FakeSession)
     """Authenticates as the ML engineer, who cannot triage or approve."""
     session.user = ml_engineer
     token = create_access_token(settings, ml_engineer.user_id, ML_ENGINEER)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def admin_header(settings: Settings, administrator: User, session: FakeSession) -> dict[str, str]:
+    """Authenticates as the administrator, who proposes but cannot approve."""
+    session.user = administrator
+    token = create_access_token(settings, administrator.user_id, ADMINISTRATOR)
     return {"Authorization": f"Bearer {token}"}

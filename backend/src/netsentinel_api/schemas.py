@@ -163,6 +163,14 @@ class ActionOut(BaseModel):
     approval: ApprovalOut | None = None
 
 
+class ProposeActionIn(BaseModel):
+    action_type: ActionType
+    # Optional only for block_ip, which defaults to the address the alert says the
+    # traffic came from. A host action names an agent, and guessing which machine
+    # to isolate is not a default worth having.
+    target: str | None = Field(default=None, max_length=255)
+
+
 class DecisionIn(BaseModel):
     decision: ApprovalDecision
     # Required on a rejection is enforced in the route, not here, so the message

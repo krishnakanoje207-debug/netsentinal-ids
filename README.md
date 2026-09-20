@@ -125,10 +125,17 @@ uv run uvicorn netsentinel_api.app:app      # serve; docs at /api/v1/docs
 re-run from a deployment script. If no admin password is supplied one is generated
 and printed once.
 
-Every automated response passes a human gate. `services/response.mark_executed` is
-the only path to execution and refuses without an approval, so if it raises, nothing
-on the network changed. Approving does not execute — it moves the action to
-`approved` for the D12 executors to pick up.
+Every automated response passes a human gate, and the gate has two ends.
+`POST /alerts/{id}/actions` proposes containment and needs `response:propose`;
+deciding needs `approvals:decide`; **no role holds both**, because a gate one account
+can open on both sides is not a gate. A proposal defaults to the address the alert
+says the traffic came from, and a block aimed at one of the estate's own assets is
+refused outright — an internal host that needs containing is isolated, which is a
+different action with a different blast radius.
+
+`services/response.mark_executed` is the only path to execution and refuses without
+an approval, so if it raises, nothing on the network changed. Approving does not
+execute — it moves the action to `approved` for the responder to carry out.
 
 ## Shadow mode and promotion
 

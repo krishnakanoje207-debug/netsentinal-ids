@@ -380,6 +380,57 @@ def test_deciding_on_a_missing_action_is_a_404(client, auth_header):
     assert response.status_code == 404
 
 
+# --- proposing a response ---------------------------------------------------
+
+def test_an_administrator_proposes_a_block(client, admin_header, session):
+    response = client.post(
+        f"{V1}/alerts/100/actions", headers=admin_header,
+        json={"action_type": "block_ip"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    # Defaulted to the address the alert says the traffic came from, and waiting
+    # for somebody else to agree.
+    assert body["target"] == "203.0.113.9"
+    assert body["status"] == "pending_approval"
+    assert "response.proposed" in [e.action for e in session.audit_entries()]
+
+
+def test_an_analyst_cannot_propose_what_they_would_approve(client, auth_header):
+    """A gate one account can open on both sides is not a gate."""
+    response = client.post(
+        f"{V1}/alerts/100/actions", headers=auth_header,
+        json={"action_type": "block_ip"},
+    )
+    assert response.status_code == 403
+    assert "response:propose" in response.json()["detail"]
+
+
+def test_proposing_a_block_on_our_own_asset_is_refused(client, admin_header):
+    response = client.post(
+        f"{V1}/alerts/100/actions", headers=admin_header,
+        json={"action_type": "block_ip", "target": "172.30.0.10"},
+    )
+    assert response.status_code == 422
+    assert "Isolate the host instead" in response.json()["detail"]
+
+
+def test_proposing_the_same_block_twice_is_a_conflict(client, admin_header):
+    body = {"action_type": "block_ip", "target": "203.0.113.9"}
+    assert client.post(f"{V1}/alerts/100/actions", headers=admin_header,
+                       json=body).status_code == 201
+    second = client.post(f"{V1}/alerts/100/actions", headers=admin_header, json=body)
+    assert second.status_code == 409
+
+
+def test_proposing_against_a_missing_alert_is_a_404(client, admin_header):
+    response = client.post(
+        f"{V1}/alerts/999/actions", headers=admin_header,
+        json={"action_type": "block_ip"},
+    )
+    assert response.status_code == 404
+
+
 # --- the rollback endpoint -------------------------------------------------
 
 def test_rolling_back_queues_the_undo(client, auth_header, action, session):
