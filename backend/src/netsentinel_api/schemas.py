@@ -8,8 +8,9 @@ the sort of leak that happens the moment a handler returns an ORM object directl
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from netsentinel_api.db.models import (
     ActionStatus,
@@ -22,6 +23,26 @@ from netsentinel_api.db.models import (
     ModelTier,
     Severity,
 )
+
+
+def _as_text(value: object) -> object:
+    """Whatever the driver handed back, as a string.
+
+    ``INET`` columns come out of psycopg 3 as ``ipaddress.IPv4Address`` objects,
+    not as text, and Pydantic will not quietly turn one into a ``str``. Without this
+    every alert in the feed fails response validation against a real PostgreSQL -
+    which the test suite cannot see, because the repositories are faked and hand
+    back the strings the fakes were written with.
+
+    Coerced rather than typed as ``IPvAnyAddress`` on purpose: these addresses are
+    rendered and never computed with, the dashboard already documents them as
+    strings, and a stricter type would change the published schema to buy nothing.
+    """
+    return str(value) if value is not None else value
+
+
+#: An address column, as it leaves the API. See ``_as_text``.
+IpText = Annotated[str, BeforeValidator(_as_text)]
 
 
 class TokenResponse(BaseModel):
@@ -60,8 +81,8 @@ class AlertOut(BaseModel):
     source: str
     severity: Severity
     status: AlertStatus
-    src_ip: str | None
-    dst_ip: str | None
+    src_ip: IpText | None
+    dst_ip: IpText | None
     mitre_technique: str | None
     created_at: datetime
     detection_id: int | None
@@ -136,9 +157,9 @@ class AssetOut(BaseModel):
 
     asset_id: int
     hostname: str
-    # INET comes back as a string; the dashboard renders it and never does
-    # arithmetic on it.
-    ip_address: str
+    # INET arrives from psycopg as an ipaddress object; the dashboard renders it and
+    # never does arithmetic on it, so it leaves here as text. See ``_as_text``.
+    ip_address: IpText
     os: str | None
     criticality: Criticality
 
