@@ -80,8 +80,9 @@ def test_existing_role_is_reused_not_duplicated(session):
 
 def test_admin_is_created_with_a_generated_password(session):
     role = Role(role_id=1, name=ADMINISTRATOR, permissions=as_column(set()))
-    user, generated = ensure_admin(session, role, "admin", "admin@test", None)
+    user, created, generated = ensure_admin(session, role, "admin", "admin@test", None)
 
+    assert created is True
     assert generated is not None and len(generated) >= 24
     assert verify_password(generated, user.password_hash)
     assert user.is_active
@@ -89,8 +90,11 @@ def test_admin_is_created_with_a_generated_password(session):
 
 def test_a_supplied_password_is_used_and_not_echoed(session):
     role = Role(role_id=1, name=ADMINISTRATOR, permissions=as_column(set()))
-    user, generated = ensure_admin(session, role, "admin", "admin@test", "a-chosen-password")
+    user, created, generated = ensure_admin(session, role, "admin", "admin@test", "a-chosen-password")
 
+    # The account was created; nothing was generated. Reporting those as the same
+    # fact is how an operator concludes their password was never applied.
+    assert created is True
     assert generated is None
     assert verify_password("a-chosen-password", user.password_hash)
 
@@ -109,21 +113,22 @@ def test_creating_the_admin_is_audited(session):
 def test_rerunning_does_not_reset_an_existing_password(session):
     """A second bootstrap must not be a way to take over the account."""
     role = Role(role_id=1, name=ADMINISTRATOR, permissions=as_column(set()))
-    first, generated = ensure_admin(session, role, "admin", "admin@test", None)
+    first, _, generated = ensure_admin(session, role, "admin", "admin@test", None)
 
-    again, second_password = ensure_admin(session, role, "admin", "admin@test", "attacker")
+    again, created_again, second_password = ensure_admin(session, role, "admin", "admin@test", "attacker")
     assert again is first
     assert second_password is None
+    assert created_again is False
     assert verify_password(generated, first.password_hash)
     assert not verify_password("attacker", first.password_hash)
 
 
 def test_rerunning_does_not_reactivate_a_disabled_admin(session):
     role = Role(role_id=1, name=ADMINISTRATOR, permissions=as_column(set()))
-    user, _ = ensure_admin(session, role, "admin", "admin@test", "p")
+    user, _, _ = ensure_admin(session, role, "admin", "admin@test", "p")
     user.is_active = False
 
-    again, _ = ensure_admin(session, role, "admin", "admin@test", "p")
+    again, _, _ = ensure_admin(session, role, "admin", "admin@test", "p")
     assert again.is_active is False
 
 

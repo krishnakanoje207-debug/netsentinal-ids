@@ -65,8 +65,14 @@ def ensure_admin(
     username: str,
     email: str,
     password: str | None,
-) -> tuple[User, str | None]:
-    """Create the administrator if absent. Returns (user, generated password).
+) -> tuple[User, bool, str | None]:
+    """Create the administrator if absent.
+
+    Returns ``(user, created, generated password)``. ``created`` is reported
+    separately from the generated password because the two are not the same fact:
+    supplying a password creates an account and generates nothing, and reading
+    "nothing was generated" as "nothing was created" tells an operator their
+    password was not applied when it was.
 
     An existing account is left completely alone - no password reset, no
     reactivation - because a bootstrap re-run must not be a way to take over an
@@ -74,7 +80,7 @@ def ensure_admin(
     """
     existing = session.scalar(select(User).where(User.username == username))
     if existing is not None:
-        return existing, None
+        return existing, False, None
 
     generated = None
     if not password:
@@ -98,10 +104,10 @@ def ensure_admin(
             details={"role": role.name, "password_generated": generated is not None},
         )
     )
-    return user, generated
+    return user, True, generated
 
 
-def bootstrap(session: Session) -> tuple[User, str | None]:
+def bootstrap(session: Session) -> tuple[User, bool, str | None]:
     roles = sync_roles(session)
     # Roles need identities before a user can reference one.
     session.flush()
@@ -116,16 +122,19 @@ def bootstrap(session: Session) -> tuple[User, str | None]:
 
 def main() -> int:
     with get_sessionmaker()() as session:
-        user, generated = bootstrap(session)
+        user, created, generated = bootstrap(session)
         session.commit()
 
         print(f"roles synced: {', '.join(sorted(DEFAULT_ROLE_PERMISSIONS))}")
-        if generated is None:
+        if not created:
             print(f"administrator {user.username!r} already exists; left untouched")
         else:
             print(f"administrator {user.username!r} created")
-            print(f"password: {generated}")
-            print("This is shown once. Store it now.")
+            if generated is None:
+                print("password: the one supplied in the environment")
+            else:
+                print(f"password: {generated}")
+                print("This is shown once. Store it now.")
     return 0
 
 
