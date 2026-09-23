@@ -72,6 +72,20 @@ class CurrentUserOut(UserOut):
     permissions: list[str]
 
 
+class SourceCount(BaseModel):
+    address: str
+    alerts: int
+
+
+class AlertSummaryOut(BaseModel):
+    """How things stand across every alert, not only the page on screen."""
+
+    total: int
+    by_severity: dict[str, int]
+    by_status: dict[str, int]
+    top_sources: list[SourceCount]
+
+
 class AlertOut(BaseModel):
     """Feed row. Deliberately compact - the dashboard renders hundreds."""
 

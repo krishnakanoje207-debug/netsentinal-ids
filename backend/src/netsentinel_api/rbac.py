@@ -48,6 +48,7 @@ ALL_PERMISSIONS: Final[frozenset[str]] = frozenset(
 SOC_ANALYST: Final = "soc_analyst"
 ADMINISTRATOR: Final = "administrator"
 ML_ENGINEER: Final = "ml_engineer"
+VIEWER: Final = "viewer"
 
 #: Seed permissions per role, straight from the M2 use cases.
 DEFAULT_ROLE_PERMISSIONS: Final[dict[str, frozenset[str]]] = {
@@ -75,6 +76,10 @@ DEFAULT_ROLE_PERMISSIONS: Final[dict[str, frozenset[str]]] = {
     ),
     # Registers models and promotes them out of shadow mode.
     ML_ENGINEER: frozenset({MODELS_READ, MODELS_DEPLOY, DETECTIONS_READ, ALERTS_READ}),
+    # Everyone else who needs to know how things stand - a manager, an on-call
+    # engineer, the owner of a host - and must not be able to change it. Reads the
+    # overview, the feed and the explanations; triages, proposes and approves nothing.
+    VIEWER: frozenset({ALERTS_READ, DETECTIONS_READ, MODELS_READ}),
 }
 
 

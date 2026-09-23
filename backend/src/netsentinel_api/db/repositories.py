@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import cast, literal, or_, select
+from sqlalchemy import cast, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql import Select
@@ -163,6 +163,33 @@ class AlertRepository:
             }
             for alert, risk_score, name, version in self._session.execute(statement)
         ]
+
+    def summary(self, top: int = 5) -> dict:
+        """Counts over every alert, for a page that has to say how things stand.
+
+        Aggregated here rather than by paging the feed: the overview must be right
+        about the whole estate, not about the newest fifty rows.
+        """
+        def counted(column) -> dict:
+            return dict(
+                self._session.execute(select(column, func.count()).group_by(column)).all()
+            )
+
+        by_severity = counted(Alert.severity)
+        by_status = counted(Alert.status)
+        sources = self._session.execute(
+            select(Alert.src_ip, func.count().label("n"))
+            .where(Alert.src_ip.is_not(None))
+            .group_by(Alert.src_ip)
+            .order_by(func.count().desc(), Alert.src_ip)
+            .limit(top)
+        ).all()
+        return {
+            "total": sum(by_severity.values()),
+            "by_severity": {s.value: n for s, n in by_severity.items()},
+            "by_status": {s.value: n for s, n in by_status.items()},
+            "top_sources": [{"address": str(ip), "alerts": n} for ip, n in sources],
+        }
 
     def get(self, alert_id: int) -> Alert | None:
         return self._session.scalar(

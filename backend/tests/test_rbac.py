@@ -14,6 +14,7 @@ from netsentinel_api.rbac import (
     MODELS_DEPLOY,
     RESPONSE_PROPOSE,
     SOC_ANALYST,
+    VIEWER,
     as_column,
     permissions_for,
 )
@@ -47,6 +48,11 @@ def test_only_the_analyst_decides_on_responses():
 def test_every_role_can_at_least_read_alerts():
     for role, granted in DEFAULT_ROLE_PERMISSIONS.items():
         assert ALERTS_READ in granted, f"{role} cannot see anything"
+
+
+def test_the_viewer_holds_only_reads():
+    """The everyday account: everything it holds ends in :read."""
+    assert all(p.endswith(":read") for p in DEFAULT_ROLE_PERMISSIONS[VIEWER])
 
 
 def test_administrator_cannot_authorise_network_changes():

@@ -52,6 +52,7 @@ from netsentinel_api.rbac import (
     DEFAULT_ROLE_PERMISSIONS,
     ML_ENGINEER,
     SOC_ANALYST,
+    VIEWER,
     as_column,
 )
 from netsentinel_api.security import create_access_token, hash_password
@@ -173,6 +174,20 @@ class FakeAlertRepo:
 
     def list(self, *, status=None, severity=None, search=None, limit=50, offset=0):
         return self._filtered(status, severity, search)[offset : offset + limit]
+
+    def summary(self, top: int = 5) -> dict:
+        from collections import Counter
+
+        sources = Counter(str(a.src_ip) for a in self.alerts if a.src_ip is not None)
+        return {
+            "total": len(self.alerts),
+            "by_severity": dict(Counter(a.severity.value for a in self.alerts)),
+            "by_status": dict(Counter(a.status.value for a in self.alerts)),
+            "top_sources": [
+                {"address": ip, "alerts": n}
+                for ip, n in sorted(sources.items(), key=lambda kv: (-kv[1], kv[0]))[:top]
+            ],
+        }
 
     def for_export(
         self, *, status=None, severity=None, search=None, limit=10_000
@@ -310,6 +325,20 @@ def administrator() -> User:
         role_id=3,
         is_active=True,
         role=_role(ADMINISTRATOR),
+    )
+
+
+@pytest.fixture
+def viewer() -> User:
+    """Reads everything an analyst reads and can change none of it."""
+    return User(
+        user_id=4,
+        username="viewer",
+        email="viewer@example.test",
+        password_hash=ENGINEER_HASH,
+        role_id=4,
+        is_active=True,
+        role=_role(VIEWER),
     )
 
 
@@ -493,4 +522,12 @@ def admin_header(settings: Settings, administrator: User, session: FakeSession) 
     """Authenticates as the administrator, who proposes but cannot approve."""
     session.user = administrator
     token = create_access_token(settings, administrator.user_id, ADMINISTRATOR)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def viewer_header(settings: Settings, viewer: User, session: FakeSession) -> dict[str, str]:
+    """Authenticates as a viewer: the everyday, read-only account."""
+    session.user = viewer
+    token = create_access_token(settings, viewer.user_id, VIEWER)
     return {"Authorization": f"Bearer {token}"}

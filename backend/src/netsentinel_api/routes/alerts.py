@@ -33,6 +33,7 @@ from netsentinel_api.schemas import (
     AlertDetailOut,
     AlertOut,
     AlertStatusUpdate,
+    AlertSummaryOut,
     EscalateIn,
     ExplanationOut,
     IncidentOut,
@@ -129,6 +130,16 @@ def list_alerts(
         limit=limit,
         offset=offset,
     )
+
+
+# Declared before "/{alert_id}" for the same reason as the export below.
+@router.get("/summary", response_model=AlertSummaryOut)
+def summarise_alerts(
+    alerts: AlertRepoDep,
+    _: Annotated[object, Depends(require(ALERTS_READ))],
+) -> dict:
+    """Totals by severity and status, and the addresses raising the most alerts."""
+    return alerts.summary()
 
 
 # Declared before "/{alert_id}", because a path parameter would otherwise match

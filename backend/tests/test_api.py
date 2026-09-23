@@ -136,6 +136,37 @@ def test_alerts_can_be_filtered_by_status(client, auth_header):
     assert client.get(f"{V1}/alerts?status=escalated", headers=auth_header).json() == []
 
 
+def test_the_summary_counts_every_alert(client, auth_header):
+    body = client.get(f"{V1}/alerts/summary", headers=auth_header).json()
+    assert body["total"] == 1
+    assert body["by_severity"] == {"high": 1}
+    assert body["by_status"] == {"new": 1}
+    assert body["top_sources"] == [{"address": "203.0.113.9", "alerts": 1}]
+
+
+def test_the_summary_needs_a_signed_in_reader(client):
+    assert client.get(f"{V1}/alerts/summary").status_code == 401
+
+
+def test_a_viewer_reads_the_feed_and_the_summary(client, viewer_header):
+    assert client.get(f"{V1}/alerts", headers=viewer_header).status_code == 200
+    assert client.get(f"{V1}/alerts/summary", headers=viewer_header).status_code == 200
+    assert client.get(f"{V1}/alerts/100", headers=viewer_header).status_code == 200
+
+
+def test_a_viewer_changes_nothing(client, viewer_header):
+    triage = client.patch(
+        f"{V1}/alerts/100/status", json={"status": "triaging"}, headers=viewer_header
+    )
+    propose = client.post(
+        f"{V1}/alerts/100/actions", json={"action_type": "block_ip"}, headers=viewer_header
+    )
+    decide = client.post(
+        f"{V1}/actions/500/decision", json={"decision": "approved"}, headers=viewer_header
+    )
+    assert [triage.status_code, propose.status_code, decide.status_code] == [403, 403, 403]
+
+
 def test_page_size_is_capped(client, auth_header):
     assert client.get(f"{V1}/alerts?limit=500", headers=auth_header).status_code == 422
 
