@@ -20,7 +20,7 @@ one line under its headline.
 |---|---|---|
 | **Viewer** | managers, host owners, anyone who needs to know | read everything; change nothing |
 | **Security analyst** | the people who work the alerts | confirm or dismiss alerts, escalate them, approve or reject blocks |
-| **Administrator** | whoever runs the system | propose blocks; cannot approve their own |
+| **Administrator** | whoever runs the system | propose blocks; cannot approve any block |
 | **ML engineer** | whoever looks after the models | see how models perform, promote a new one |
 
 No account can both propose a block and approve it. That is deliberate: one person should
@@ -135,4 +135,6 @@ uv run netsentinel-copilot --alert 134     # one alert
 ### Retraining the models
 
 See the README ("Pipeline") and `docs/evaluation/REPORT.md` for how each model was
-trained and measured. Every model starts in shadow mode and has to be promoted.
+trained and measured. Every model starts in shadow mode and has to be promoted. The
+offline demonstration is the exception: `build_demo.ps1` registers Tiers A and D as
+active directly, without the shadow period.
