@@ -49,6 +49,7 @@ from sqlalchemy.orm import Session
 
 from netsentinel_writer.consumer import Consumer
 from netsentinel_writer.explain import Explainer
+from netsentinel_writer.technique import Labeller
 
 logger = logging.getLogger("netsentinel.writer")
 
@@ -115,12 +116,15 @@ class DetectionWriter:
         sensor_id: int,
         model_id: int,
         forwarder: Forwarder | None = None,
+        labeller: Labeller | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._explainer = explainer
         self._sensor_id = sensor_id
         self._model_id = model_id
         self._forwarder = forwarder
+        # Optional: without it an ML alert carries no technique, as before.
+        self._labeller = labeller
         # Alerts raised by the message in flight, forwarded once it is committed.
         self._to_forward: list[tuple[Alert, list[IoC]]] = []
         self.stats = WriteStats()
@@ -199,6 +203,9 @@ class DetectionWriter:
                 status=AlertStatus.new,
                 src_ip=flow.get("src_ip"),
                 dst_ip=flow.get("dst_ip"),
+                mitre_technique=(
+                    self._labeller.label(flow).technique if self._labeller is not None else None
+                ),
             )
             session.add(alert)
             session.flush()

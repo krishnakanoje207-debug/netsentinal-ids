@@ -198,17 +198,15 @@ def test_nothing_reaches_the_network_without_the_human_in_the_middle(
     assert action.status is ActionStatus.pending_approval
 
 
-def test_an_ml_alert_carries_no_technique_yet(session, run_writer, scenario):
-    """A gap this chain makes visible, recorded rather than worked around.
+def test_without_a_family_model_an_ml_alert_carries_no_technique(session, run_writer, scenario):
+    """The technique on an ML alert comes only from the family model.
 
-    Nothing in the ML path assigns a MITRE technique: the sensor publishes flow
-    features, the writer stores a score, and neither has anything to map to ATT&CK
-    with. Signature alerts from Suricata arrive with one; these do not.
-
-    It matters in two places - the Keep fingerprint includes the technique, so it
-    is empty for every ML alert, and the case description leaves the line out. Both
-    degrade rather than break, which is why this is a test and not a fix: the fix
-    is a mapping somebody has to design, not a field somebody forgot.
+    The sensor publishes flow features and the writer stores a score; neither maps
+    to ATT&CK on its own. With a family model loaded (``--family-card``,
+    writer/technique.py) a confident verdict on a mapped family carries one. Without
+    it - as here - the alert keeps none, and the two places that read it degrade
+    rather than break: the Keep fingerprint has an empty technique and the case
+    description leaves the line out.
     """
     run_writer([scenario(SCENARIOS[0][1])])
     alert, = session.rows(Alert)

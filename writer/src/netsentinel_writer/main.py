@@ -33,6 +33,7 @@ from sqlalchemy import select
 
 from netsentinel_writer.consumer import Consumer, RedpandaConsumer, ReplayConsumer
 from netsentinel_writer.explain import ExplainerError, load_explainer
+from netsentinel_writer.technique import LabellerError, load_labeller
 from netsentinel_writer.writer import DetectionWriter
 
 logger = logging.getLogger("netsentinel.writer")
@@ -80,6 +81,10 @@ def main(argv: list[str] | None = None) -> int:
         help="read scored flows from a file, one message per line, instead of the bus "
         "(see lab/replay)",
     )
+    parser.add_argument(
+        "--family-card",
+        help="attack-family model card; with it, confident ML alerts carry a MITRE technique",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -93,6 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     except ExplainerError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
+
+    labeller = None
+    if args.family_card:
+        try:
+            labeller = load_labeller(args.family_card)
+        except LabellerError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
 
     session_factory = get_sessionmaker()
     try:
@@ -115,7 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     if forwarder is None:
         logger.info("Keep is not configured; alerts will be stored but not forwarded")
 
-    writer = DetectionWriter(session_factory, explainer, sensor_id, model_id, forwarder)
+    writer = DetectionWriter(
+        session_factory, explainer, sensor_id, model_id, forwarder, labeller=labeller
+    )
     if args.replay:
         with open(args.replay, encoding="utf-8") as handle:
             payloads = [json.loads(line) for line in handle if line.strip()]
