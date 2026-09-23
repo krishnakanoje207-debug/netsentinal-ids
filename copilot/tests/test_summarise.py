@@ -162,6 +162,19 @@ def test_an_indicator_value_reaches_the_model_as_fenced_data():
 
 # --- what comes back -------------------------------------------------------
 
+def test_calling_a_near_certain_detection_harmless_is_rejected():
+    # Seen live: a 100% risk flow summarised as "likely harmless".
+    client = StubClient(reply=VALID | {"assessment": "likely_benign"})
+    _, summary = summarise(client, _alert(detection=_detection(risk_score=0.99)))
+    assert summary is None
+
+
+def test_a_benign_opinion_on_an_uncertain_detection_is_still_allowed():
+    client = StubClient(reply=VALID | {"assessment": "likely_benign"})
+    _, summary = summarise(client, _alert(detection=_detection(risk_score=0.6)))
+    assert summary is not None and summary.assessment.value == "likely_benign"
+
+
 def test_a_valid_reply_is_stored_as_a_summary():
     client = StubClient()
     payload, summary = summarise(client, _alert())

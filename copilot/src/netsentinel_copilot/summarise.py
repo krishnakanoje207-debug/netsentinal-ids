@@ -20,7 +20,7 @@ from netsentinel_api.db.models import Alert, CopilotSummary, Detection, IoC
 from pydantic import ValidationError
 
 from netsentinel_copilot.sanitise import build_prompt
-from netsentinel_copilot.schema import AlertSummary, json_schema, validate
+from netsentinel_copilot.schema import AlertSummary, Assessment, json_schema, validate
 
 logger = logging.getLogger("netsentinel.copilot")
 
@@ -28,6 +28,12 @@ logger = logging.getLogger("netsentinel.copilot")
 #: contribution. The model is asked to put them in a sentence, not to decide which
 #: of them mattered.
 TOP_FEATURE_COUNT = 5
+
+#: At or above this detector risk, a "likely benign" verdict is a contradiction, not a
+#: second opinion: the model sees only the evidence on the page, so it has nothing that
+#: could overturn a near-certain detection. Seen live - llama3.2:3b called a 100% risk
+#: flow "likely harmless" - and it is the most dangerous thing this panel could say.
+CONTRADICTION_FLOOR = 0.9
 
 #: Plain names for the contract features, the same words the dashboard uses. A 3B model
 #: handed "l4_dst_port +8.012" writes "multiple contributing features"; handed
@@ -103,10 +109,23 @@ def summarise(client, alert: Alert, iocs: Iterable[IoC] = ()) -> tuple[dict, Ale
     payload = client.complete(system, user, json_schema())
 
     try:
-        return payload, validate(payload)
+        summary = validate(payload)
     except ValidationError as exc:
         logger.warning("the model returned output that is not a summary: %s", exc)
         return payload, None
+
+    detection = alert.detection
+    if (
+        detection is not None
+        and detection.risk_score >= CONTRADICTION_FLOOR
+        and summary.assessment is Assessment.likely_benign
+    ):
+        logger.warning(
+            "the model called a %.0f%% risk alert likely benign with no evidence the "
+            "detector lacked; rejected", detection.risk_score * 100,
+        )
+        return payload, None
+    return payload, summary
 
 
 def as_row(alert: Alert, payload: dict, summary: AlertSummary | None,
