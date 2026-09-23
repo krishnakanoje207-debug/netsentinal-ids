@@ -496,12 +496,16 @@ The traffic that produces those flows on a live VM lives in [`lab/`](lab): scan,
 force, C2-beacon cadence and exfil pattern, each scoped to the isolated lab bridge, plus
 a Locust load test for the API's read path.
 
-One gap is recorded there as a passing test rather than papered over: **nothing in the
-ML path assigns a MITRE technique.** The sensor publishes flow features and the writer
-stores a score; neither has anything to map to ATT&CK with, so `mitre_technique` is
-null on every ML-raised alert. It shows up in the Keep fingerprint (empty for those
-alerts) and as a missing line in the case description. Both degrade rather than break,
-and the fix is a mapping somebody has to design — not a field somebody forgot.
+A MITRE technique on an ML alert comes only from the attack-family model. The sensor
+publishes flow features and the writer stores a score; neither maps to ATT&CK on its
+own. Started with `--family-card artefacts/family/model_card.json`, the writer asks the
+family model what kind of attack the flow looks like, and a technique is claimed only
+when the model is at least 70% sure and only for a family whose confident predictions
+were right at least 85% of the time on validation: Reconnaissance (T1046), Exploits
+(T1190) and DoS (T1499). Every other ML alert keeps `mitre_technique` null, and so does
+every ML alert when the writer runs without the family card — a passing test records
+that case. It shows up in the Keep fingerprint (empty for those alerts) and as a
+missing line in the case description; both degrade rather than break.
 
 ## Design decisions that deviate from M2 §4
 
@@ -509,4 +513,4 @@ and the fix is a mapping somebody has to design — not a field somebody forgot.
 |---|---|---|
 | python-jose, passlib | PyJWT, bcrypt | python-jose is effectively unmaintained with a CVE history; passlib predates Python 3.11 |
 | Tier A on full NetFlow features | Tier A on the 13-feature intersection, TTL excluded | NF-* datasets cannot supply SPLT, per-direction spread, IAT statistics or flag counts; training on them would recreate train/serve skew |
-| TTL as a flow feature | Stored, never a Tier A input | In NF-UNSW-NB15-v3 TTL alone reaches PR-AUC 0.9997: it identifies the testbed machine, not the attack |
+| TTL as a flow feature | Stored, never a Tier A input | In NF-UNSW-NB15-v3 TTL alone reaches PR-AUC 0.9982: it identifies the testbed machine, not the attack |
