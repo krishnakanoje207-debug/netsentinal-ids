@@ -22,6 +22,7 @@ from netsentinel_api.db.models import (
     Alert,
     AlertStatus,
     Asset,
+    CopilotSummary,
     Detection,
     MLModel,
     ModelMode,
@@ -200,6 +201,16 @@ class AlertRepository:
 
     def detection_for(self, alert: Alert) -> Detection | None:
         return alert.detection
+
+    def latest_summary(self, alert: Alert) -> CopilotSummary | None:
+        """The newest summary that passed its schema. A rejected one is evidence about
+        the model, kept for review and never served as an explanation."""
+        return self._session.scalar(
+            select(CopilotSummary)
+            .where(CopilotSummary.alert_id == alert.alert_id, CopilotSummary.schema_valid)
+            .order_by(CopilotSummary.summary_id.desc())
+            .limit(1)
+        )
 
     def set_status(self, alert: Alert, status: AlertStatus) -> Alert:
         alert.status = status

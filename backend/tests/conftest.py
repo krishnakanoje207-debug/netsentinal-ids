@@ -159,8 +159,9 @@ def _matches(alert: Alert, search: AddressQuery | TechniqueQuery) -> bool:
 
 
 class FakeAlertRepo:
-    def __init__(self, alerts: list[Alert]) -> None:
+    def __init__(self, alerts: list[Alert], summaries: list | None = None) -> None:
         self.alerts = alerts
+        self.summaries = summaries if summaries is not None else []
 
     def _filtered(self, status, severity, search=None) -> list[Alert]:
         rows = self.alerts
@@ -225,6 +226,10 @@ class FakeAlertRepo:
     def set_status(self, alert: Alert, status: AlertStatus) -> Alert:
         alert.status = status
         return alert
+
+    def latest_summary(self, alert: Alert):
+        valid = [s for s in self.summaries if s.alert_id == alert.alert_id and s.schema_valid]
+        return max(valid, key=lambda s: s.summary_id, default=None)
 
 
 class FakeAssetRepo:
@@ -389,6 +394,12 @@ def alerts(alert: Alert) -> list[Alert]:
 
 
 @pytest.fixture
+def summaries() -> list:
+    """Copilot summaries the repository serves; empty unless a test adds one."""
+    return []
+
+
+@pytest.fixture
 def asset() -> Asset:
     return Asset(asset_id=1, hostname="victim-web", ip_address="172.30.0.10",
                  os="alpine", criticality=Criticality.high)
@@ -472,6 +483,7 @@ def client(
     ml_engineer: User,
     administrator: User,
     alerts: list[Alert],
+    summaries: list,
     asset: Asset,
     vulnerabilities: list[Vulnerability],
     action: ResponseAction,
@@ -492,7 +504,7 @@ def client(
             administrator.username: administrator,
         }
     )
-    app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo(alerts)
+    app.dependency_overrides[get_alert_repo] = lambda: FakeAlertRepo(alerts, summaries)
     app.dependency_overrides[get_asset_repo] = lambda: FakeAssetRepo(
         [asset], vulnerabilities
     )

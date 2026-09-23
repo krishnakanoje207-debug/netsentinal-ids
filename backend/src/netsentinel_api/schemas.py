@@ -72,6 +72,17 @@ class CurrentUserOut(UserOut):
     permissions: list[str]
 
 
+class CopilotSummaryOut(BaseModel):
+    """A schema-valid summary from the local model, as the dashboard shows it."""
+
+    headline: str
+    what_happened: str
+    why_it_scored: str
+    assessment: str
+    next_steps: list[str]
+    llm_model: str
+
+
 class SourceCount(BaseModel):
     address: str
     alerts: int

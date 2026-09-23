@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from netsentinel_api.db.models import ActionStatus, ActionType, AlertStatus
+from netsentinel_api.db.models import ActionStatus, ActionType, AlertStatus, CopilotSummary
 from netsentinel_api.routes.alerts import case_client
 from netsentinel_api.services.cases import CaseError
 from netsentinel_core.features.contract import FEATURE_DIM
@@ -165,6 +165,36 @@ def test_a_viewer_changes_nothing(client, viewer_header):
         f"{V1}/actions/500/decision", json={"decision": "approved"}, headers=viewer_header
     )
     assert [triage.status_code, propose.status_code, decide.status_code] == [403, 403, 403]
+
+
+SUMMARY = {
+    "headline": "Port scan from 203.0.113.9",
+    "what_happened": "One host probed many services on another in a short burst.",
+    "why_it_scored": "Very short connections at a high rate, mostly to closed ports.",
+    "assessment": "likely_malicious",
+    "next_steps": ["Check whether the scan reached open services."],
+}
+
+
+def test_no_summary_is_a_404_that_says_how_to_make_one(client, auth_header):
+    response = client.get(f"{V1}/alerts/100/summary", headers=auth_header)
+    assert response.status_code == 404
+    assert "netsentinel-copilot --alert 100" in response.json()["detail"]
+
+
+def test_the_newest_valid_summary_is_served(client, auth_header, summaries):
+    for summary_id, model in ((1, "old"), (2, "llama3.2:3b")):
+        summaries.append(CopilotSummary(summary_id=summary_id, alert_id=100, summary_json=SUMMARY,
+                                        llm_model=model, schema_valid=True))
+    body = client.get(f"{V1}/alerts/100/summary", headers=auth_header).json()
+    assert body["headline"] == SUMMARY["headline"]
+    assert body["llm_model"] == "llama3.2:3b"
+
+
+def test_a_rejected_summary_is_never_served(client, auth_header, summaries):
+    summaries.append(CopilotSummary(summary_id=3, alert_id=100, summary_json={"rejected": "x"},
+                                    llm_model="llama3.2:3b", schema_valid=False))
+    assert client.get(f"{V1}/alerts/100/summary", headers=auth_header).status_code == 404
 
 
 def test_page_size_is_capped(client, auth_header):
