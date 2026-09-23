@@ -23,8 +23,9 @@ changes them.
       `powershell -ExecutionPolicy Bypass -File lab\replay\build_demo.ps1`
 - [ ] AI summaries written for a few alerts (the alert page otherwise says "No AI
       summary has been written for this alert yet"). With Ollama running and
-      `NETSENTINEL_DATABASE_URL` pointing at the `netsentinel_demo` database (as
-      `build_demo.ps1` sets it): `ollama pull llama3.2:3b`, then
+      `NETSENTINEL_DATABASE_URL` set in your shell to the `.env.local` URL with the
+      database name changed to `netsentinel_demo` (`build_demo.ps1` sets it only inside
+      its own run): `ollama pull llama3.2:3b`, then
       `uv run netsentinel-copilot --latest 10`. Note one alert id that got a summary.
 - [ ] Start the stack: `powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1`;
       wait for "Dashboard: http://127.0.0.1:5180".
@@ -93,7 +94,8 @@ Export CSV saves exactly what is on screen."
 
 **Do:** open an alert by clicking its time. Point at the sentence at the top, the
 details box (the technique field) and the **Why this was flagged** chart, then **What
-each model said**. Go back and open a second alert to show different bars.
+each model said**. Go back and open a second alert from a different source address
+to show different bars (the top two rows of the feed have near-identical bars).
 
 **Say:** "The sentence says what happened: who connected to whom, how likely it is an
 attack, and what stood out. The chart is a SHAP explanation for this one flow: red bars
@@ -113,8 +115,9 @@ page. The page reminds the analyst that the evidence above it is what counts."
 **Say:** "Blocking needs two people. An administrator proposes; an analyst decides. No
 role can do both."
 
-**Do:** sign out, sign in as `admin`, open an alert, click **Propose blocking
-175.45.176.x**. Show the confirmation that it now waits on the Approvals page.
+**Do:** sign out, sign in as `admin`, open an alert, click **Propose blocking** (the
+button ends with the alert's source address, e.g. 175.45.176.0). Show the confirmation
+that it now waits on the Approvals page.
 
 **Do:** switch to the API docs tab. Click **Authorize**, sign in as `admin`. Take the
 `action_id` from `GET /actions/pending`, then try `POST /actions/{action_id}/decision`
