@@ -253,8 +253,8 @@ def scenario():
     """A scored flow as the sensor publishes it, per attack scenario."""
 
     def _payload(flow_id: str, risk_score: float = 0.93) -> dict:
-        # No technique: nothing in the ML path assigns one. See
-        # test_an_ml_alert_carries_no_technique_yet.
+        # No technique: without a family model the writer assigns none. See
+        # test_without_a_family_model_an_ml_alert_carries_no_technique.
         flow = {
             "flow_id": flow_id,
             "src_ip": ATTACKER,
