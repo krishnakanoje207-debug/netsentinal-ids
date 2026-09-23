@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-09-23T14:18:32Z",
+  "generated_at": "2026-09-23T18:30:25Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 4,
+      "CONFIDENCE.HIGH": 3,
       "CONFIDENCE.LOW": 1,
       "CONFIDENCE.MEDIUM": 1,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 4,
-      "SEVERITY.MEDIUM": 2,
+      "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 8641,
+      "loc": 8722,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -432,15 +432,15 @@
       "skipped_tests": 0
     },
     "backend/src\\netsentinel_api\\services\\vulns.py": {
-      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.HIGH": 1,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 212,
+      "loc": 219,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -531,7 +531,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 80,
+      "loc": 83,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -544,7 +544,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 45,
+      "loc": 66,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -557,7 +557,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 69,
+      "loc": 119,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1043,26 +1043,6 @@
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree",
       "test_id": "B405",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "95     try:\n96         root = ElementTree.fromstring(xml)\n97     except ElementTree.ParseError as exc:\n",
-      "col_offset": 15,
-      "end_col_offset": 42,
-      "filename": "backend/src\\netsentinel_api\\services\\vulns.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 20,
-        "link": "https://cwe.mitre.org/data/definitions/20.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called",
-      "line_number": 96,
-      "line_range": [
-        96
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree",
-      "test_id": "B314",
       "test_name": "blacklist"
     },
     {

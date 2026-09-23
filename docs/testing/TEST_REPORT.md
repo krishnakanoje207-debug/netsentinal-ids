@@ -9,7 +9,7 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 709 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 713 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 94 | all pass | `cd frontend; npx vitest run` |
 
@@ -28,7 +28,7 @@ consecutive full runs passed afterwards.
 
 | Check | Tool | Result | Output |
 |---|---|---|---|
-| Static analysis, 8,641 lines of Python | bandit | 6 findings: 1 fixed, 5 reviewed and accepted | `bandit.json` |
+| Static analysis, 8,722 lines of Python | bandit | 5 findings, all reviewed and accepted (1 real issue fixed before this run) | `bandit.json` |
 | Known CVEs in Python dependencies | pip-audit | 84 packages, **0 vulnerabilities** (torch CPU build not on PyPI, training-only) | `pip-audit.json` |
 | Known CVEs in dashboard dependencies | npm audit | 243 packages, **0 vulnerabilities** | `npm-audit.json` |
 | SQL injection through search and login | manual, live API | refused with a 422 / 401; data intact | testing guide 2.5, 3.6 |
@@ -36,17 +36,19 @@ consecutive full runs passed afterwards.
 | Prompt injection through alert fields | unit tests | untrusted text fenced, one line, bounded; replies schema-checked | `copilot/tests` |
 | XML entity expansion in scan imports | unit test | refused before expansion | `test_vulns.py` |
 
-Bandit findings: **B314/B405** (XML parsed with the standard library in the Greenbone
-importer) was real, since the importer takes a file it cannot vouch for, and is **fixed** with
-`defusedxml`. **B608** ("SQL injection" in `nf_mapping.py`) is an error message with no
-SQL; **B105** is the name of an environment variable; **B404/B603** are the sensor
-starting `tcpdump` with an argument list and no shell. All four are accepted.
+Bandit findings: an earlier run flagged **B314** (XML parsed with the standard library in the Greenbone
+importer). That was real, since the importer takes a file it cannot vouch for, and is **fixed** with
+`defusedxml`; it no longer appears. **B405** remains only because the module still imports the
+standard `ElementTree` for its `ParseError` and `Element` type names; nothing is parsed with it.
+**B608** ("SQL injection" in `nf_mapping.py`) is an error message with no SQL; **B105** is the name
+of an environment variable; **B404/B603** are the sensor starting `tcpdump` with an argument list
+and no shell. All five are accepted.
 
 ## 3. Performance and load
 
 | Requirement | Measured | Verdict |
 |---|---|---|
-| NFR-01: ML inference <= 5 ms per flow | Tier A 0.07 ms p50, 0.19 ms p99; Tier D 8.2 ms p50, 17.1 ms p99 (ONNX, one flow per call; `docs/evaluation/REPORT.md` section 6) | Tier A met; Tier D over budget |
+| NFR-01: ML inference <= 5 ms per flow | Tier A 0.07 ms p50, 0.19 ms p99; Tier D 8.2 ms p50, 17.1 ms p99 (ONNX, one flow per call; `docs/evaluation/REPORT.md` §6) | Tier A met; Tier D over budget |
 | NFR-02: dashboard pages < 2 s | Locust, 25 concurrent analysts for 60 s, 683 requests, **0 failures**: feed median 20 ms (p95 47 ms), alert detail median 19 ms (p95 45 ms) | Met |
 | Login under the same load | median 780 ms (bcrypt, deliberately slow against guessing; once per session) | By design |
 
@@ -71,7 +73,7 @@ Raw figures: `load/run_stats.csv`.
 | Found by | Defect | Fix |
 |---|---|---|
 | Training audit | Tier A learned TTL, a testbed artefact (TTL alone: PR-AUC 0.998) | TTL removed from the model contract |
-| Benchmark | Tier D (Isolation Forest) caught 0.2% of attacks on raw features | log-scaled input in the ONNX graph: 40% recall, PR-AUC 0.64 |
+| Benchmark | Tier D (Isolation Forest) caught 0.2% of attacks on raw features | log-scaled input in the ONNX graph: 39% recall at a 2% false-positive rate, PR-AUC 0.64 (full test split) |
 | Live API check | An approval came back with `approval_id` and `decided_at` null | flush and refresh before responding; test added |
 | Live API check | Alert feed answered 500 on real PostgreSQL (INET addresses) | addresses serialised as text; tests added |
 | Screenshot review | Models page showed a 0.0047 threshold as "0.00" | small thresholds keep two significant figures |
@@ -80,6 +82,7 @@ Raw figures: `load/run_stats.csv`.
 | Family model check | Fuzzers and Worms techniques were right only 61-79% of the time | a technique must be right 85% of the time on validation to be claimed |
 | Live Copilot run | The model invented measurements ("8.67 times larger than average") | evidence gives directions not numbers; such replies rejected |
 | Screenshot review | The Copilot called a 100%-risk alert "likely harmless" (9 of 12 replies) | such a verdict is rejected at >= 90% risk; the prompt now defines each verdict, after which 12 of 12 passed |
+| Live demo run | The Copilot wrote "Destination address 149.171.126.13 connected to source address 175.45.176.0" for alert 130: right labels, direction reversed, stored as valid | the prompt now says the source connected to the destination; a reply naming the destination as the one connecting is rejected |
 | bandit | Unsafe XML parsing of scan reports | `defusedxml` |
 
 ## 6. Validation against Milestone 1
@@ -98,7 +101,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
-| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Deferred | compose profiles exist |
+| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Deferred | Suricata and Zeek are services in the `sensors` Compose profile, never run; the JA4 package is not installed; Wazuh and Sysmon are not in Compose (`infra/README.md` points to Wazuh's own stack) |
 | FR-04 | Early-flow features | Partial | extractor + offline/live parity test |
 | FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; DDL generated from the contract |
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
