@@ -29,6 +29,26 @@ logger = logging.getLogger("netsentinel.copilot")
 #: of them mattered.
 TOP_FEATURE_COUNT = 5
 
+#: Plain names for the contract features, the same words the dashboard uses. A 3B model
+#: handed "l4_dst_port +8.012" writes "multiple contributing features"; handed
+#: "destination port" it can write a sentence an analyst recognises. The raw name stays
+#: beside it so the summary can be checked against the chart.
+FEATURE_NAMES = {
+    "proto": "protocol",
+    "l4_src_port": "source port",
+    "l4_dst_port": "destination port",
+    "duration_ms": "connection length",
+    "in_pkts": "packets sent",
+    "out_pkts": "packets returned",
+    "in_bytes": "data sent",
+    "out_bytes": "data returned",
+    "pkt_rate": "packets per second",
+    "byte_rate": "data per second",
+    "bytes_per_pkt_in": "size of sent packets",
+    "bytes_per_pkt_out": "size of returned packets",
+    "bytes_ratio_out_in": "reply-to-request ratio",
+}
+
 
 def evidence(alert: Alert, iocs: Iterable[IoC] = ()) -> dict[str, object]:
     """The facts about one alert, as fields for the data block.
@@ -47,11 +67,17 @@ def evidence(alert: Alert, iocs: Iterable[IoC] = ()) -> dict[str, object]:
     }
 
     if detection is not None:
-        fields["risk score"] = f"{detection.risk_score:.2f}"
+        fields["risk score"] = f"{detection.risk_score:.0%}"
         contributions = {k: float(v) for k, v in (detection.shap_values or {}).items()}
         ranked = sorted(contributions, key=lambda k: abs(contributions[k]), reverse=True)
-        fields["top contributing features"] = ", ".join(
-            f"{name} {contributions[name]:+.3f}" for name in ranked[:TOP_FEATURE_COUNT]
+        # Direction and rank only, never the SHAP value itself. Given "+8.67" a small
+        # model reported packets "8.67 times larger than average" - a measurement
+        # nobody took, stated as fact. An influence weight has no unit to misread if
+        # it is not in the prompt.
+        fields["top contributing features, strongest first"] = "; ".join(
+            f"{FEATURE_NAMES.get(name, name)} ({name}) pushed toward "
+            f"{'attack' if contributions[name] > 0 else 'normal traffic'}"
+            for name in ranked[:TOP_FEATURE_COUNT]
         )
 
     matched = [str(ioc.value) for ioc in iocs]

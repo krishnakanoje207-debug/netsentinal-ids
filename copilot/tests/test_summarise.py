@@ -117,9 +117,12 @@ def test_the_schema_sent_is_the_schema_enforced():
 
 def test_the_prompt_carries_the_evidence_the_analyst_can_see():
     fields = evidence(_alert())
-    assert fields["risk score"] == "0.93"
-    # Ranked by absolute contribution, so the strongest negative is not dropped.
-    assert fields["top contributing features"].startswith("duration_ms -0.440")
+    assert fields["risk score"] == "93%"
+    # Ranked by absolute contribution, so the strongest negative is not dropped - and
+    # given as a direction, because a bare SHAP value reads to a model as a measurement.
+    ranked = fields["top contributing features, strongest first"]
+    assert ranked.startswith("connection length (duration_ms) pushed toward normal traffic")
+    assert not any(ch.isdigit() for ch in ranked.replace("l4_", "").replace("in_", ""))
 
 
 def test_an_alert_with_no_model_behind_it_carries_no_score():
