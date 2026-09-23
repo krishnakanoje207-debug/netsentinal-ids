@@ -49,6 +49,13 @@ const TRIAGE = [
   { status: 'new', label: 'Reopen', icon: null },
 ]
 
+/** The model's verdict, in words and in the severity palette. */
+const ASSESSMENT = {
+  likely_malicious: { label: 'Likely malicious', colour: 'var(--color-sev-high)' },
+  needs_investigation: { label: 'Needs investigation', colour: 'var(--color-sev-medium)' },
+  likely_benign: { label: 'Likely harmless', colour: 'var(--color-sev-low)' },
+}
+
 /** @param {string[]} names */
 function spokenList(names) {
   if (names.length <= 1) return names.join('')
@@ -117,6 +124,12 @@ export function AlertDetail() {
     void queryClient.invalidateQueries({ queryKey: ['alerts'] })
     void queryClient.invalidateQueries({ queryKey: ['alert-summary'] })
   }
+
+  const summary = useQuery({
+    queryKey: ['copilot-summary', id],
+    queryFn: () => api.copilotSummary(token, id),
+    enabled: token !== null && Number.isFinite(id),
+  })
 
   const triage = useMutation({
     mutationFn: (status) => api.setAlertStatus(token, id, status),
@@ -246,6 +259,40 @@ export function AlertDetail() {
               </ul>
             </div>
           </>
+        )}
+      </Panel>
+
+      <Panel
+        title="AI summary"
+        description="Written by a language model running on this machine. It can be wrong: the evidence above is what counts."
+      >
+        {summary.data ? (
+          <div className="space-y-3 text-sm" data-testid="copilot-summary">
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{summary.data.headline}</span>
+              <span
+                className="rounded-full border border-[var(--color-line)] px-2 py-0.5 text-xs"
+                style={{ color: ASSESSMENT[summary.data.assessment]?.colour }}
+              >
+                {ASSESSMENT[summary.data.assessment]?.label ?? summary.data.assessment}
+              </span>
+            </p>
+            <p>{summary.data.what_happened}</p>
+            <p className="text-[var(--color-ink-dim)]">{summary.data.why_it_scored}</p>
+            <div>
+              <p className="text-xs text-[var(--color-ink-faint)]">Suggested next steps</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {summary.data.next_steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            </div>
+            <p className="text-xs text-[var(--color-ink-faint)]">Model: {summary.data.llm_model}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-ink-dim)]">
+            {summary.isLoading ? 'Looking for a summary...' : 'No AI summary has been written for this alert yet.'}
+          </p>
         )}
       </Panel>
 

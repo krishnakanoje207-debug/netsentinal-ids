@@ -38,10 +38,16 @@ const ROLES = {
   viewer: { role: 'viewer', permissions: ['alerts:read', 'models:read'] },
 }
 
-function renderAs(account, alert = ALERT) {
+function renderAs(account, alert = ALERT, summary = null) {
   const me = { user_id: 1, username: account, email: 'x@example.test', is_active: true, ...ROLES[account] }
   vi.mocked(fetch).mockImplementation(async (input) => {
-    const body = String(input).includes('/auth/me') ? me : alert
+    const url = String(input)
+    if (url.endsWith('/summary')) {
+      return summary
+        ? { ok: true, status: 200, statusText: 'OK', json: async () => summary }
+        : { ok: false, status: 404, statusText: 'Not Found', json: async () => ({ detail: 'no summary yet' }) }
+    }
+    const body = url.includes('/auth/me') ? me : alert
     return { ok: true, status: 200, statusText: 'OK', json: async () => body }
   })
   render(
@@ -122,5 +128,24 @@ describe('AlertDetail actions', () => {
     expect(
       await screen.findByText(/not sure enough which kind of attack this is/),
     ).toBeInTheDocument()
+  })
+
+  it('shows a valid AI summary, labelled as a model that can be wrong', async () => {
+    renderAs('viewer', ALERT, {
+      headline: 'Service scan against a web server',
+      what_happened: 'One address contacted many ports on one server within seconds.',
+      why_it_scored: 'Short, fast connections to the destination port drove the score.',
+      assessment: 'likely_malicious',
+      next_steps: ['Check whether any probed port answered.'],
+      llm_model: 'llama3.2:3b',
+    })
+    expect(await screen.findByText('Service scan against a web server')).toBeInTheDocument()
+    expect(screen.getByText('Likely malicious')).toBeInTheDocument()
+    expect(screen.getByText(/It can be wrong/)).toBeInTheDocument()
+  })
+
+  it('says plainly when no summary exists', async () => {
+    renderAs('viewer')
+    expect(await screen.findByText('No AI summary has been written for this alert yet.')).toBeInTheDocument()
   })
 })

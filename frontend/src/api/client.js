@@ -171,6 +171,19 @@ export const api = {
   /** @returns {Promise<import('./types').AlertDetail>} */
   alert: (token, alertId) => request(`/alerts/${alertId}`, { token }),
 
+  /**
+   * The local model's summary of an alert, or null when none has been written. A
+   * missing summary is an ordinary state, not an error the page should shout about.
+   */
+  copilotSummary: async (token, alertId) => {
+    try {
+      return await request(`/alerts/${alertId}/summary`, { token })
+    } catch (error) {
+      if (error instanceof ApiError && error.kind === 'not_found') return null
+      throw error
+    }
+  },
+
   /** Totals across every alert, not only the page on screen. */
   alertSummary: (token) => request('/alerts/summary', { token }),
 
