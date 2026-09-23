@@ -20,6 +20,7 @@ the writer which row it is consuming for beats guessing from a string.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import sys
@@ -30,7 +31,7 @@ from netsentinel_api.db.session import get_sessionmaker
 from netsentinel_api.services.soar import forwarder_from
 from sqlalchemy import select
 
-from netsentinel_writer.consumer import Consumer, RedpandaConsumer
+from netsentinel_writer.consumer import Consumer, RedpandaConsumer, ReplayConsumer
 from netsentinel_writer.explain import ExplainerError, load_explainer
 from netsentinel_writer.writer import DetectionWriter
 
@@ -73,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="replay the retained topic from the start, for a newly trained model",
     )
+    parser.add_argument(
+        "--replay",
+        metavar="JSONL",
+        help="read scored flows from a file, one message per line, instead of the bus "
+        "(see lab/replay)",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -109,9 +116,14 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Keep is not configured; alerts will be stored but not forwarded")
 
     writer = DetectionWriter(session_factory, explainer, sensor_id, model_id, forwarder)
-    consumer: Consumer = RedpandaConsumer(
-        args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
-    )
+    if args.replay:
+        with open(args.replay, encoding="utf-8") as handle:
+            payloads = [json.loads(line) for line in handle if line.strip()]
+        consumer: Consumer = ReplayConsumer(payloads)
+    else:
+        consumer = RedpandaConsumer(
+            args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
+        )
 
     # SIGTERM is how Docker stops a container. Closing the consumer ends the loop
     # after the message in flight, so no offset is committed for a write that did
