@@ -4,10 +4,11 @@
 
 Bootstrap creates only the administrator, and the gate cannot be shown with one
 person: the administrator proposes containment, the analyst decides, the ML engineer
-promotes models. This runs bootstrap and then creates the other two through the same
-function, so they get the same hashing and the same audit row. Passwords are
-generated, written once to ``--out`` and never printed; existing accounts are left
-alone exactly as bootstrap leaves the administrator.
+promotes models, and the viewer - the everyday account - reads and changes nothing.
+This runs bootstrap and then creates the others through the same function, so they
+get the same hashing and the same audit row. Passwords are generated, written once
+to ``--out`` and never printed; existing accounts are left alone exactly as bootstrap
+leaves the administrator.
 """
 
 from __future__ import annotations
@@ -20,9 +21,9 @@ from sqlalchemy import select
 from netsentinel_api.bootstrap import bootstrap, ensure_admin
 from netsentinel_api.db.models import Role
 from netsentinel_api.db.session import get_sessionmaker
-from netsentinel_api.rbac import ML_ENGINEER, SOC_ANALYST
+from netsentinel_api.rbac import ML_ENGINEER, SOC_ANALYST, VIEWER
 
-ACCOUNTS = (("analyst", SOC_ANALYST), ("modeller", ML_ENGINEER))
+ACCOUNTS = (("analyst", SOC_ANALYST), ("modeller", ML_ENGINEER), ("viewer", VIEWER))
 
 
 def main() -> None:
