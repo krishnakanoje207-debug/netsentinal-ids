@@ -1,0 +1,106 @@
+{
+  "name": "tier_c_egraphsage",
+  "tier": "C",
+  "version": "1.0.0",
+  "onnx_sha256": "0827f456292fad27c24911b1ad4c58f3369f241b0501a7ee50627ddc96246982",
+  "threshold": 0.18949706852436066,
+  "mode": "shadow",
+  "pr_auc": 0.9944268341453278,
+  "feature_order": [
+    "proto",
+    "l4_src_port",
+    "l4_dst_port",
+    "duration_ms",
+    "in_pkts",
+    "out_pkts",
+    "in_bytes",
+    "out_bytes",
+    "pkt_rate",
+    "byte_rate",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_ratio_out_in"
+  ],
+  "calibration": {
+    "method": "platt",
+    "a": 0.827974259853363,
+    "b": -1.989495873451233
+  },
+  "target_max_fpr": 0.01,
+  "graph": {
+    "layers": 2,
+    "hidden": 64,
+    "node_features": "constant ones",
+    "train_hosts": 42
+  },
+  "rows": {
+    "train": 1655797,
+    "val": 354814,
+    "test": 354813
+  },
+  "window_flows": 20000,
+  "class_balance_train": {
+    "attack": 65189,
+    "benign": 1590608
+  },
+  "normalisation": {
+    "mean": [
+      8.672279357910156,
+      32645.87890625,
+      11331.150390625,
+      569.9718017578125,
+      35.546295166015625,
+      45.11530685424805,
+      4281.2236328125,
+      34515.68359375,
+      2561.454345703125,
+      491191.90625,
+      114.89692687988281,
+      286.7069091796875,
+      5.774557590484619
+    ],
+    "std": [
+      6.149498462677002,
+      19099.845703125,
+      18467.9453125,
+      3469.56787109375,
+      74.18340301513672,
+      115.43356323242188,
+      58736.05078125,
+      153990.390625,
+      2688.57666015625,
+      643229.4375,
+      151.48007202148438,
+      322.3851013183594,
+      9.645047187805176
+    ]
+  },
+  "metrics_test": {
+    "pr_auc": 0.9944268341453278,
+    "roc_auc": 0.9995575200332075,
+    "brier": 0.003949661273509264,
+    "precision": 0.8738344325676598,
+    "recall": 0.9881377181984762,
+    "f1": 0.9274776337824178,
+    "false_positive_rate": 0.013709971393795605,
+    "true_positives": 30738,
+    "false_positives": 4438,
+    "false_negatives": 369,
+    "true_negatives": 319268
+  },
+  "metrics_test_uncalibrated": {
+    "pr_auc": 0.9944268341453278,
+    "roc_auc": 0.9995575200332075,
+    "brier": 0.010085525922477245,
+    "precision": 0.8035700446901397,
+    "recall": 1.0,
+    "f1": 0.8910882580423386,
+    "false_positive_rate": 0.023490451211902158,
+    "true_positives": 31107,
+    "false_positives": 7604,
+    "false_negatives": 0,
+    "true_negatives": 316102
+  },
+  "onnx_max_abs_drift": 2.1278858184814453e-05,
+  "scoring_unit": "window"
+}

@@ -62,6 +62,12 @@ PATIENCE = 10
 
 SRC_COLUMN = "src_ip"
 DST_COLUMN = "dst_ip"
+TIME_COLUMN = "ts_ms"
+
+#: Flows per training graph. The deployed unit is a window (see score_window), and
+#: training on windows is also what fits in memory: one graph of 1.6M edges needs
+#: several GB of activations, a 20k-flow window a few MB.
+WINDOW_FLOWS = 20_000
 
 
 class GraphBuildError(RuntimeError):
@@ -101,6 +107,20 @@ def build_graph(frame: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
         else np.zeros(frame.height, dtype=np.float32)
     )
     return edge_index, edge_features, labels, len(ids)
+
+
+def windows(frame: pl.DataFrame, size: int = WINDOW_FLOWS) -> list[tuple]:
+    """Consecutive windows of flows, in time order when the split has a time column.
+
+    Each window is its own graph with its own interned node ids, as a live window is.
+    """
+    if TIME_COLUMN in frame.columns:
+        frame = frame.sort(TIME_COLUMN)
+    return [build_graph(frame[start:start + size]) for start in range(0, frame.height, size)]
+
+
+def _predict_windows(model, graphs: list[tuple]) -> np.ndarray:
+    return np.concatenate([_predict(model, g[0], g[1], g[3]) for g in graphs])
 
 
 def edge_statistics(edge_features: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -264,11 +284,13 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
     data_dir, out_dir = Path(data_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    graphs = {}
-    for name in ("train", "val", "test"):
-        graphs[name] = build_graph(pl.read_parquet(data_dir / f"{name}.parquet"))
+    graphs = {
+        name: windows(pl.read_parquet(data_dir / f"{name}.parquet"))
+        for name in ("train", "val", "test")
+    }
+    labels = {name: np.concatenate([g[2] for g in graphs[name]]) for name in graphs}
 
-    train_index, train_features, train_labels, train_nodes = graphs["train"]
+    train_labels = labels["train"]
     positives = int(train_labels.sum())
     negatives = len(train_labels) - positives
     if positives == 0 or negatives == 0:
@@ -276,41 +298,37 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
             f"training graph has only one class (pos={positives}, neg={negatives}); "
             "the split is unusable"
         )
-    print(f"train graph: {train_nodes:,} hosts, {len(train_labels):,} flows "
-          f"({positives:,} attack)")
+    train_nodes = max(g[3] for g in graphs["train"])
+    print(f"train: {len(graphs['train'])} windows of up to {WINDOW_FLOWS:,} flows, "
+          f"{len(train_labels):,} flows ({positives:,} attack)")
 
-    mean, std = edge_statistics(train_features)
+    mean, std = edge_statistics(np.concatenate([g[1] for g in graphs["train"]]))
     torch.manual_seed(1337)
+    rng = np.random.default_rng(1337)
     model = build_model(mean, std)
     optimiser = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     loss_fn = nn.BCELoss(reduction="none")
     positive_weight = negatives / max(positives, 1)
 
-    tensors = {
-        "edge_index": torch.from_numpy(train_index),
-        "edge_features": torch.from_numpy(train_features),
-        "node_count": torch.tensor(train_nodes, dtype=torch.int64),
-        "labels": torch.from_numpy(train_labels),
-    }
-
-    val_index, val_features, val_labels, val_nodes = graphs["val"]
     best_score, best_state, since_best = -1.0, None, 0
     for epoch in range(epochs):
-        # Full-batch: the whole graph in one step. Neighbour sampling exists for graphs
-        # far larger than a lab capture, and it would add a sampler to get wrong.
         model.train()
-        optimiser.zero_grad()
-        predicted = model(
-            tensors["edge_index"], tensors["edge_features"], tensors["node_count"]
-        ).clamp(1e-7, 1 - 1e-7)
-        weights = torch.where(tensors["labels"] > 0.5, positive_weight, 1.0)
-        loss = (loss_fn(predicted, tensors["labels"]) * weights).mean()
-        loss.backward()
-        optimiser.step()
+        # One optimiser step per window, in a fresh order each epoch.
+        for index in rng.permutation(len(graphs["train"])):
+            edge_index, edge_features, window_labels, node_count = graphs["train"][index]
+            optimiser.zero_grad()
+            predicted = model(
+                torch.from_numpy(edge_index),
+                torch.from_numpy(edge_features),
+                torch.tensor(node_count, dtype=torch.int64),
+            ).clamp(1e-7, 1 - 1e-7)
+            target = torch.from_numpy(window_labels)
+            weights = torch.where(target > 0.5, positive_weight, 1.0)
+            loss = (loss_fn(predicted, target) * weights).mean()
+            loss.backward()
+            optimiser.step()
 
-        val_score = float(
-            average_precision_score(val_labels, _predict(model, val_index, val_features, val_nodes))
-        )
+        val_score = float(average_precision_score(labels["val"], _predict_windows(model, graphs["val"])))
         if val_score > best_score:
             best_score, since_best = val_score, 0
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
@@ -324,19 +342,21 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
         model.load_state_dict(best_state)
     print(f"best validation PR-AUC {best_score:.4f}")
 
-    probs_val = np.clip(_predict(model, val_index, val_features, val_nodes), 1e-7, 1 - 1e-7)
+    val_labels, test_labels = labels["val"], labels["test"]
+    probs_val = np.clip(_predict_windows(model, graphs["val"]), 1e-7, 1 - 1e-7)
     margin_val = np.log(probs_val / (1 - probs_val))
     a, b = fit_platt(margin_val, val_labels.astype(np.int8))
     threshold = choose_threshold(apply_platt(margin_val, a, b), val_labels.astype(np.int8))
 
-    test_index, test_features, test_labels, test_nodes = graphs["test"]
-    probs_test = np.clip(_predict(model, test_index, test_features, test_nodes), 1e-7, 1 - 1e-7)
+    probs_test = np.clip(_predict_windows(model, graphs["test"]), 1e-7, 1 - 1e-7)
     margin_test = np.log(probs_test / (1 - probs_test))
     metrics = evaluate(apply_platt(margin_test, a, b), test_labels.astype(np.int8), threshold)
     uncalibrated = evaluate(probs_test, test_labels.astype(np.int8), threshold)
 
+    train_index, train_features, _, first_nodes = graphs["train"][0]
+    test_index, test_features, _, test_nodes = graphs["test"][0]
     onnx_path = out_dir / "tier_c.onnx"
-    export_onnx(model, train_index, train_features, train_nodes, onnx_path)
+    export_onnx(model, train_index, train_features, first_nodes, onnx_path)
     max_drift = verify_onnx_parity(model, onnx_path, test_index, test_features, test_nodes)
     if max_drift > ONNX_TOLERANCE:
         raise RuntimeError(
@@ -361,7 +381,8 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
             "node_features": "constant ones",
             "train_hosts": train_nodes,
         },
-        "rows": {name: len(graphs[name][2]) for name in graphs},
+        "rows": {name: int(len(labels[name])) for name in graphs},
+        "window_flows": WINDOW_FLOWS,
         "class_balance_train": {"attack": positives, "benign": negatives},
         "normalisation": {"mean": mean.tolist(), "std": std.tolist()},
         "metrics_test": metrics,
