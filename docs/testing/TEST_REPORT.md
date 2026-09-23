@@ -9,7 +9,7 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 703 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 709 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 94 | all pass | `cd frontend; npx vitest run` |
 
@@ -19,9 +19,10 @@ Copilot and writer CLIs: 0%) and in the real-database repository and WebSocket s
 (about 50%), which the suite replaces with fakes. Those paths were exercised live in
 section 4 instead.
 
-One dashboard test failed once while a model was training in the background and
-saturating the CPU, then passed on two consecutive full runs: a timing flake under
-load, not a defect.
+One dashboard test failed intermittently on a busy machine. The cause: the alert page
+lazy-loads the chart library, and the first test to render it paid the one-off load
+inside a one-second wait. The test file now loads the chart before its tests; five
+consecutive full runs passed afterwards.
 
 ## 2. Security testing
 
@@ -63,7 +64,7 @@ Raw figures: `load/run_stats.csv`.
 | Block aimed at one of the estate's own assets | 422, with the reason |
 | Browser: admin proposes, analyst escalates and confirms | all succeed; escalation says honestly that the case system is not connected |
 | Copilot on live alerts (llama3.2:3b, laptop GPU) | final prompt: 12 of 12 valid, all consistent with the detector; earlier prompts were rejected by the guards below and fixed |
-| Demo launcher from cold | PostgreSQL, API and dashboard up and healthy in 10 s |
+| Demo launcher (Docker deployment) | PostgreSQL, API and dashboard up and healthy in 34 s; `-Dev` mode also verified |
 
 ## 5. Bugs found and fixed while testing
 

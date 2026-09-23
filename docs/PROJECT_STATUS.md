@@ -20,7 +20,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms | `docs/testing/TEST_REPORT.md` |
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities | same |
-| Automated tests | 703 Python (81% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
+| Automated tests | 709 Python (81% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
