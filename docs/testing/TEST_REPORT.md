@@ -62,7 +62,7 @@ Raw figures: `load/run_stats.csv`.
 | Same action approved twice | 409 |
 | Block aimed at one of the estate's own assets | 422, with the reason |
 | Browser: admin proposes, analyst escalates and confirms | all succeed; escalation says honestly that the case system is not connected |
-| Copilot on 8 live alerts (llama3.2:3b, laptop GPU) | 6 valid summaries shown; 2 rejected for inventing a measurement and stored for review |
+| Copilot on live alerts (llama3.2:3b, laptop GPU) | final prompt: 12 of 12 valid, all consistent with the detector; earlier prompts were rejected by the guards below and fixed |
 | Demo launcher from cold | PostgreSQL, API and dashboard up and healthy in 10 s |
 
 ## 5. Bugs found and fixed while testing
@@ -78,6 +78,7 @@ Raw figures: `load/run_stats.csv`.
 | Launcher run | Port 8000 taken by another project; stderr treated as failure | API on 8010; exit codes, not stderr, decide failure |
 | Family model check | Fuzzers and Worms techniques were right only 61-79% of the time | a technique must be right 85% of the time on validation to be claimed |
 | Live Copilot run | The model invented measurements ("8.67 times larger than average") | evidence gives directions not numbers; such replies rejected |
+| Screenshot review | The Copilot called a 100%-risk alert "likely harmless" (9 of 12 replies) | such a verdict is rejected at >= 90% risk; the prompt now defines each verdict, after which 12 of 12 passed |
 | bandit | Unsafe XML parsing of scan reports | `defusedxml` |
 
 ## 6. Validation against Milestone 1
