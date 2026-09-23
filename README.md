@@ -14,7 +14,7 @@ Design and requirements live in [`deliverables/`](deliverables).
 | [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) | How to try to break it by hand |
 
 Quickest look: `docker compose -f infra/docker-compose.yml --profile app up -d --build`,
-then http://127.0.0.1:5180.
+then https://127.0.0.1:5180 (a self-signed certificate; accept the browser warning).
 
 ## Layout
 

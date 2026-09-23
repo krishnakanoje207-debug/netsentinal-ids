@@ -12,7 +12,7 @@ Part 1 is for everyone who uses the dashboard. Part 2 is for whoever installs it
 
 ### Signing in
 
-Open the dashboard address you were given (for the demo, http://127.0.0.1:5180) and sign
+Open the dashboard address you were given (for the demo, https://127.0.0.1:5180) and sign
 in. What you can do depends on your account's role, and the Overview page tells you in
 one line under its headline.
 
@@ -107,9 +107,15 @@ docker compose -f infra/docker-compose.yml --profile app up -d --build
 docker compose -f infra/docker-compose.yml logs api    # the first start prints the admin password once
 ```
 
-The dashboard is then at http://127.0.0.1:5180 and the API documentation at
+The dashboard is then at https://127.0.0.1:5180 and the API documentation at
 http://127.0.0.1:8010/api/v1/docs. Everything listens on localhost only; reach a remote
 server through an SSH tunnel.
+
+The dashboard serves HTTPS with a self-signed certificate that is generated when its
+image is built, so no key is kept in the repository. The browser warns about it once;
+accept it for this address. A plain http:// request to the same port is redirected to
+https://. For a server with a real host name, replace the certificate with one from a
+certificate authority.
 
 ### The offline demonstration (Windows laptop)
 

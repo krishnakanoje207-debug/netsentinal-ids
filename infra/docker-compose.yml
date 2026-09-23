@@ -112,7 +112,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${DASHBOARD_PORT:-5180}:80"
+      - "127.0.0.1:${DASHBOARD_PORT:-5180}:443"
     mem_limit: 64m
     networks: [backplane]
     restart: unless-stopped

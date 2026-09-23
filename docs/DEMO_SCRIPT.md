@@ -7,7 +7,7 @@ models scoring flows replayed from the unseen test window of NF-UNSW-NB15-v3.
 
 Addresses:
 
-- Dashboard: http://127.0.0.1:5180 (http://127.0.0.1:5173 with `start_demo.ps1 -Dev`)
+- Dashboard: https://127.0.0.1:5180 (http://127.0.0.1:5173 with `start_demo.ps1 -Dev`)
 - API and its interactive docs: http://127.0.0.1:8010/api/v1/docs
 - Accounts: `admin`, `analyst`, `modeller`, `viewer`; passwords in
   `lab\replay\out\demo_credentials.txt`
@@ -28,7 +28,7 @@ changes them.
       its own run): `ollama pull llama3.2:3b`, then
       `uv run netsentinel-copilot --latest 10`. Note one alert id that got a summary.
 - [ ] Start the stack: `powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1`;
-      wait for "Dashboard: http://127.0.0.1:5180".
+      wait for "Dashboard: https://127.0.0.1:5180".
 - [ ] Credentials file open on a second screen, not in the recording.
 - [ ] Browser at 100% zoom, a clean profile (no bookmarks bar, no password prompts),
       window about 1600 x 900. A second tab open on the API docs page.
@@ -53,7 +53,7 @@ this video is running locally on my laptop."
 
 **Do:** show the command
 `powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1` (already run; show
-its last line) and the browser opening at http://127.0.0.1:5180.
+its last line) and the browser opening at https://127.0.0.1:5180.
 
 **Say:** "One command starts PostgreSQL, the FastAPI backend on port 8010 and the React
 dashboard in Docker. The alerts in the database come from flows the models never saw:

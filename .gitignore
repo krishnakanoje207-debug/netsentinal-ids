@@ -29,6 +29,7 @@ artefacts/**/*.lgb.txt
 .env.local
 *.key
 *.pem
+*.crt
 
 # Build scratch
 deliverables/_build/__pycache__/

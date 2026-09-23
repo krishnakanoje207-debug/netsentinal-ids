@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Dev    # dev servers, hot reload
 #
 # Default: the app profile in Docker - PostgreSQL, the API and the nginx-served
-# dashboard - at http://127.0.0.1:5180. Its containers restart with Docker, so after
+# dashboard - at https://127.0.0.1:5180. Its containers restart with Docker, so after
 # the first run this mostly just opens the browser.
 #
 # -Dev: the API and the Vite dev server on the host, for working on the dashboard, at
@@ -33,8 +33,9 @@ function Wait-Healthy($url) {
     $deadline = (Get-Date).AddSeconds(120)
     do {
         Start-Sleep -Seconds 2
-        try { $up = (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 2).StatusCode -eq 200 }
-        catch { $up = $false }
+        # curl.exe rather than Invoke-WebRequest: Windows PowerShell 5.1 cannot skip
+        # the check on the dashboard's self-signed certificate, and -k can.
+        $up = (curl.exe -ks -o NUL -w "%{http_code}" --max-time 2 $url) -eq "200"
     } until ($up -or (Get-Date) -gt $deadline)
     return $up
 }
@@ -50,12 +51,12 @@ if (-not $Dev) {
     # rebuilding is exactly what is wanted.
     docker @compose --profile app up -d --build
     if ($LASTEXITCODE -ne 0) { Write-Host "The app profile did not start." -ForegroundColor Red; exit 1 }
-    if (-not (Wait-Healthy "http://127.0.0.1:5180/api/v1/health")) {
+    if (-not (Wait-Healthy "https://127.0.0.1:5180/api/v1/health")) {
         Write-Host "The dashboard did not answer; see: docker compose -f infra\docker-compose.yml logs api" -ForegroundColor Red
         exit 1
     }
-    Start-Process "http://127.0.0.1:5180"
-    Write-Host "Dashboard: http://127.0.0.1:5180   API: http://127.0.0.1:$apiPort/api/v1/docs"
+    Start-Process "https://127.0.0.1:5180"
+    Write-Host "Dashboard: https://127.0.0.1:5180   API: http://127.0.0.1:$apiPort/api/v1/docs"
     exit 0
 }
 

@@ -12,6 +12,15 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.27-alpine
+# A self-signed certificate, made fresh for each image so no key is ever in the
+# repository. It encrypts the localhost/SSH-tunnel deployment; a real host name
+# would replace it with a CA-issued one.
+RUN apk add --no-cache openssl \
+ && mkdir -p /etc/nginx/tls \
+ && openssl req -x509 -newkey rsa:2048 -nodes -days 825 -subj "/CN=localhost" \
+      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+      -keyout /etc/nginx/tls/dashboard.key -out /etc/nginx/tls/dashboard.crt \
+ && apk del openssl
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 443
