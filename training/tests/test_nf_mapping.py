@@ -13,7 +13,7 @@ import csv
 import polars as pl
 import pytest
 
-from netsentinel_core.features.contract import TIER_A_FEATURES
+from netsentinel_core.features.contract import FEATURE_ORDER, TIER_A_FEATURES
 from netsentinel_training.data import nf_mapping as nf
 from netsentinel_training.data.prep import host_holdout_split, prepare, temporal_split
 
@@ -161,10 +161,12 @@ def test_prepare_writes_parquet_with_contract_columns(nf_csv, tmp_path):
         for feature in TIER_A_FEATURES:
             assert feature in columns
         assert nf.LABEL_BINARY in columns
-        # Host addresses are identifiers, not behaviour: they must not survive
-        # into the training file.
+        # Host addresses are identifiers, not behaviour. They travel only as the
+        # graph endpoints Tier C needs, never under a name any tier reads as input.
         assert nf.SRC_HOST not in columns
         assert nf.DST_HOST not in columns
+        assert {"src_ip", "dst_ip"} <= set(columns)
+        assert not {"src_ip", "dst_ip"} & set(FEATURE_ORDER)
 
 
 # --- source formats --------------------------------------------------------

@@ -132,10 +132,17 @@ def prepare(csv_path: str | Path, out_dir: str | Path) -> dict[str, int]:
     # a tier picks its own columns at training time, and a feature dropped from
     # Tier A (TTL, see contract.py) is still needed to measure why it was dropped.
     keep = list(nf.DIRECT) + list(nf.DERIVED) + [c for c in CARRIED if c in header]
+    # The endpoints and the start time, as identity rather than input: Tier C needs to
+    # know which flows share a host to build its graph, and orders its windows by time.
+    # No tier reads them as a feature - Tier A and D select the contract features by
+    # name, and Tier C's nodes start as constants.
+    identity = [pl.col(nf.SRC_HOST).alias("src_ip"), pl.col(nf.DST_HOST).alias("dst_ip")]
+    if time_col:
+        identity.append(pl.col(time_col).alias("ts_ms"))
     counts: dict[str, int] = {}
     for name, frame in splits.items():
         target = out_dir / f"{name}.parquet"
-        frame.select(keep).sink_parquet(target)
+        frame.select(*keep, *identity).sink_parquet(target)
         counts[name] = pl.scan_parquet(target).select(pl.len()).collect().item()
         print(f"  {name:>5}: {counts[name]:>9,} rows -> {target}")
     return counts
