@@ -128,3 +128,6 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | NFR-07 | Alert to decision in <= 3 clicks, clear text | Met | Overview -> alert -> action |
 | NFR-08 | Modular, versioned, documented | Met | 7 packages, OpenAPI at /api/v1/docs |
 | NFR-09 | Scalable later | Met (by design) | Kafka-protocol bus; Flink is future work |
+| NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; `app` profile verified (up in 34 s); full stack never run on a 16 GB host; Wazuh not in Compose |
+| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id` into ClickHouse, which is not running |
+| NFR-12 | Free licences, academic datasets, attacks only in the lab | Met | see O8; `lab/scenarios/_guard.sh` refuses any target outside 172.30.0.0/24; published ports bind to 127.0.0.1 |
