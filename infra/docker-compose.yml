@@ -13,6 +13,7 @@
 #   docker compose --profile dashboards up -d  # Grafana
 #   docker compose --profile intel up -d       # MISP + Keep
 #   docker compose --profile response up -d    # CrowdSec Local API
+#   docker compose --profile app up -d --build # PostgreSQL + API + dashboard
 #
 # Rough budget: storage 2.5 GB, bus 1 GB, ingest 0.25 GB, sensors 2 GB, lab 0.5 GB,
 # dashboards 0.25 GB. About 6.5 GB, leaving room for Wazuh and the OS.
@@ -55,7 +56,8 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    profiles: [storage]
+    # In the app profile too, so the API and dashboard come up with one command.
+    profiles: [storage, app]
     environment:
       POSTGRES_DB: netsentinel
       POSTGRES_USER: ${POSTGRES_USER:-netsentinel}
@@ -75,6 +77,44 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # --- application ----------------------------------------------------------
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    profiles: [app]
+    environment:
+      # NETSENTINEL_DB selects the database inside PostgreSQL; the demonstration
+      # database built by lab/replay/build_demo.ps1 is netsentinel_demo.
+      NETSENTINEL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD}@postgres:5432/${NETSENTINEL_DB:-netsentinel}
+      # Not ":?" here: compose interpolates every profile before choosing one, and a
+      # required variable would stop "--profile storage" on a machine without it. The
+      # API itself refuses to start without a signing key.
+      NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Localhost only, like every other port here. 8010 rather than 8000, which other
+    # services on a shared machine tend to hold.
+    ports:
+      - "127.0.0.1:${API_PORT:-8010}:8000"
+    mem_limit: 512m
+    networks: [backplane]
+    restart: unless-stopped
+
+  dashboard:
+    build: ../frontend
+    profiles: [app]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-5180}:80"
+    mem_limit: 64m
+    networks: [backplane]
     restart: unless-stopped
 
   clickhouse:

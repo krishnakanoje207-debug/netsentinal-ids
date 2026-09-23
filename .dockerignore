@@ -1,0 +1,20 @@
+# The build context is the repository root (the API image needs core/ beside
+# backend/). Without this list it would upload the virtualenv, the datasets and
+# node_modules - several gigabytes - on every build.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.coverage
+data
+artefacts
+docs
+deliverables
+lab
+*.pdf
+frontend/node_modules
+frontend/dist
+.env
+.env.local
+infra/.env
