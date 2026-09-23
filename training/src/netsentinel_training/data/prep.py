@@ -27,7 +27,6 @@ from pathlib import Path
 
 import polars as pl
 
-from netsentinel_core.features.contract import TIER_A_FEATURES
 from netsentinel_training.data import nf_mapping as nf
 
 #: train / val / test proportions.
@@ -95,16 +94,28 @@ def host_holdout_split(
     }
 
 
+def scan_source(path: Path) -> pl.LazyFrame:
+    """Scan an NF-* export, CSV or Parquet.
+
+    The UQ originals are CSV; the public mirrors of the v3 family ship Parquet.
+    Same columns either way, so only the reader differs.
+    """
+    if path.suffix.lower() == ".parquet":
+        return pl.scan_parquet(path)
+    return pl.scan_csv(path)
+
+
 def prepare(csv_path: str | Path, out_dir: str | Path) -> dict[str, int]:
     """Map, split and write Parquet. Returns row counts per split."""
     csv_path, out_dir = Path(csv_path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    header = pl.read_csv(csv_path, n_rows=0).columns
+    source = scan_source(csv_path)
+    header = source.collect_schema().names()
     nf.resolve_columns(header)
     time_col = nf.find_timestamp(header)
 
-    mapped = nf.to_contract(pl.scan_csv(csv_path))
+    mapped = nf.to_contract(source)
     nf.check_tier_a_complete(mapped.collect_schema().names())
 
     if time_col:
@@ -117,7 +128,10 @@ def prepare(csv_path: str | Path, out_dir: str | Path) -> dict[str, int]:
         )
         splits = host_holdout_split(mapped)
 
-    keep = list(TIER_A_FEATURES) + [c for c in CARRIED if c in header]
+    # Every contract field this dataset can supply, not only today's Tier A set:
+    # a tier picks its own columns at training time, and a feature dropped from
+    # Tier A (TTL, see contract.py) is still needed to measure why it was dropped.
+    keep = list(nf.DIRECT) + list(nf.DERIVED) + [c for c in CARRIED if c in header]
     counts: dict[str, int] = {}
     for name, frame in splits.items():
         target = out_dir / f"{name}.parquet"
@@ -129,7 +143,7 @@ def prepare(csv_path: str | Path, out_dir: str | Path) -> dict[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--csv", required=True, help="path to an NF-* dataset CSV")
+    parser.add_argument("--csv", required=True, help="path to an NF-* dataset (CSV or Parquet)")
     parser.add_argument("--out", default="data/processed", help="output directory")
     args = parser.parse_args()
     prepare(args.csv, args.out)

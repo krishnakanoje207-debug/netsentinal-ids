@@ -165,3 +165,25 @@ def test_prepare_writes_parquet_with_contract_columns(nf_csv, tmp_path):
         # into the training file.
         assert nf.SRC_HOST not in columns
         assert nf.DST_HOST not in columns
+
+
+# --- source formats --------------------------------------------------------
+
+def test_parquet_source_prepares_like_csv(nf_csv, tmp_path):
+    # The public mirrors of the NF-v3 family ship Parquet, not the UQ CSVs.
+    parquet = tmp_path / "nf.parquet"
+    pl.read_csv(nf_csv).write_parquet(parquet)
+
+    from_csv = prepare(nf_csv, tmp_path / "csv")
+    from_parquet = prepare(parquet, tmp_path / "parquet")
+
+    assert from_parquet == from_csv
+
+
+def test_prepared_splits_keep_fields_outside_tier_a(nf_csv, tmp_path):
+    # TTL is out of Tier A but still written, so its exclusion can be measured.
+    prepare(nf_csv, tmp_path / "out")
+    columns = pl.read_parquet(tmp_path / "out" / "train.parquet").columns
+
+    assert {"min_ttl", "max_ttl"} <= set(columns)
+    assert set(TIER_A_FEATURES) <= set(columns)
