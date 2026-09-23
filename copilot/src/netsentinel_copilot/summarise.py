@@ -14,6 +14,7 @@ summary whose worst failure is being unhelpful.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Iterable
 
 from netsentinel_api.db.models import Alert, CopilotSummary, Detection, IoC
@@ -34,6 +35,27 @@ TOP_FEATURE_COUNT = 5
 #: could overturn a near-certain detection. Seen live - llama3.2:3b called a 100% risk
 #: flow "likely harmless" - and it is the most dangerous thing this panel could say.
 CONTRADICTION_FLOOR = 0.9
+
+#: How a reply says one address opened a connection to another. Deliberately narrow,
+#: like the measurement check: the phrasings the prompt asks for, not every verb.
+#: "contacted by" is the passive and reads the other way round.
+_CONNECTED = r"(connected to|contacted(?! by))"
+
+
+def _reverses_the_flow(text: str, src: str, dst: str) -> bool:
+    """True if the text has the destination connecting to the source.
+
+    Seen live on alert 130: "Destination address 149.171.126.13 connected to source
+    address 175.45.176.0". Every label was right and the direction was backwards, so
+    the analyst would look for the attacker on the victim.
+    """
+    # Address boundaries, so 10.0.0.9 is not found inside 10.0.0.90.
+    reversed_flow = (
+        rf"(?<![\d.]){re.escape(dst)}(?![\d])[^;]{{0,40}}?\b{_CONNECTED}\b"
+        rf"[^;]{{0,40}}?(?<![\d.]){re.escape(src)}(?![\d])"
+    )
+    return re.search(reversed_flow, text, re.IGNORECASE) is not None
+
 
 #: Plain names for the contract features, the same words the dashboard uses. A 3B model
 #: handed "l4_dst_port +8.012" writes "multiple contributing features"; handed
@@ -124,6 +146,14 @@ def summarise(client, alert: Alert, iocs: Iterable[IoC] = ()) -> tuple[dict, Ale
             "the model called a %.0f%% risk alert likely benign with no evidence the "
             "detector lacked; rejected", detection.risk_score * 100,
         )
+        return payload, None
+
+    src, dst = str(alert.src_ip or ""), str(alert.dst_ip or "")
+    if src and dst and src != dst and any(
+        _reverses_the_flow(text, src, dst) for text in (summary.headline, summary.what_happened)
+    ):
+        logger.warning("the model had %s connecting to %s, the wrong way round; rejected",
+                       dst, src)
         return payload, None
     return payload, summary
 

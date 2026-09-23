@@ -175,6 +175,33 @@ def test_a_benign_opinion_on_an_uncertain_detection_is_still_allowed():
     assert summary is not None and summary.assessment.value == "likely_benign"
 
 
+@pytest.mark.parametrize(
+    "claim",
+    [
+        # Seen live on alert 130: the right labels, the wrong way round.
+        "Destination address 10.0.0.9 connected to source address 203.0.113.9",
+        "10.0.0.9 contacted 203.0.113.9 on port 80.",
+    ],
+)
+def test_a_reply_that_reverses_the_flow_is_rejected(claim):
+    client = StubClient(reply=VALID | {"what_happened": claim})
+    _, summary = summarise(client, _alert())
+    assert summary is None
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Source address 203.0.113.9 connected to destination address 10.0.0.9.",
+        "10.0.0.9 was contacted by 203.0.113.9 on port 80.",
+    ],
+)
+def test_a_reply_that_keeps_the_flow_direction_is_allowed(claim):
+    client = StubClient(reply=VALID | {"what_happened": claim})
+    _, summary = summarise(client, _alert())
+    assert summary is not None
+
+
 def test_a_valid_reply_is_stored_as_a_summary():
     client = StubClient()
     payload, summary = summarise(client, _alert())
