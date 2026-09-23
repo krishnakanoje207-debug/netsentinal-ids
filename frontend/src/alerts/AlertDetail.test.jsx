@@ -7,7 +7,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AlertDetail, whatHappened } from './AlertDetail'
 import { AuthProvider } from '../auth/AuthContext'
@@ -79,6 +79,13 @@ describe('whatHappened', () => {
 })
 
 describe('AlertDetail actions', () => {
+  // The page lazy-loads the chart (Recharts, the largest dependency). Loading it here,
+  // once, keeps that one-off cost out of every timed findBy below - on a busy machine
+  // it can exceed findBy's one-second wait and fail whichever test happens to be first.
+  beforeAll(async () => {
+    await import('./ShapChart')
+  }, 30_000)
+
   beforeEach(() => {
     sessionStorage.setItem('netsentinel.token', 'good-token')
     vi.stubGlobal('fetch', vi.fn())
