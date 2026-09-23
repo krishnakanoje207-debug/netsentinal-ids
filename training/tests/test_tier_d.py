@@ -149,3 +149,18 @@ def test_card_pins_the_feature_order_and_calibration(card):
     assert card["calibration"]["method"] == "empirical_quantiles"
     assert len(card["calibration"]["levels"]) == QUANTILE_COUNT
     assert len(card["calibration"]["scores"]) == QUANTILE_COUNT
+
+
+def test_the_graph_takes_raw_features_and_logs_them_itself(card, data_dir, tmp_path_factory):
+    """Serving passes the contract values as they are; the log must be inside the graph."""
+    import onnxruntime as ort
+
+    onnx_files = list(tmp_path_factory.getbasetemp().glob("artefacts*/tier_d.onnx"))
+    session = ort.InferenceSession(str(onnx_files[0]), providers=["CPUExecutionProvider"])
+    ops = {node.op_type for node in __import__("onnx").load(str(onnx_files[0])).graph.node}
+    assert {"Max", "Add", "Log"} <= ops
+    assert session.get_inputs()[0].shape[1] == len(TIER_A_FEATURES)
+
+
+def test_card_records_the_input_transform(card):
+    assert card["input"] == "log1p"
