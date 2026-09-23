@@ -491,7 +491,7 @@ def report(results: dict) -> str:
         "(`contract.TIER_A_FEATURES`); the served model is the first row.",
         "", "![TTL ablation](ttl_ablation.png)", "",
         "## 3. Recall per attack family (at the 1%-FPR threshold)", "",
-        "| Family | Tier A (LightGBM) | Tier D (LOF, benign-only) |",
+        "| Family | Tier A (LightGBM) | Tier D (Isolation Forest, benign-only) |",
         "|---|---|---|",
     ]
     for family, recall in results["family_recall"]["tier_a"].items():

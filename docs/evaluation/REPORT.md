@@ -27,7 +27,7 @@ TTL alone separates the classes almost perfectly because it identifies which tes
 
 ## 3. Recall per attack family (at the 1%-FPR threshold)
 
-| Family | Tier A (LightGBM) | Tier D (LOF, benign-only) |
+| Family | Tier A (LightGBM) | Tier D (Isolation Forest, benign-only) |
 |---|---|---|
 | Analysis | 100.00% | 0.00% |
 | Backdoor | 100.00% | 36.51% |
