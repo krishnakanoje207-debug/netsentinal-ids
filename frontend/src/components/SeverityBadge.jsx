@@ -1,3 +1,5 @@
+import { SEVERITY_MEANING, STATUS_MEANING } from '../lib/glossary'
+
 const SEVERITY_CLASS = {
   info: 'border-[var(--color-sev-info)] text-[var(--color-sev-info)]',
   low: 'border-[var(--color-sev-low)] text-[var(--color-sev-low)]',
@@ -14,6 +16,7 @@ export function SeverityBadge({ severity }) {
     <span
       className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${SEVERITY_CLASS[severity]}`}
       data-testid="severity-badge"
+      title={SEVERITY_MEANING[severity]}
     >
       {severity}
     </span>
@@ -40,6 +43,7 @@ export function StatusPill({ status }) {
     <span
       className={`whitespace-nowrap text-xs ${closed ? 'text-[var(--color-ink-faint)]' : 'text-[var(--color-ink-dim)]'}`}
       data-testid="status-pill"
+      title={STATUS_MEANING[status]}
     >
       {statusLabel(status)}
     </span>

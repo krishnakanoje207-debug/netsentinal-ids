@@ -12,6 +12,8 @@
 
 import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
+import { FEATURES, featureLabel } from '../lib/glossary'
+
 /**
  * @typedef {object} Contribution
  * @property {string} feature
@@ -68,11 +70,11 @@ export function ShapChart({ contributions, limit = DEFAULT_LIMIT }) {
       <div className="mb-2 flex items-center gap-4 text-[11px] text-[var(--color-ink-dim)]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-3" style={{ background: TOWARD_ATTACK }} />
-          pushed toward attack
+          made it look more like an attack
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-3" style={{ background: TOWARD_BENIGN }} />
-          pushed toward benign
+          made it look more normal
         </span>
       </div>
 
@@ -87,7 +89,8 @@ export function ShapChart({ contributions, limit = DEFAULT_LIMIT }) {
           <YAxis
             type="category"
             dataKey="feature"
-            width={150}
+            width={180}
+            tickFormatter={featureLabel}
             tick={{ fill: 'var(--color-ink-dim)', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
@@ -101,7 +104,10 @@ export function ShapChart({ contributions, limit = DEFAULT_LIMIT }) {
               borderRadius: 6,
               fontSize: 12,
             }}
-            formatter={(value) => [Number(value ?? 0).toFixed(4), 'SHAP value']}
+            labelFormatter={(feature) =>
+              FEATURES[feature] ? `${FEATURES[feature].label}: ${FEATURES[feature].hint}` : feature
+            }
+            formatter={(value) => [Number(value ?? 0).toFixed(3), 'Influence (SHAP)']}
           />
           <Bar dataKey="value" radius={2} isAnimationActive={false}>
             {data.map((entry) => (
@@ -116,8 +122,8 @@ export function ShapChart({ contributions, limit = DEFAULT_LIMIT }) {
 
       {omitted > 0 && (
         <p className="mt-1 text-[11px] text-[var(--color-ink-faint)]" data-testid="shap-omitted">
-          {Object.keys(contributions).length - data.length} further features account for{' '}
-          {omitted.toFixed(3)} of absolute contribution.
+          {Object.keys(contributions).length - data.length} smaller factors not shown (combined
+          influence {omitted.toFixed(3)}).
         </p>
       )}
     </div>
