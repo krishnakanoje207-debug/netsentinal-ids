@@ -74,6 +74,12 @@ def decide(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
+    # The approval's id and decided_at are assigned by the database. Without a flush
+    # and a refresh the response carries them as null, which a client cannot tell apart
+    # from a decision that was never recorded.
+    session.flush()
+    if action.approval is not None:
+        session.refresh(action.approval)
     return action
 
 

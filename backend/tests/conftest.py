@@ -22,6 +22,7 @@ from netsentinel_api.db.models import (
     ActionType,
     Alert,
     AlertStatus,
+    Approval,
     Asset,
     AuditLog,
     Criticality,
@@ -107,6 +108,15 @@ class FakeSession:
             elif isinstance(instance, ResponseAction) and instance.action_id is None:
                 self._last_id += 1
                 instance.action_id = self._last_id
+
+    def refresh(self, instance: object, /) -> None:
+        """Load what the database assigned: an approval's id and its decided_at."""
+        if isinstance(instance, Approval):
+            if instance.approval_id is None:
+                self._last_id += 1
+                instance.approval_id = self._last_id
+            if instance.decided_at is None:
+                instance.decided_at = datetime.now(timezone.utc)
 
     def scalar(self, *_args, **_kwargs) -> User | None:
         return self.user

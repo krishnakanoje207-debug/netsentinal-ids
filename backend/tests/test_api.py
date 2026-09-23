@@ -333,6 +333,17 @@ def test_approving_moves_the_action_to_approved(client, auth_header, action, ses
     assert [e.action for e in session.audit_entries()] == ["response.approved"]
 
 
+def test_the_decision_comes_back_with_what_the_database_assigned(client, auth_header, action):
+    """The approval's id and time are the database's to assign; the response must carry
+    them rather than the nulls of an object nobody flushed."""
+    response = client.post(
+        f"{V1}/actions/500/decision", json={"decision": "approved"}, headers=auth_header
+    )
+    approval = response.json()["approval"]
+    assert approval["approval_id"] is not None
+    assert approval["decided_at"] is not None
+
+
 def test_rejecting_requires_a_comment(client, auth_header, action):
     response = client.post(
         f"{V1}/actions/500/decision", json={"decision": "rejected"}, headers=auth_header
