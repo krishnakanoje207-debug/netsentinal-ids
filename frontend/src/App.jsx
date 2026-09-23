@@ -9,6 +9,7 @@ import { AlertDetail } from './alerts/AlertDetail'
 import { AlertFeed } from './alerts/AlertFeed'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
+import { Mark } from './components/Mark'
 import { ModelsPage } from './models/ModelsPage'
 
 export function createQueryClient() {
@@ -36,9 +37,10 @@ function NavLink({ to, children }) {
   return (
     <Link
       to={to}
-      className={`rounded px-2.5 py-1 text-sm ${
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex h-full items-center px-3 text-sm transition-colors duration-150 ${
         active
-          ? 'bg-[var(--color-panel-raised)] text-[var(--color-ink)]'
+          ? 'text-[var(--color-ink)] after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[var(--color-accent)]'
           : 'text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]'
       }`}
     >
@@ -51,22 +53,33 @@ function Shell({ children }) {
   const { user, signOut, can } = useAuth()
   return (
     <div className="min-h-full">
-      <nav className="flex items-center gap-2 border-b border-[var(--color-line)] bg-[var(--color-panel)] px-4 py-2">
-        <span className="mr-3 text-sm font-semibold">NetSentinel-AI</span>
+      <nav className="sticky top-0 z-10 flex h-12 items-stretch gap-1 border-b border-[var(--color-line)] bg-[var(--color-panel)]/95 px-4 backdrop-blur-sm">
+        <span className="mr-4 flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <Mark className="text-[var(--color-accent)]" />
+          NetSentinel-AI
+        </span>
         <NavLink to="/">Alerts</NavLink>
         <NavLink to="/approvals">Approvals</NavLink>
         {can(PERMISSIONS.modelsRead) && <NavLink to="/models">Models</NavLink>}
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--color-ink-dim)]">
-          <span>
-            {user?.username}
-            {user?.role ? ` (${user.role.replace(/_/g, ' ')})` : ''}
+          <span className="flex items-center gap-2">
+            <span className="text-[var(--color-ink)]">{user?.username}</span>
+            {user?.role && (
+              <span className="rounded-full border border-[var(--color-line)] px-2 py-0.5 text-[11px]">
+                {user.role.replace(/_/g, ' ')}
+              </span>
+            )}
           </span>
-          <button type="button" onClick={signOut} className="hover:text-[var(--color-ink)]">
+          <button
+            type="button"
+            onClick={signOut}
+            className="rounded px-2 py-1 transition-colors duration-150 hover:bg-[var(--color-panel-raised)] hover:text-[var(--color-ink)]"
+          >
             Sign out
           </button>
         </div>
       </nav>
-      <main className="mx-auto max-w-6xl p-4">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 pt-6 pb-10">{children}</main>
     </div>
   )
 }

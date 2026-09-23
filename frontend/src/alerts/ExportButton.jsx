@@ -60,7 +60,7 @@ export function ExportButton({ status, severity, q, save = saveBlob }) {
         type="button"
         disabled={exportAlerts.isPending}
         onClick={() => exportAlerts.mutate()}
-        className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2.5 py-1 text-xs disabled:opacity-50"
+        className="control disabled:opacity-50"
       >
         {exportAlerts.isPending ? 'Exporting...' : 'Export CSV'}
       </button>

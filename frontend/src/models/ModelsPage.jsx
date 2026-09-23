@@ -100,12 +100,12 @@ export function ModelRow({ model, canDeploy, pending, onPromote }) {
 
   return (
     <tr
-      className="border-b border-[var(--color-line)]/50 hover:bg-[var(--color-panel)]"
+      className="border-b border-[var(--color-line)]/50 transition-colors duration-100 last:border-b-0 hover:bg-[var(--color-panel-raised)] [&>td]:py-3 [&>td:first-child]:pl-3"
       data-testid={`model-${model.model_id}`}
     >
       <td className="py-2 pr-3">
         <span className="font-medium">{model.name}</span>{' '}
-        <span className="numeric text-[var(--color-ink-dim)]">{model.version}</span>
+        <span className="data text-[var(--color-ink-dim)]">{model.version}</span>
       </td>
       <td className="numeric py-2 pr-3 text-[var(--color-ink-dim)]">{model.tier}</td>
       <td className="py-2 pr-3">
@@ -122,7 +122,7 @@ export function ModelRow({ model, canDeploy, pending, onPromote }) {
             disabled={pending || !promotable}
             title={model.blocked_by ?? undefined}
             onClick={onPromote}
-            className="rounded border border-[var(--color-line)] px-2.5 py-1 text-xs disabled:opacity-40"
+            className="control disabled:opacity-40"
           >
             Promote
           </button>
@@ -160,13 +160,13 @@ export function ModelsPage() {
 
   return (
     <section>
-      <header className="mb-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Models</h1>
+      <header className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold tracking-tight">Models</h1>
         <select
           aria-label="Report window"
           value={since}
           onChange={(event) => setSince(event.target.value)}
-          className="ml-auto rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
+          className="control ml-auto"
         >
           {WINDOWS.map((value) => (
             <option key={value} value={value}>
@@ -182,7 +182,7 @@ export function ModelsPage() {
       {isLoading && <p className="text-sm text-[var(--color-ink-dim)]">Loading registry...</p>}
 
       {data && data.length === 0 && (
-        <p className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
+        <p className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
           No models are registered. Register one with netsentinel-register-model before the
           sensor can score anything.
         </p>
@@ -190,9 +190,10 @@ export function ModelsPage() {
 
       {data && data.length > 0 && (
         <>
+          <div className="overflow-x-auto rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)]/40">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-[var(--color-line)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
+              <tr className="border-b border-[var(--color-line)] bg-[var(--color-panel)] text-left text-[11px] uppercase tracking-wider text-[var(--color-ink-faint)] [&>th:first-child]:pl-3">
                 <th className="py-2 pr-3 font-medium">Model</th>
                 <th className="py-2 pr-3 font-medium">Tier</th>
                 <th className="py-2 pr-3 font-medium">Mode</th>
@@ -226,6 +227,7 @@ export function ModelsPage() {
               ))}
             </tbody>
           </table>
+          </div>
 
           <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
             These are not ground-truth metrics. They measure agreement with analyst verdicts

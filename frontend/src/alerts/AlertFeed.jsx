@@ -39,7 +39,10 @@ function StreamIndicator({ status }) {
         : 'var(--color-sev-high)'
   return (
     <span className="flex items-center gap-1.5 text-xs" data-testid="stream-status">
-      <span className="inline-block h-2 w-2 rounded-full" style={{ background: colour }} />
+      <span
+        className={`inline-block h-2 w-2 rounded-full ${status === 'open' ? 'live-dot' : ''}`}
+        style={{ background: colour }}
+      />
       <span style={{ color: colour }}>{label}</span>
     </span>
   )
@@ -77,12 +80,9 @@ export function SearchBox({ value, onSearch }) {
         onChange={(event) => setDraft(event.target.value)}
         aria-label="Search by address, network or technique"
         placeholder="203.0.113.9, 10.0.0.0/8, T1046"
-        className="w-56 rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
+        className="control data w-72"
       />
-      <button
-        type="submit"
-        className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2.5 py-1 text-xs"
-      >
+      <button type="submit" className="control">
         Search
       </button>
     </form>
@@ -117,8 +117,13 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
 
   return (
     <section>
-      <header className="mb-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Alerts</h1>
+      <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-xl font-semibold tracking-tight">Alerts</h1>
+          {data && (
+            <span className="numeric text-sm text-[var(--color-ink-dim)]">{data.length} shown</span>
+          )}
+        </div>
         <StreamIndicator status={stream.status} />
 
         <div className="ml-auto flex flex-wrap items-start gap-2">
@@ -127,7 +132,7 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
             aria-label="Filter by status"
             value={status}
             onChange={(event) => onFilterChange({ status: event.target.value, severity, q })}
-            className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
+            className="control"
           >
             <option value="">All statuses</option>
             {STATUSES.map((value) => (
@@ -140,7 +145,7 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
             aria-label="Filter by severity"
             value={severity}
             onChange={(event) => onFilterChange({ status, severity: event.target.value, q })}
-            className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] px-2 py-1 text-xs"
+            className="control"
           >
             <option value="">All severities</option>
             {SEVERITIES.map((value) => (
@@ -165,48 +170,52 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
       )}
 
       {data && data.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)]/40">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-[var(--color-line)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
-              <th className="py-2 pr-3 font-medium">Time</th>
-              <th className="py-2 pr-3 font-medium">Severity</th>
-              <th className="py-2 pr-3 font-medium">Source</th>
-              <th className="py-2 pr-3 font-medium">From</th>
-              <th className="py-2 pr-3 font-medium">To</th>
-              <th className="py-2 pr-3 font-medium">Technique</th>
-              <th className="py-2 pr-3 font-medium">Status</th>
+            <tr className="border-b border-[var(--color-line)] bg-[var(--color-panel)] text-left text-[11px] uppercase tracking-wider text-[var(--color-ink-faint)] [&>th]:px-3 [&>th]:py-2.5">
+              <th className="font-medium">Time</th>
+              <th className="font-medium">Severity</th>
+              <th className="font-medium">Source</th>
+              <th className="font-medium">From</th>
+              <th className="font-medium">To</th>
+              <th className="font-medium">Technique</th>
+              <th className="font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {data.map((alert) => (
               <tr
                 key={alert.alert_id}
-                className="border-b border-[var(--color-line)]/50 hover:bg-[var(--color-panel)]"
+                className={`border-b border-[var(--color-line)]/50 transition-colors duration-100 last:border-b-0 hover:bg-[var(--color-panel-raised)] [&>td]:px-3 [&>td]:py-2 ${
+                  alert.severity === 'critical' ? 'bg-[var(--color-sev-critical)]/[0.035]' : ''
+                }`}
               >
-                <td className="py-2 pr-3">
+                <td>
                   <Link
                     to={`/alerts/${alert.alert_id}`}
-                    className="numeric text-[var(--color-accent)] hover:underline"
+                    className="data text-[var(--color-accent)] hover:underline"
                   >
                     {new Date(alert.created_at).toLocaleTimeString()}
                   </Link>
                 </td>
-                <td className="py-2 pr-3">
+                <td>
                   <SeverityBadge severity={alert.severity} />
                 </td>
-                <td className="py-2 pr-3 text-[var(--color-ink-dim)]">{alert.source}</td>
-                <td className="numeric py-2 pr-3">{alert.src_ip ?? '--'}</td>
-                <td className="numeric py-2 pr-3">{alert.dst_ip ?? '--'}</td>
-                <td className="py-2 pr-3 text-[var(--color-ink-dim)]">
+                <td className="text-[var(--color-ink-dim)]">{alert.source}</td>
+                <td className="data">{alert.src_ip ?? '--'}</td>
+                <td className="data">{alert.dst_ip ?? '--'}</td>
+                <td className="data text-[var(--color-ink-dim)]">
                   {alert.mitre_technique ?? '--'}
                 </td>
-                <td className="py-2 pr-3">
+                <td>
                   <StatusPill status={alert.status} />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </section>
   )

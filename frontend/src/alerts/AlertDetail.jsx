@@ -76,7 +76,7 @@ export function AlertDetail() {
         <Link to="/" className="text-sm text-[var(--color-accent)] hover:underline">
           &larr; Alerts
         </Link>
-        <h1 className="text-lg font-semibold">Alert {alert.alert_id}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Alert {alert.alert_id}</h1>
         <SeverityBadge severity={alert.severity} />
         <RiskScore
           score={explanation?.risk_score ?? null}
@@ -89,12 +89,12 @@ export function AlertDetail() {
         />
       </header>
 
-      <dl className="grid grid-cols-2 gap-3 rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4 sm:grid-cols-3">
+      <dl className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4 sm:grid-cols-3">
         <Field label="Source">{alert.source}</Field>
         <Field label="Status">{statusLabel(alert.status)}</Field>
         <Field label="Raised">{new Date(alert.created_at).toLocaleString()}</Field>
-        <Field label="From">{alert.src_ip ?? '--'}</Field>
-        <Field label="To">{alert.dst_ip ?? '--'}</Field>
+        <Field label="From"><span className="data">{alert.src_ip ?? '--'}</span></Field>
+        <Field label="To"><span className="data">{alert.dst_ip ?? '--'}</span></Field>
         <Field label="MITRE technique">{alert.mitre_technique ?? '--'}</Field>
       </dl>
 
@@ -108,7 +108,7 @@ export function AlertDetail() {
         </p>
       )}
 
-      <section className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
+      <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
         <h2 className="mb-3 text-sm font-semibold">Why this was flagged</h2>
         {explanation === null ? (
           <p className="text-sm text-[var(--color-ink-dim)]" data-testid="no-explanation">
@@ -143,7 +143,7 @@ export function AlertDetail() {
       </section>
 
       {alert.ioc_values.length > 0 && (
-        <section className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
+        <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
           <h2 className="mb-2 text-sm font-semibold">Matched threat intelligence</h2>
           <ul className="numeric space-y-1 text-sm">
             {alert.ioc_values.map((value) => (
@@ -154,7 +154,7 @@ export function AlertDetail() {
       )}
 
       {can(PERMISSIONS.alertsTriage) && (
-        <section className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
+        <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
           <h2 className="mb-2 text-sm font-semibold">Triage</h2>
           {triage.error && <ErrorNotice error={triage.error} />}
           <div className="flex flex-wrap gap-2">
@@ -164,7 +164,7 @@ export function AlertDetail() {
                 type="button"
                 disabled={triage.isPending}
                 onClick={() => triage.mutate(option)}
-                className="rounded border border-[var(--color-line)] px-2.5 py-1 text-xs hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
+                className="control hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-50"
               >
                 {statusLabel(option)}
               </button>

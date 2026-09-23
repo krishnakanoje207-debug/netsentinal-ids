@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { Mark } from '../components/Mark'
 import { useAuth } from './AuthContext'
 
 export function LoginPage() {
@@ -21,13 +22,14 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-full items-center justify-center p-6">
+    <main className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,var(--color-panel-raised),var(--color-surface)_60%)] p-6">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-6"
+        className="w-full max-w-sm rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-7 shadow-[0_24px_48px_-12px_rgb(0_0_0/0.55)]"
       >
-        <h1 className="text-base font-semibold">NetSentinel-AI</h1>
-        <p className="mt-0.5 mb-5 text-xs text-[var(--color-ink-dim)]">
+        <Mark size={32} className="mb-4 text-[var(--color-accent)]" />
+        <h1 className="text-xl font-semibold tracking-tight">NetSentinel-AI</h1>
+        <p className="mt-1 mb-6 text-sm text-[var(--color-ink-dim)]">
           Security operations console
         </p>
 
@@ -41,7 +43,7 @@ export function LoginPage() {
         )}
 
         <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
+          <span className="text-xs font-medium text-[var(--color-ink-dim)]">
             Username
           </span>
           <input
@@ -49,12 +51,12 @@ export function LoginPage() {
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"
             required
-            className="mt-1 w-full rounded border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+            className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm"
           />
         </label>
 
-        <label className="mt-3 block">
-          <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
+        <label className="mt-4 block">
+          <span className="text-xs font-medium text-[var(--color-ink-dim)]">
             Password
           </span>
           <input
@@ -63,14 +65,14 @@ export function LoginPage() {
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
             required
-            className="mt-1 w-full rounded border border-[var(--color-line)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+            className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm"
           />
         </label>
 
         <button
           type="submit"
           disabled={submitting}
-          className="mt-5 w-full rounded bg-[var(--color-accent)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="mt-6 w-full rounded-md bg-[var(--color-accent)] px-3 py-2.5 text-sm font-semibold text-white transition-[filter,transform] duration-150 hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
         >
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>

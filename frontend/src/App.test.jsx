@@ -75,7 +75,8 @@ describe('App', () => {
 
     render(<App queryClient={createQueryClient()} />)
 
-    expect(await screen.findByText('analyst (soc analyst)')).toBeInTheDocument()
+    expect(await screen.findByText('analyst')).toBeInTheDocument()
+    expect(screen.getByText('soc analyst')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Alerts' })).toBeInTheDocument()
   })
 })

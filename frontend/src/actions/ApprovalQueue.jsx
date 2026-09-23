@@ -40,14 +40,14 @@ export function ActionCard({ action, onDecide, pending, canDecide }) {
 
   return (
     <li
-      className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4"
+      className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4"
       data-testid={`action-${action.action_id}`}
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-sm font-semibold">
           {ACTION_LABEL[action.action_type] ?? action.action_type}
         </span>
-        <code className="numeric rounded bg-[var(--color-panel-raised)] px-1.5 py-0.5 text-xs">
+        <code className="data rounded bg-[var(--color-panel-raised)] px-1.5 py-0.5">
           {action.target}
         </code>
         <a
@@ -69,7 +69,7 @@ export function ActionCard({ action, onDecide, pending, canDecide }) {
               onChange={(event) => setComment(event.target.value)}
               rows={2}
               placeholder="Why is this the right call?"
-              className="mt-1 w-full rounded border border-[var(--color-line)] bg-[var(--color-surface)] p-2 text-sm"
+              className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] p-2.5 text-sm"
               aria-label={`Comment on action ${action.action_id}`}
             />
           </label>
@@ -88,7 +88,7 @@ export function ActionCard({ action, onDecide, pending, canDecide }) {
               disabled={pending || !rejectionReady}
               title={rejectionReady ? undefined : 'A rejection requires a comment explaining it'}
               onClick={() => onDecide('rejected', comment.trim())}
-              className="rounded border border-[var(--color-line)] px-3 py-1.5 text-xs disabled:opacity-40"
+              className="control disabled:opacity-40"
             >
               Reject
             </button>
@@ -129,7 +129,7 @@ export function ApprovalQueue() {
 
   return (
     <section>
-      <h1 className="mb-3 text-lg font-semibold">Approval queue</h1>
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">Approval queue</h1>
 
       {error && <ErrorNotice error={error} />}
       {decide.error && <ErrorNotice error={decide.error} />}
@@ -137,7 +137,7 @@ export function ApprovalQueue() {
       {isLoading && <p className="text-sm text-[var(--color-ink-dim)]">Loading queue...</p>}
 
       {data && data.length === 0 && (
-        <p className="rounded border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
+        <p className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
           Nothing is waiting for a decision.
         </p>
       )}

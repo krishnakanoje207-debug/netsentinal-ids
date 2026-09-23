@@ -1,4 +1,9 @@
 @import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
 
 /* A SOC dashboard is read for hours in a dim room, so dark is the default rather
    than an option. Severity colours are the one place saturation is spent; everything
@@ -23,6 +28,12 @@
   --color-undecided: #8b949e;
 
   --color-accent: #388bfd;
+  --color-accent-soft: #388bfd26;
+
+  /* Plex for the interface; its mono only for what an analyst compares character by
+     character - addresses, ports, identifiers, times. Not as a costume for prose. */
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
 }
 
 html,
@@ -34,14 +45,87 @@ body,
 body {
   background: var(--color-surface);
   color: var(--color-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  caret-color: var(--color-accent);
+  accent-color: var(--color-accent);
+  scrollbar-color: var(--color-line) var(--color-surface);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+/* One focus ring for every control, drawn from the palette rather than the browser. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+input,
+select,
+textarea {
+  transition: border-color 120ms ease-out;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--color-ink-faint);
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+/* Data an analyst reads across rows: addresses, ports, ids. */
+.data {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Tabular figures so a column of risk scores stays aligned while it updates. */
 .numeric {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
+}
+
+/* Every toolbar control shares one height, border and hover, so a row of them reads
+   as one instrument rather than four widgets. */
+@layer components {
+  .control {
+    height: 2rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-panel);
+    padding-inline: 0.625rem;
+    font-size: 0.75rem;
+    color: var(--color-ink);
+    transition:
+      border-color 120ms ease-out,
+      background-color 120ms ease-out;
+  }
+  button.control:hover:not(:disabled) {
+    background: var(--color-panel-raised);
+    border-color: var(--color-ink-faint);
+  }
+  .control::placeholder {
+    color: var(--color-ink-faint);
+  }
+}
+
+/* The live dot breathes; nothing else on the page moves on its own. */
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-sev-low) 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.live-dot {
+  animation: live-pulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
