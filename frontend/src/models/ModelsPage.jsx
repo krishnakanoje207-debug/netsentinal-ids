@@ -64,6 +64,15 @@ export function metric(value, digits = 3) {
   return value === null || value === undefined ? '--' : value.toFixed(digits)
 }
 
+/**
+ * A decision threshold, never rounded to zero. A confident, calibrated model can sit
+ * at 0.0047, and "0.00" reads as a model that flags everything.
+ */
+export function threshold(value) {
+  if (value === null || value === undefined) return '--'
+  return value !== 0 && Math.abs(value) < 0.01 ? value.toPrecision(2) : value.toFixed(2)
+}
+
 /** @param {{model: import('../api/types').MLModel}} props */
 function EvidenceRow({ model }) {
   const { evidence } = model
@@ -103,7 +112,7 @@ export function ModelRow({ model, canDeploy, pending, onPromote }) {
         <ModeBadge mode={model.mode} />
       </td>
       <td className="numeric py-2 pr-3 text-[var(--color-ink-dim)]">
-        {metric(model.threshold, 2)}
+        {threshold(model.threshold)}
       </td>
       <EvidenceRow model={model} />
       <td className="py-2">

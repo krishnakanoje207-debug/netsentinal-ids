@@ -9,7 +9,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import { ModelRow, metric } from './ModelsPage'
+import { ModelRow, metric, threshold } from './ModelsPage'
 
 const EVIDENCE = {
   scored: 420,
@@ -58,6 +58,21 @@ describe('metric', () => {
     expect(metric(null)).toBe('--')
     expect(metric(undefined)).toBe('--')
     expect(metric(0)).toBe('0.000')
+  })
+})
+
+describe('threshold', () => {
+  it('keeps a small threshold visible instead of rounding it to zero', () => {
+    expect(threshold(0.004694)).toBe('0.0047')
+  })
+
+  it('shows an ordinary threshold to two places', () => {
+    expect(threshold(0.99)).toBe('0.99')
+    expect(threshold(0)).toBe('0.00')
+  })
+
+  it('renders a dash when there is no threshold', () => {
+    expect(threshold(null)).toBe('--')
   })
 })
 
