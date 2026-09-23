@@ -14,7 +14,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Attack-family classification | macro-F1 0.52, accuracy 71% (attack flows only) | `artefacts/family/model_card.json` |
 | MITRE technique on ML alerts | Claimed only at >= 70% confidence, for families right >= 85% of the time on validation: Reconnaissance (T1046), Exploits (T1190), DoS (T1499). On the test split 55% of attacks get a label and 85% of labels are right. On the family-balanced demo replay, which over-represents the hard rare families, 21 of 31 labels were right (68%) and 104 alerts got none | same |
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
-| Latency per flow (NFR-01, <= 5 ms) | 0.07 ms | same, section 6 |
+| Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D 8.2 ms (over budget) | same, section 6 |
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
 | Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874 | `artefacts/tier_c/model_card.json` |
 | Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
