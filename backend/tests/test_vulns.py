@@ -150,6 +150,16 @@ def test_a_report_that_is_not_xml_is_refused():
         parse_report("<get_reports_response><report>")
 
 
+def test_an_entity_bomb_is_refused_not_expanded():
+    """A file cannot be vouched for, so XML entities are refused before they expand."""
+    bomb = (
+        '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa">'
+        '<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]><report>&b;</report>'
+    )
+    with pytest.raises(ScanError, match="refusing it"):
+        parse_report(bomb)
+
+
 def test_an_empty_report_is_not_an_error():
     """A scan that found nothing is a result, and a good one."""
     assert parse_report(_report("")) == []

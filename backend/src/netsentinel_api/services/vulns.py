@@ -32,6 +32,9 @@ from datetime import datetime
 from typing import Iterable
 from xml.etree import ElementTree
 
+import defusedxml.ElementTree as SafeElementTree
+from defusedxml import DefusedXmlException
+
 from netsentinel_api.db.models import Asset, Vulnerability
 
 logger = logging.getLogger("netsentinel.vulns")
@@ -87,15 +90,20 @@ class ScanStats:
 def parse_report(xml: str, min_qod: int = MIN_QOD) -> list[Finding]:
     """Turn a ``get_reports`` response into findings, one per CVE per host.
 
-    The report comes from gvmd over a local socket on the same VM, so it is parsed
-    with the standard library rather than a hardened parser. That holds only while
-    the file is produced by our own scanner; a report accepted from elsewhere would
-    need ``defusedxml``.
+    Parsed with ``defusedxml``: the importer takes a file path, so it cannot know the
+    file came from our own gvmd, and the findings inside quote banners and service
+    names the scanned hosts chose. Entity expansion and external references are
+    refused rather than resolved.
     """
     try:
-        root = ElementTree.fromstring(xml)
+        root = SafeElementTree.fromstring(xml)
     except ElementTree.ParseError as exc:
         raise ScanError(f"the report is not valid XML: {exc}") from exc
+    except DefusedXmlException as exc:
+        raise ScanError(
+            f"the report uses XML entities or external references, which no gvmd report "
+            f"needs; refusing it rather than expanding them ({type(exc).__name__})"
+        ) from exc
 
     scanned_at = _report_time(root)
 
