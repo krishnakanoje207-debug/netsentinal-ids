@@ -1,0 +1,83 @@
+{
+  "name": "tier_a_lightgbm",
+  "tier": "A",
+  "version": "1.0.0",
+  "onnx_sha256": "1b34631d215a94da374fa91c4bf64903bde1f37326df28eedb30368965fbd5aa",
+  "booster_sha256": "c183e2eae57dd8a43de13f9eb495aaa0463ad450bbabb69ba6ae85f08f94b8ef",
+  "threshold": 0.004700197838483269,
+  "mode": "shadow",
+  "pr_auc": 0.9999887244505852,
+  "feature_order": [
+    "proto",
+    "l4_src_port",
+    "l4_dst_port",
+    "duration_ms",
+    "in_pkts",
+    "out_pkts",
+    "in_bytes",
+    "out_bytes",
+    "pkt_rate",
+    "byte_rate",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_ratio_out_in"
+  ],
+  "calibration": {
+    "method": "platt",
+    "a": 0.9986253782429219,
+    "b": -0.05241520704128895
+  },
+  "target_max_fpr": 0.01,
+  "trees": 600,
+  "rows": {
+    "train": 1655797,
+    "val": 354814,
+    "test": 354813
+  },
+  "class_balance_train": {
+    "attack": 65189,
+    "benign": 1590608
+  },
+  "metrics_test": {
+    "pr_auc": 0.9999887244505852,
+    "roc_auc": 0.9999989501984871,
+    "brier": 8.482777826298981e-05,
+    "precision": 0.9945964957155646,
+    "recall": 1.0,
+    "f1": 0.9972909286183735,
+    "false_positive_rate": 0.000522078676329756,
+    "true_positives": 31107,
+    "false_positives": 169,
+    "false_negatives": 0,
+    "true_negatives": 323537
+  },
+  "metrics_test_uncalibrated": {
+    "pr_auc": 0.9999887244505852,
+    "roc_auc": 0.9999989501984871,
+    "brier": 8.455193098896983e-05,
+    "precision": 0.9945328985229235,
+    "recall": 1.0,
+    "f1": 0.997258956479923,
+    "false_positive_rate": 0.0005282571222034809,
+    "true_positives": 31107,
+    "false_positives": 171,
+    "false_negatives": 0,
+    "true_negatives": 323535
+  },
+  "onnx_max_abs_drift": 8.617994580781925e-08,
+  "shap_global": {
+    "pkt_rate": 1.9051850849343204,
+    "bytes_per_pkt_out": 1.2921082478327168,
+    "l4_dst_port": 0.9603942002024571,
+    "bytes_per_pkt_in": 0.8622254907095066,
+    "duration_ms": 0.820090669247355,
+    "out_pkts": 0.8174699059631373,
+    "out_bytes": 0.5391682810136941,
+    "proto": 0.480472550448611,
+    "in_pkts": 0.42334275097776225,
+    "in_bytes": 0.413523205080106,
+    "bytes_ratio_out_in": 0.2886619553907045,
+    "byte_rate": 0.2395705147415993,
+    "l4_src_port": 0.23135739421952659
+  }
+}

@@ -1,0 +1,553 @@
+{
+  "dataset": "nf-unsw-nb15-v3",
+  "features": [
+    "proto",
+    "l4_src_port",
+    "l4_dst_port",
+    "duration_ms",
+    "in_pkts",
+    "out_pkts",
+    "in_bytes",
+    "out_bytes",
+    "pkt_rate",
+    "byte_rate",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_ratio_out_in"
+  ],
+  "rows": {
+    "train": 1655797,
+    "val": 354814,
+    "test": 354813
+  },
+  "attack_share_test": 0.08767153401932849,
+  "learners": {
+    "LightGBM": {
+      "pr_auc": 0.9999887244505852,
+      "roc_auc": 0.9999989501984871,
+      "brier": 8.455193098896983e-05,
+      "precision": 0.9945964957155646,
+      "recall": 1.0,
+      "f1": 0.9972909286183735,
+      "false_positive_rate": 0.000522078676329756,
+      "true_positives": 31107,
+      "false_positives": 169,
+      "false_negatives": 0,
+      "true_negatives": 323537,
+      "batch_us_per_flow": 13.850641887415431,
+      "fit_seconds": 73.98887339999783,
+      "threshold": 0.004916039550369198
+    },
+    "XGBoost": {
+      "pr_auc": 0.9999810129936788,
+      "roc_auc": 0.9999982811002281,
+      "brier": 0.0001017093236441724,
+      "precision": 0.9843052874727083,
+      "recall": 1.0,
+      "f1": 0.9920905756657631,
+      "false_positive_rate": 0.001532254576683781,
+      "true_positives": 31107,
+      "false_positives": 496,
+      "false_negatives": 0,
+      "true_negatives": 323210,
+      "batch_us_per_flow": 3.8486811362599633,
+      "fit_seconds": 131.66712489999918,
+      "threshold": 0.0008715200237929821
+    },
+    "Random forest": {
+      "pr_auc": 0.9999346154061391,
+      "roc_auc": 0.9999941752948309,
+      "brier": 0.0003850046492502766,
+      "precision": 0.9935164484190354,
+      "recall": 1.0,
+      "f1": 0.9967476809202621,
+      "false_positive_rate": 0.0006271122561830797,
+      "true_positives": 31107,
+      "false_positives": 203,
+      "false_negatives": 0,
+      "true_negatives": 323503,
+      "batch_us_per_flow": 1.4334570604750057,
+      "fit_seconds": 45.031655599999795,
+      "threshold": 0.2222826949865614
+    },
+    "Logistic regression": {
+      "pr_auc": 0.8618661290592277,
+      "roc_auc": 0.9873572275677419,
+      "brier": 0.04292699694633484,
+      "precision": 0.8666987698638533,
+      "recall": 0.6364483878226765,
+      "f1": 0.7339388322520852,
+      "false_positive_rate": 0.009406683842746195,
+      "true_positives": 19798,
+      "false_positives": 3045,
+      "false_negatives": 11309,
+      "true_negatives": 320661,
+      "batch_us_per_flow": 0.32418597966307877,
+      "fit_seconds": 15.328060799998639,
+      "threshold": 0.9597970247268677
+    }
+  },
+  "family_recall": {
+    "tier_a": {
+      "Analysis": 1.0,
+      "Backdoor": 1.0,
+      "Benign": 0.000522078676329756,
+      "DoS": 1.0,
+      "Exploits": 1.0,
+      "Fuzzers": 1.0,
+      "Generic": 1.0,
+      "Reconnaissance": 1.0,
+      "Shellcode": 1.0,
+      "Worms": 1.0
+    },
+    "tier_d": {
+      "Analysis": 0.0,
+      "Backdoor": 0.36507936507936506,
+      "Benign": 0.019808097471162103,
+      "DoS": 0.21393841166936792,
+      "Exploits": 0.23698566805362922,
+      "Fuzzers": 0.3721402463787735,
+      "Generic": 0.8041357783847054,
+      "Reconnaissance": 0.39951627088830255,
+      "Shellcode": 0.4482758620689655,
+      "Worms": 0.24324324324324326
+    }
+  },
+  "ttl_ablation": {
+    "Tier A features (served)": {
+      "pr_auc": 0.9999887244505852,
+      "roc_auc": 0.9999989501984871,
+      "brier": 8.455193098896983e-05,
+      "precision": 0.9945964957155646,
+      "recall": 1.0,
+      "f1": 0.9972909286183735,
+      "false_positive_rate": 0.000522078676329756,
+      "true_positives": 31107,
+      "false_positives": 169,
+      "false_negatives": 0,
+      "true_negatives": 323537,
+      "batch_us_per_flow": 13.167224988945714,
+      "trees": 600,
+      "ttl_gain_share": 0.0,
+      "top_features": [
+        "pkt_rate",
+        "out_pkts",
+        "byte_rate"
+      ]
+    },
+    "Tier A + TTL": {
+      "pr_auc": 0.9999999865648286,
+      "roc_auc": 0.9999999987089755,
+      "brier": 9.926290246067889e-06,
+      "precision": 0.9996143834956136,
+      "recall": 1.0,
+      "f1": 0.9998071545656156,
+      "false_positive_rate": 3.707067524234954e-05,
+      "true_positives": 31107,
+      "false_positives": 12,
+      "false_negatives": 0,
+      "true_negatives": 323694,
+      "batch_us_per_flow": 2.7127199397969406,
+      "trees": 317,
+      "ttl_gain_share": 0.9895949731756645,
+      "top_features": [
+        "min_ttl",
+        "max_ttl",
+        "pkt_rate"
+      ]
+    },
+    "TTL only": {
+      "pr_auc": 0.9982379175654337,
+      "roc_auc": 0.9999117147812826,
+      "brier": 0.004196998904062112,
+      "precision": 0.9944303959540347,
+      "recall": 0.9987141157938728,
+      "f1": 0.9965676525309553,
+      "false_positive_rate": 0.0005375247910140683,
+      "true_positives": 31067,
+      "false_positives": 174,
+      "false_negatives": 40,
+      "true_negatives": 323532,
+      "batch_us_per_flow": 0.2012987122812297,
+      "trees": 30,
+      "ttl_gain_share": 1.0,
+      "top_features": [
+        "min_ttl",
+        "max_ttl"
+      ]
+    }
+  },
+  "tier_d": {
+    "false_positive_rate": 0.019808097471162103,
+    "recall": 0.3911016812935995,
+    "flagged_share": 0.05235997553640932,
+    "pr_auc": 0.6389023052460401,
+    "roc_auc": 0.9522382529068278
+  },
+  "tier_d_variants": {
+    "Isolation Forest, raw features, 256-row subsamples (M2 default)": {
+      "false_positive_rate": 0.008031775988062059,
+      "recall": 0.002482509591514331,
+      "flagged_share": 0.00754,
+      "pr_auc": 0.09572454566504497,
+      "roc_auc": 0.5384360349788408
+    },
+    "Isolation Forest, log features, 4096-row subsamples (served)": {
+      "false_positive_rate": 0.009074151287059185,
+      "recall": 0.4037463326562853,
+      "flagged_share": 0.04405,
+      "pr_auc": 0.6504774934735991,
+      "roc_auc": 0.9534703298430593
+    },
+    "Local Outlier Factor, log features (not servable: see Tier D)": {
+      "false_positive_rate": 0.009524018521363208,
+      "recall": 0.8990069961633943,
+      "flagged_share": 0.08835,
+      "pr_auc": 0.9340509072234018,
+      "roc_auc": 0.9930922748863206
+    }
+  },
+  "family_classifier": {
+    "classes": [
+      "Analysis",
+      "Backdoor",
+      "Benign",
+      "DoS",
+      "Exploits",
+      "Fuzzers",
+      "Generic",
+      "Reconnaissance",
+      "Shellcode",
+      "Worms"
+    ],
+    "macro_f1": 0.5611652050579279,
+    "macro_f1_attacks_only": 0.512414365076226,
+    "weighted_f1": 0.9701171986373742,
+    "per_class": {
+      "Analysis": {
+        "precision": 0.24925816023738873,
+        "recall": 0.5714285714285714,
+        "f1-score": 0.34710743801652894,
+        "support": 294.0
+      },
+      "Backdoor": {
+        "precision": 0.05455568053993251,
+        "recall": 0.07698412698412699,
+        "f1-score": 0.06385780118499013,
+        "support": 1260.0
+      },
+      "Benign": {
+        "precision": 0.9999814624862513,
+        "recall": 0.999864074190778,
+        "f1-score": 0.9999227648932456,
+        "support": 323706.0
+      },
+      "DoS": {
+        "precision": 0.2534409112482202,
+        "recall": 0.4327390599675851,
+        "f1-score": 0.3196647710266387,
+        "support": 1234.0
+      },
+      "Exploits": {
+        "precision": 0.8543110618242307,
+        "recall": 0.5698566805362922,
+        "f1-score": 0.6836762992955794,
+        "support": 10815.0
+      },
+      "Fuzzers": {
+        "precision": 0.6111049044799464,
+        "recall": 0.7404900500879924,
+        "f1-score": 0.6696046027665565,
+        "support": 7387.0
+      },
+      "Generic": {
+        "precision": 0.8806387225548902,
+        "recall": 0.8607101053452985,
+        "f1-score": 0.8705603788476717,
+        "support": 5126.0
+      },
+      "Reconnaissance": {
+        "precision": 0.7013801756587202,
+        "recall": 0.6145558487247141,
+        "f1-score": 0.6551037149888668,
+        "support": 4548.0
+      },
+      "Shellcode": {
+        "precision": 0.23299565846599132,
+        "recall": 0.7931034482758621,
+        "f1-score": 0.36017897091722595,
+        "support": 406.0
+      },
+      "Worms": {
+        "precision": 0.5909090909090909,
+        "recall": 0.7027027027027027,
+        "f1-score": 0.6419753086419753,
+        "support": 37.0
+      }
+    },
+    "confusion": [
+      [
+        168,
+        0,
+        0,
+        53,
+        58,
+        2,
+        0,
+        13,
+        0,
+        0
+      ],
+      [
+        4,
+        97,
+        0,
+        42,
+        307,
+        339,
+        273,
+        171,
+        25,
+        2
+      ],
+      [
+        0,
+        5,
+        323662,
+        7,
+        19,
+        2,
+        6,
+        0,
+        3,
+        2
+      ],
+      [
+        17,
+        57,
+        1,
+        534,
+        253,
+        278,
+        13,
+        55,
+        26,
+        0
+      ],
+      [
+        278,
+        554,
+        5,
+        878,
+        6163,
+        1704,
+        169,
+        728,
+        324,
+        12
+      ],
+      [
+        113,
+        926,
+        0,
+        308,
+        169,
+        5470,
+        71,
+        157,
+        172,
+        1
+      ],
+      [
+        11,
+        44,
+        0,
+        54,
+        109,
+        354,
+        4412,
+        63,
+        78,
+        1
+      ],
+      [
+        83,
+        88,
+        0,
+        222,
+        122,
+        741,
+        65,
+        2795,
+        432,
+        0
+      ],
+      [
+        0,
+        5,
+        0,
+        8,
+        6,
+        61,
+        1,
+        3,
+        322,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        1,
+        8,
+        0,
+        0,
+        0,
+        0,
+        26
+      ]
+    ]
+  },
+  "calibration": {
+    "uncalibrated": {
+      "brier": 8.455193098896983e-05,
+      "predicted": [
+        6.373920290412039e-09,
+        1.4427287838990286e-08,
+        2.9485218266531496e-08,
+        4.9318853250051117e-08,
+        8.784274019519852e-08,
+        1.4663380815045397e-07,
+        2.919210947527684e-07,
+        8.201763112529152e-07,
+        4.353896713262435e-06,
+        0.8768704261993305
+      ],
+      "observed": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.8766980440786878
+      ]
+    },
+    "platt": {
+      "brier": 8.482777826298981e-05,
+      "predicted": [
+        6.2067446995115915e-09,
+        1.4034169146093261e-08,
+        2.865381427096146e-08,
+        4.789471286674839e-08,
+        8.523776258288823e-08,
+        1.4218669837451307e-07,
+        2.827912589342533e-07,
+        7.933794442572871e-07,
+        4.200575155923814e-06,
+        0.8768471217200166
+      ],
+      "observed": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.8766980440786878
+      ]
+    }
+  },
+  "cross_dataset": {
+    "NF-ToN-IoT-v3": {
+      "sampled_rows": 611562,
+      "attack_share_test": 0.4493922712160026,
+      "families_test": [
+        "Backdoor",
+        "Benign",
+        "mitm",
+        "ransomware",
+        "xss"
+      ],
+      "trained_on_unsw": {
+        "pr_auc": 0.741029975399006,
+        "roc_auc": 0.7607957240032807,
+        "brier": 0.2351752778510753,
+        "precision": 0.5655908161022537,
+        "recall": 0.8114736203759855,
+        "f1": 0.666580321205117,
+        "false_positive_rate": 0.5086913482478717,
+        "true_positives": 33453,
+        "false_positives": 25694,
+        "false_negatives": 7772,
+        "true_negatives": 24816
+      },
+      "trained_in_domain": {
+        "pr_auc": 0.9911567749913636,
+        "roc_auc": 0.9956766665878267,
+        "brier": 0.05338862067188501,
+        "precision": 0.993073047858942,
+        "recall": 0.03825348696179503,
+        "f1": 0.07366921262233433,
+        "false_positive_rate": 0.00021777865769154623,
+        "true_positives": 1577,
+        "false_positives": 11,
+        "false_negatives": 39648,
+        "true_negatives": 50499,
+        "batch_us_per_flow": 1.3742693628639777
+      }
+    },
+    "NF-CICIDS2018-v3": {
+      "sampled_rows": 609562,
+      "attack_share_test": 0.08641111171870727,
+      "families_test": [
+        "Benign",
+        "Bot",
+        "Infilteration"
+      ],
+      "trained_on_unsw": {
+        "pr_auc": 0.04674301399617513,
+        "roc_auc": 0.0933457974243459,
+        "brier": 0.6316177447720664,
+        "precision": 0.018261956450233537,
+        "recall": 0.17567396532084545,
+        "f1": 0.03308464233785426,
+        "false_positive_rate": 0.8932530466636339,
+        "true_positives": 1388,
+        "false_positives": 74617,
+        "false_negatives": 6513,
+        "true_negatives": 8917
+      },
+      "trained_in_domain": {
+        "pr_auc": 0.748853321358071,
+        "roc_auc": 0.8685531136479628,
+        "brier": 0.07357633170357349,
+        "precision": 0.4467496542185339,
+        "recall": 0.04088090115175294,
+        "f1": 0.07490723562152134,
+        "false_positive_rate": 0.0047884693657672325,
+        "true_positives": 323,
+        "false_positives": 400,
+        "false_negatives": 7578,
+        "true_negatives": 83134,
+        "batch_us_per_flow": 0.5431836823861629
+      }
+    }
+  },
+  "onnx_latency": {
+    "p50_ms": 0.07370000093942508,
+    "p99_ms": 0.19420700169575866,
+    "calls": 2000
+  },
+  "onnx_latency_tier_d": {
+    "p50_ms": 8.15850000071805,
+    "p99_ms": 17.13845099919126,
+    "calls": 2000
+  }
+}
