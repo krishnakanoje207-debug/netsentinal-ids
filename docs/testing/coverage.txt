@@ -62,8 +62,8 @@ backend\src\netsentinel_api\security.py                   43      0   100%
 backend\src\netsentinel_api\services\__init__.py           0      0   100%
 copilot\src\netsentinel_copilot\__init__.py                0      0   100%
 copilot\src\netsentinel_copilot\sanitise.py               30      0   100%
-copilot\src\netsentinel_copilot\schema.py                 21      0   100%
-copilot\src\netsentinel_copilot\summarise.py              31      0   100%
+copilot\src\netsentinel_copilot\schema.py                 30      0   100%
+copilot\src\netsentinel_copilot\summarise.py              38      0   100%
 core\src\netsentinel_core\__init__.py                      0      0   100%
 core\src\netsentinel_core\bus.py                           2      0   100%
 core\src\netsentinel_core\features\__init__.py             0      0   100%
@@ -77,4 +77,4 @@ training\src\netsentinel_training\eval\__init__.py         0      0   100%
 training\src\netsentinel_training\models\__init__.py       0      0   100%
 writer\src\netsentinel_writer\__init__.py                  0      0   100%
 --------------------------------------------------------------------------
-TOTAL                                                   4489    847    81%
+TOTAL                                                   4505    847    81%

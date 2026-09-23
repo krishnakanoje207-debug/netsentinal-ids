@@ -13,7 +13,7 @@ beside this file.
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 94 | all pass | `cd frontend; npx vitest run` |
 
-**Coverage** (Python, `coverage.txt`): **81%** of 4,489 statements. The uncovered code is
+**Coverage** (Python, `coverage.txt`): **81%** of 4,505 statements. The uncovered code is
 concentrated in command-line entry points (intel sync, vulnerability import, the
 Copilot and writer CLIs: 0%) and in the real-database repository and WebSocket stream
 (about 50%), which the suite replaces with fakes. Those paths were exercised live in
