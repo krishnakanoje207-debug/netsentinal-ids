@@ -80,6 +80,14 @@ FEATURE_DIM = len(FEATURE_ORDER)
 # would reintroduce exactly the train/serve skew the parity test guards against.
 # Widening Tier A means training from PCAPs (UNSW-NB15 raw captures or our own
 # lab traffic) instead of the NetFlow CSVs.
+#
+# TTL is excluded as well, though every source supplies it, because in
+# NF-UNSW-NB15-v3 it identifies the testbed machine rather than the behaviour:
+# 99% of benign flows carry TTL 31 and 99.8% of attacks 254 or 62, and a model
+# given only min_ttl and max_ttl reaches PR-AUC 0.9997 with two trees. A TTL
+# counts hops and names an operating system; on the lab bridge it would name
+# whichever container the attacker happened to run. It stays in SCALAR_FIELDS
+# and ClickHouse as context, and never enters a Tier A model.
 TIER_A_FEATURES: tuple[str, ...] = (
     "proto",
     "l4_src_port",
@@ -94,8 +102,6 @@ TIER_A_FEATURES: tuple[str, ...] = (
     "bytes_per_pkt_in",
     "bytes_per_pkt_out",
     "bytes_ratio_out_in",
-    "min_ttl",
-    "max_ttl",
 )
 
 # Tier B (1D-CNN + BiLSTM) consumes the packet sequence, which only ever comes

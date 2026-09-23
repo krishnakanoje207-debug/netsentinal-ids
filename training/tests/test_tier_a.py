@@ -61,8 +61,6 @@ def _make_split(rows: int, rng: np.random.Generator) -> pl.DataFrame:
         "bytes_per_pkt_in": bytes_per_pkt_in,
         "bytes_per_pkt_out": np.where(out_pkts > 0, bytes_per_pkt_out, 0.0),
         "bytes_ratio_out_in": out_bytes / in_bytes,
-        "min_ttl": np.where(is_attack, 64.0, rng.choice([64.0, 128.0], rows)),
-        "max_ttl": np.where(is_attack, 64.0, 128.0),
     }
     assert set(data) == set(TIER_A_FEATURES), "fixture drifted from the contract"
 

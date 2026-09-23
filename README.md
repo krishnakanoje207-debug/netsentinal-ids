@@ -465,4 +465,5 @@ and the fix is a mapping somebody has to design — not a field somebody forgot.
 | Document says | Built with | Why |
 |---|---|---|
 | python-jose, passlib | PyJWT, bcrypt | python-jose is effectively unmaintained with a CVE history; passlib predates Python 3.11 |
-| Tier A on full NetFlow features | Tier A on the 15-feature intersection | NF-* datasets cannot supply SPLT, per-direction spread, IAT statistics or flag counts; training on them would recreate train/serve skew |
+| Tier A on full NetFlow features | Tier A on the 13-feature intersection, TTL excluded | NF-* datasets cannot supply SPLT, per-direction spread, IAT statistics or flag counts; training on them would recreate train/serve skew |
+| TTL as a flow feature | Stored, never a Tier A input | In NF-UNSW-NB15-v3 TTL alone reaches PR-AUC 0.9997: it identifies the testbed machine, not the attack |
