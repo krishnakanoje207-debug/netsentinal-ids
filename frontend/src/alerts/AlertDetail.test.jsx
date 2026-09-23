@@ -38,10 +38,10 @@ const ROLES = {
   viewer: { role: 'viewer', permissions: ['alerts:read', 'models:read'] },
 }
 
-function renderAs(account) {
+function renderAs(account, alert = ALERT) {
   const me = { user_id: 1, username: account, email: 'x@example.test', is_active: true, ...ROLES[account] }
   vi.mocked(fetch).mockImplementation(async (input) => {
-    const body = String(input).includes('/auth/me') ? me : ALERT
+    const body = String(input).includes('/auth/me') ? me : alert
     return { ok: true, status: 200, statusText: 'OK', json: async () => body }
   })
   render(
@@ -109,5 +109,18 @@ describe('AlertDetail actions', () => {
     renderAs('viewer')
     expect(await screen.findByText('Pattern classifier')).toBeInTheDocument()
     expect(screen.getByText('Anomaly detector')).toBeInTheDocument()
+  })
+
+  it('names a technique and says the family model suggested it', async () => {
+    renderAs('viewer', { ...ALERT, mitre_technique: 'T1046' })
+    expect(await screen.findByText('Network Service Discovery')).toBeInTheDocument()
+    expect(screen.getByText('Suggested by the attack-family model')).toBeInTheDocument()
+  })
+
+  it('says why there is no technique rather than leaving a bare dash', async () => {
+    renderAs('viewer')
+    expect(
+      await screen.findByText(/not sure enough which kind of attack this is/),
+    ).toBeInTheDocument()
   })
 })

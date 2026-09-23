@@ -27,7 +27,13 @@ import { ErrorNotice } from '../components/ErrorNotice'
 import { CheckCircle, Eye, FolderOpen, Prohibit, XCircle } from '../components/icons'
 import { RiskScore } from '../components/RiskScore'
 import { SeverityBadge, statusLabel } from '../components/SeverityBadge'
-import { SEVERITY_MEANING, STATUS_MEANING, featureLabel, tierName } from '../lib/glossary'
+import {
+  SEVERITY_MEANING,
+  STATUS_MEANING,
+  featureLabel,
+  techniqueName,
+  tierName,
+} from '../lib/glossary'
 
 // Recharts is the largest dependency in the bundle and only this page needs it, so the
 // pages people land on do not pay for it.
@@ -172,8 +178,28 @@ export function AlertDetail() {
         <Field label="To" hint="The machine it was aimed at">
           <span className="data">{alert.dst_ip ?? '--'}</span>
         </Field>
-        <Field label="Attack technique (MITRE)" hint={alert.mitre_technique ? undefined : 'Not identified for this alert'}>
-          {alert.mitre_technique ?? '--'}
+        <Field
+          label="Attack technique (MITRE ATT&CK)"
+          hint={
+            !alert.mitre_technique
+              ? explanation
+                ? 'Not identified: the models were not sure enough which kind of attack this is'
+                : 'The detection rule did not name one'
+              : explanation
+                ? 'Suggested by the attack-family model'
+                : 'From the detection rule'
+          }
+        >
+          {alert.mitre_technique ? (
+            <>
+              <span className="data">{alert.mitre_technique}</span>
+              {techniqueName(alert.mitre_technique) && (
+                <span className="ml-1.5">{techniqueName(alert.mitre_technique)}</span>
+              )}
+            </>
+          ) : (
+            '--'
+          )}
         </Field>
       </dl>
 

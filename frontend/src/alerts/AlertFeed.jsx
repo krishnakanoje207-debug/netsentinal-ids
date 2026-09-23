@@ -15,6 +15,7 @@ import { useAuth } from '../auth/AuthContext'
 import { SeverityBadge, StatusPill } from '../components/SeverityBadge'
 import { ErrorNotice } from '../components/ErrorNotice'
 import { ExportButton } from './ExportButton'
+import { techniqueName } from '../lib/glossary'
 import { useAlertStream } from '../stream/useAlertStream'
 
 const POLL_MS = 5000
@@ -211,7 +212,10 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
                 <td className="text-[var(--color-ink-dim)]">{alert.source}</td>
                 <td className="data">{alert.src_ip ?? '--'}</td>
                 <td className="data">{alert.dst_ip ?? '--'}</td>
-                <td className="data text-[var(--color-ink-dim)]">
+                <td
+                  className="data text-[var(--color-ink-dim)]"
+                  title={techniqueName(alert.mitre_technique) ?? undefined}
+                >
                   {alert.mitre_technique ?? '--'}
                 </td>
                 <td>

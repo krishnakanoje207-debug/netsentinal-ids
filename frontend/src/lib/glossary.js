@@ -86,3 +86,18 @@ export function tierName(key) {
   const tier = key.replace(/^tier_/, '').toUpperCase()
   return TIERS[tier]?.name ?? key
 }
+
+/** MITRE ATT&CK techniques this system can name, with their official titles. */
+export const TECHNIQUES = {
+  T1046: 'Network Service Discovery',
+  T1190: 'Exploit Public-Facing Application',
+  T1210: 'Exploitation of Remote Services',
+  T1499: 'Endpoint Denial of Service',
+  'T1595.002': 'Active Scanning: Vulnerability Scanning',
+}
+
+/** @param {string | null | undefined} id */
+export function techniqueName(id) {
+  if (!id) return null
+  return TECHNIQUES[id.toUpperCase()] ?? null
+}
