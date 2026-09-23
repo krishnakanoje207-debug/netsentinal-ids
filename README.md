@@ -110,6 +110,27 @@ afterwards — and never raises an alert.
 Delivery is at-least-once: the bus offset is committed after the database transaction,
 so a crash replays a message rather than losing a detection.
 
+### Without the VM: replaying the dataset
+
+```bash
+uv run python lab/replay/dataset_replay.py --dataset data/raw/NF-UNSW-NB15-v3.parquet \
+    --models artefacts/tier_a/model_card.json --mode active --out lab/replay/out/flows.jsonl
+uv run python lab/replay/register_sensor.py            # prints the sensor id
+uv run netsentinel-writer --card artefacts/tier_a/model_card.json \
+    --sensor-id 1 --replay lab/replay/out/flows.jsonl
+```
+
+The same path with the bus and the capture taken out. Flows come from the dataset's
+test window — the last 15% by time, which nothing was trained, tuned or thresholded
+on — and are scored by `FusionScorer` and wrapped in the sensor's own message, so the
+writer cannot tell them from live ones. Every alert that reaches the dashboard is then
+a real model's verdict on a labelled flow, and `flow.label` carries the ground truth
+to check it against. NetFlow carries no packets, so the fields only a capture can
+supply are zero; Tier A reads none of them.
+
+`--mode active` is typed for the reason `--mode active` is typed at registration: a
+shadow model raises no alerts, and a fresh database has no shadow period to promote on.
+
 ## Backend
 
 ```bash
