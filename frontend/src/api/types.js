@@ -168,6 +168,7 @@ export const PERMISSIONS = {
   alertsRead: 'alerts:read',
   alertsTriage: 'alerts:triage',
   approvalsDecide: 'approvals:decide',
+  responsePropose: 'response:propose',
   modelsRead: 'models:read',
   modelsDeploy: 'models:deploy',
 }

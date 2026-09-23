@@ -171,6 +171,21 @@ export const api = {
   /** @returns {Promise<import('./types').AlertDetail>} */
   alert: (token, alertId) => request(`/alerts/${alertId}`, { token }),
 
+  /** Totals across every alert, not only the page on screen. */
+  alertSummary: (token) => request('/alerts/summary', { token }),
+
+  /** Ask for containment. Nothing changes on the network until an analyst approves. */
+  proposeAction: (token, alertId, actionType = 'block_ip', target = undefined) =>
+    request(`/alerts/${alertId}/actions`, {
+      token,
+      method: 'POST',
+      json: { action_type: actionType, ...(target ? { target } : {}) },
+    }),
+
+  /** Open an incident (and a DFIR-IRIS case, when one is configured) for this alert. */
+  escalate: (token, alertId) =>
+    request(`/alerts/${alertId}/escalate`, { token, method: 'POST', json: {} }),
+
   /**
    * The feed as a CSV file. Returns the body and the two things the caller needs to
    * save it honestly: the name the server chose, and whether the file is partial.
