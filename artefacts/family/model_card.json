@@ -1,0 +1,68 @@
+{
+  "name": "family_lightgbm",
+  "version": "1.0.0",
+  "booster_sha256": "a54221d7dffda159598a7bd4f38a2dbc963765bd2c920a918ebf9474b4aee39b",
+  "feature_order": [
+    "proto",
+    "l4_src_port",
+    "l4_dst_port",
+    "duration_ms",
+    "in_pkts",
+    "out_pkts",
+    "in_bytes",
+    "out_bytes",
+    "pkt_rate",
+    "byte_rate",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_ratio_out_in"
+  ],
+  "classes": [
+    "Analysis",
+    "Backdoor",
+    "DoS",
+    "Exploits",
+    "Fuzzers",
+    "Generic",
+    "Reconnaissance",
+    "Shellcode",
+    "Worms"
+  ],
+  "min_confidence": 0.7,
+  "techniques": {
+    "DoS": "T1499",
+    "Exploits": "T1190",
+    "Reconnaissance": "T1046"
+  },
+  "technique_precision_val": {
+    "DoS": 1.0,
+    "Exploits": 0.928196981731533,
+    "Fuzzers": 0.7894076305220884,
+    "Reconnaissance": 0.8895161290322581,
+    "Worms": 0.6129032258064516
+  },
+  "min_technique_precision": 0.85,
+  "trained_on": "attack flows only",
+  "rows": {
+    "train": 65189,
+    "val": 31397,
+    "test": 31107
+  },
+  "metrics_test": {
+    "accuracy": 0.7127013212460218,
+    "macro_f1": 0.5234741697304826,
+    "confident_share": 0.5473044652329058,
+    "confident_accuracy": 0.8526872246696036,
+    "f1_per_family": {
+      "Analysis": 0.28346456692913385,
+      "Backdoor": 0.051175656984785614,
+      "DoS": 0.21285140562248997,
+      "Exploits": 0.7352352585284125,
+      "Fuzzers": 0.7299785041062669,
+      "Generic": 0.8689696847618088,
+      "Reconnaissance": 0.6941431670281996,
+      "Shellcode": 0.5243381725021349,
+      "Worms": 0.6111111111111112
+    }
+  }
+}
