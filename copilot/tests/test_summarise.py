@@ -107,6 +107,24 @@ def test_a_model_that_starts_reciting_is_rejected():
         validate(VALID | {"what_happened": "words " * 500})
 
 
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Data sent was significantly higher than average.",
+        "Returned packets were 8.67 times larger than usual.",
+        "The packet rate was much higher than normal.",
+    ],
+)
+def test_a_measurement_the_evidence_never_gave_is_a_rejection(claim):
+    # Seen live from llama3.2:3b: the evidence names features, never their values.
+    with pytest.raises(ValidationError, match="comparison the evidence does not contain"):
+        validate(VALID | {"what_happened": claim})
+
+
+def test_addresses_and_the_given_risk_score_are_not_mistaken_for_measurements():
+    validate(VALID | {"what_happened": "175.45.176.0 connected to 149.171.126.12; risk score 99%."})
+
+
 def test_the_schema_sent_is_the_schema_enforced():
     """The request states the contract the reply is held to."""
     schema = json_schema()

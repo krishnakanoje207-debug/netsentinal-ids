@@ -15,6 +15,11 @@ Three properties are enforced here rather than hoped for:
 * **No actions, only suggestions.** ``next_steps`` is a list of sentences an analyst
   reads. Nothing here is executable, nothing here names an endpoint to call, and the
   Copilot has no path to the response gate - by construction, not by instruction.
+* **No measurements the evidence does not contain.** The model is told which features
+  mattered, never their values, so "higher than average" or "8 times larger" can only
+  be invented. Run live, llama3.2:3b wrote exactly that in two summaries of five even
+  when told not to; a sentence that sounds like a measurement is believed, so it is a
+  rejection rather than a style problem.
 
 ``schema_valid`` on the stored row is what this returns: rejected output is kept
 rather than discarded, because a pattern of invalid output is a signal about the
@@ -25,7 +30,9 @@ from __future__ import annotations
 
 import enum
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Assessment(str, enum.Enum):
@@ -34,6 +41,17 @@ class Assessment(str, enum.Enum):
     likely_malicious = "likely_malicious"
     needs_investigation = "needs_investigation"
     likely_benign = "likely_benign"
+
+
+#: Comparisons and magnitudes the evidence never states. Deliberately narrow: it names
+#: the phrasings a model uses to invent a measurement, not every number (an address or
+#: a risk percentage from the data is fine).
+_INVENTED_MEASUREMENT = re.compile(
+    r"than (the )?(average|normal|usual|expected|baseline)"
+    r"|\d+(\.\d+)?\s*(x|times)"
+    r"|(significantly|substantially|much|far) (higher|larger|lower|smaller|greater|more|less)",
+    re.IGNORECASE,
+)
 
 
 class AlertSummary(BaseModel):
@@ -50,6 +68,16 @@ class AlertSummary(BaseModel):
     why_it_scored: str = Field(min_length=10, max_length=1000)
     assessment: Assessment
     next_steps: list[str] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def _no_invented_measurements(self) -> "AlertSummary":
+        for name in ("headline", "what_happened", "why_it_scored"):
+            match = _INVENTED_MEASUREMENT.search(getattr(self, name))
+            if match:
+                raise ValueError(
+                    f"{name} states a comparison the evidence does not contain: {match.group(0)!r}"
+                )
+        return self
 
     @property
     def as_row(self) -> dict:
