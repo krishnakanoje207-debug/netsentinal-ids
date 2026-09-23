@@ -63,9 +63,11 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # Bound to localhost only. Everything reaches this box through the SSH tunnel;
-    # publishing on 0.0.0.0 would expose it to the internet.
+    # publishing on 0.0.0.0 would expose it to the internet. The host port is
+    # overridable because a developer laptop often already has something on 5432,
+    # and the container port never changes - only where it is reachable from.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     mem_limit: 512m
     networks: [backplane]
     healthcheck:

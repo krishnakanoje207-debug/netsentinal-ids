@@ -19,6 +19,10 @@ data/interim/
 
 # Secrets and local config
 .env
+# Local deployment settings. The API reads NETSENTINEL_* from the environment, and a
+# laptop needs different values from the VM - a database on a different port, a
+# throwaway signing key. Neither belongs in the history.
+.env.local
 *.key
 *.pem
 
