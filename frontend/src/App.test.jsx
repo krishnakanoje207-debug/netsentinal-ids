@@ -65,6 +65,19 @@ describe('App', () => {
           }),
         }
       }
+      if (url.includes('/alerts/summary')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({
+            total: 3,
+            by_severity: { critical: 2, low: 1 },
+            by_status: { new: 3 },
+            top_sources: [{ address: '203.0.113.9', alerts: 3 }],
+          }),
+        }
+      }
       return {
         ok: true,
         status: 200,
@@ -75,9 +88,13 @@ describe('App', () => {
 
     render(<App queryClient={createQueryClient()} />)
 
+    // The overview is the landing page, and the role is named the way a person would.
     expect(await screen.findByText('analyst')).toBeInTheDocument()
-    expect(screen.getByText('soc analyst')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Alerts' })).toBeInTheDocument()
+    expect(screen.getAllByText('Security analyst').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(await screen.findByTestId('overview-headline')).toHaveTextContent(
+      '3 threats have been detected, 2 of them critical. 3 alerts are still open.',
+    )
   })
 })
 

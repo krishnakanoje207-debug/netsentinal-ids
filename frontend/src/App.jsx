@@ -9,8 +9,11 @@ import { AlertDetail } from './alerts/AlertDetail'
 import { AlertFeed } from './alerts/AlertFeed'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
+import { Brain, House, ListBullets, Scales, SignOut } from './components/icons'
 import { Mark } from './components/Mark'
+import { ROLES, roleName } from './lib/glossary'
 import { ModelsPage } from './models/ModelsPage'
+import { Overview } from './overview/Overview'
 
 export function createQueryClient() {
   return new QueryClient({
@@ -31,20 +34,23 @@ export function createQueryClient() {
   })
 }
 
-function NavLink({ to, children }) {
+function NavLink({ to, icon: Icon, children }) {
   const { pathname } = useLocation()
   const active = to === '/' ? pathname === '/' : pathname.startsWith(to)
   return (
     <Link
       to={to}
       aria-current={active ? 'page' : undefined}
-      className={`relative flex h-full items-center px-3 text-sm transition-colors duration-150 ${
+      title={typeof children === 'string' ? children : undefined}
+      className={`relative flex h-full shrink-0 items-center px-2.5 text-sm md:px-3 transition-colors duration-150 ${
         active
           ? 'text-[var(--color-ink)] after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[var(--color-accent)]'
           : 'text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]'
       }`}
     >
-      {children}
+      <Icon size={18} className="md:mr-1.5 md:size-4" aria-hidden="true" />
+      {/* Icons alone on a phone; the name stays for screen readers either way. */}
+      <span className="sr-only md:not-sr-only">{children}</span>
     </Link>
   )
 }
@@ -53,29 +59,34 @@ function Shell({ children }) {
   const { user, signOut, can } = useAuth()
   return (
     <div className="min-h-full">
-      <nav className="sticky top-0 z-10 flex h-12 items-stretch gap-1 border-b border-[var(--color-line)] bg-[var(--color-panel)]/95 px-4 backdrop-blur-sm">
-        <span className="mr-4 flex items-center gap-2 text-sm font-semibold tracking-tight">
+      <nav className="sticky top-0 z-10 flex h-12 items-stretch gap-1 border-b border-[var(--color-line)] bg-[var(--color-panel)]/95 px-3 backdrop-blur-sm md:px-4">
+        <span className="mr-2 flex shrink-0 items-center gap-2 text-sm font-semibold tracking-tight md:mr-4">
           <Mark className="text-[var(--color-accent)]" />
-          NetSentinel-AI
+          <span className="hidden whitespace-nowrap sm:inline">NetSentinel-AI</span>
         </span>
-        <NavLink to="/">Alerts</NavLink>
-        <NavLink to="/approvals">Approvals</NavLink>
-        {can(PERMISSIONS.modelsRead) && <NavLink to="/models">Models</NavLink>}
+        <NavLink to="/" icon={House}>Overview</NavLink>
+        <NavLink to="/alerts" icon={ListBullets}>Alerts</NavLink>
+        <NavLink to="/approvals" icon={Scales}>Approvals</NavLink>
+        {can(PERMISSIONS.modelsRead) && <NavLink to="/models" icon={Brain}>Models</NavLink>}
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--color-ink-dim)]">
-          <span className="flex items-center gap-2">
+          <span className="hidden items-center gap-2 lg:flex">
             <span className="text-[var(--color-ink)]">{user?.username}</span>
             {user?.role && (
-              <span className="rounded-full border border-[var(--color-line)] px-2 py-0.5 text-[11px]">
-                {user.role.replace(/_/g, ' ')}
+              <span
+                className="rounded-full border border-[var(--color-line)] px-2 py-0.5 text-[11px]"
+                title={ROLES[user.role]?.can}
+              >
+                {roleName(user.role)}
               </span>
             )}
           </span>
           <button
             type="button"
             onClick={signOut}
-            className="rounded px-2 py-1 transition-colors duration-150 hover:bg-[var(--color-panel-raised)] hover:text-[var(--color-ink)]"
+            className="press flex items-center gap-1.5 rounded px-2 py-1 transition-colors duration-150 hover:bg-[var(--color-panel-raised)] hover:text-[var(--color-ink)]"
           >
-            Sign out
+            <SignOut size={16} aria-hidden="true" />
+            <span className="sr-only md:not-sr-only">Sign out</span>
           </button>
         </div>
       </nav>
@@ -89,8 +100,9 @@ function Authenticated() {
   return (
     <Shell>
       <Routes>
+        <Route path="/" element={<Overview onFilter={setFilters} />} />
         <Route
-          path="/"
+          path="/alerts"
           element={
             <AlertFeed
               status={filters.status}
