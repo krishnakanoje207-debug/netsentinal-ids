@@ -16,7 +16,11 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
 | Latency per flow (NFR-01, <= 5 ms) | 0.07 ms | same, section 6 |
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
-| Automated tests | 696 Python + 92 dashboard, all passing | `uv run pytest`, `npx vitest run` |
+| Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874 | `artefacts/tier_c/model_card.json` |
+| Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
+| Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms | `docs/testing/TEST_REPORT.md` |
+| Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities | same |
+| Automated tests | 703 Python (81% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -39,9 +43,9 @@ built and tested but not running. Nothing below was dropped from the design.
 | DFIR-IRIS (F15) | VM | Integration built and tested against fakes | Escalation says so honestly when unconfigured |
 | CrowdSec + nftables (F16) | VM | Integration built and tested against fakes | Needs a Linux edge |
 | Greenbone/OpenVAS (F17) | VM, scan window | Importer built and tested | Runs in its own window on the VM |
-| Ollama Copilot (F20) | Laptop GPU | Code built and tested; **no model pulled yet** | `ollama pull llama3.2:3b` (2 GB, to D:) |
+| Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
 | Tier B, 1D-CNN + BiLSTM (F7) | Kaggle | Code + tests; **not trained** | Needs packet captures (SPLT); NetFlow datasets have none |
-| Tier C, E-GraphSAGE (F8) | Kaggle | Code + tests; **not trained** | Trainable on NetFlow; next on the list |
+| Tier C, E-GraphSAGE (F8) | Kaggle | **Trained on the laptop CPU** (20k-flow windows) and evaluated | Not yet in the live scoring path: it scores windows, not single flows |
 | Tier D autoencoder (F9) | Kaggle | Not built | Isolation Forest half is done |
 
 ## Remaining work, in order
@@ -53,9 +57,9 @@ dashboard redesign was one long session.
 | # | Task | For | Estimate |
 |---|---|---|---|
 | 1 | ~~MITRE technique on ML alerts~~ | Done | |
-| 2 | Train and evaluate Tier C (graph model) on NetFlow | M3, accuracy | 3-4 h |
-| 3 | Copilot live: pull the model, add a summary panel to the alert page | M3 | 2 h |
-| 4 | Test report: coverage, Locust load test, bandit/pip-audit, requirement-by-requirement validation | M4 | 4-5 h |
+| 2 | ~~Train and evaluate Tier C~~ | Done | |
+| 3 | ~~Copilot live with a summary panel~~ | Done | |
+| 4 | ~~Test report~~ (`docs/testing/TEST_REPORT.md`) | Done | |
 | 5 | One-command deployment (API + dashboard + DB in Compose) and user manual | M5 | 3-4 h |
 | 6 | Final report (SRS, design, implementation, testing) and slides | M5 | 4-6 h |
 | 7 | Cloud VM with Suricata/Zeek/Wazuh live (needs your Azure for Students account) | Full plan | 6-8 h, plus your account setup |
