@@ -3,6 +3,19 @@
 Intrusion detection and cyber security monitoring using machine learning.
 Design and requirements live in [`deliverables/`](deliverables).
 
+## Start here
+
+| Document | What it is |
+|---|---|
+| [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) | Using the dashboard, and installing it |
+| [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) | What is built, what runs, what remains, against the plan |
+| [`docs/evaluation/REPORT.md`](docs/evaluation/REPORT.md) | How accurate the models are, measured honestly |
+| [`docs/testing/TEST_REPORT.md`](docs/testing/TEST_REPORT.md) | Tests, security scans, load test, requirement validation |
+| [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) | How to try to break it by hand |
+
+Quickest look: `docker compose -f infra/docker-compose.yml --profile app up -d --build`,
+then http://127.0.0.1:5180.
+
 ## Layout
 
 A uv workspace. Folders follow the deployment boundaries in the M2 design rather
@@ -55,7 +68,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 661 tests, no database or network needed
+uv run pytest            # 703 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
