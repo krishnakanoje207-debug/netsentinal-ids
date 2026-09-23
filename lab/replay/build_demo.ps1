@@ -8,8 +8,9 @@
 # techniques. New passwords go to lab\replay\out\demo_credentials.txt.
 #
 # Expects PostgreSQL running (start_demo.ps1 starts it) and the trained artefacts in
-# artefacts\. Stop the API window first: a database with open connections cannot be
-# dropped.
+# artefacts\. The API container is stopped while the database is rebuilt, because a
+# database with open connections cannot be dropped, and started again at the end. With
+# the dev servers (start_demo.ps1 -Dev), close the API window first.
 
 $ErrorActionPreference = "Continue"
 $root = Resolve-Path "$PSScriptRoot\..\.."
@@ -30,6 +31,8 @@ foreach ($line in (Get-Content .env.local | Where-Object { $_ -match "^NETSENTIN
 }
 $env:NETSENTINEL_DATABASE_URL = $vars["NETSENTINEL_DATABASE_URL"] -replace "/[^/]+$", "/netsentinel_demo"
 $env:NETSENTINEL_JWT_SECRET = $vars["NETSENTINEL_JWT_SECRET"]
+
+docker compose -f infra\docker-compose.yml --env-file infra\.env stop api *> $null
 
 Step "recreate netsentinel_demo" {
     docker exec netsentinel-postgres-1 dropdb -U netsentinel --if-exists netsentinel_demo
@@ -55,4 +58,5 @@ Step "write explained alerts" {
         --sensor-id $sensor --replay lab/replay/out/flows.jsonl
 }
 
+docker compose -f infra\docker-compose.yml --env-file infra\.env --profile app up -d *> $null
 Write-Host "Demo database ready. Accounts: lab\replay\out\demo_credentials.txt" -ForegroundColor Green

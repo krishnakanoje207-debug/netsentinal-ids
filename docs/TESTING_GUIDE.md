@@ -10,10 +10,10 @@ saw, what you expected).
 powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1
 ```
 
-- Dashboard: http://127.0.0.1:5173
+- Dashboard: http://127.0.0.1:5180 (http://127.0.0.1:5173 with `start_demo.ps1 -Dev`)
 - API and its interactive docs: http://127.0.0.1:8010/api/v1/docs
 - Accounts and passwords: `lab\replay\out\demo_credentials.txt`
-- To reset everything to a clean demo (new passwords): close the API window, then
+- To reset everything to a clean demo (new passwords):
   `powershell -ExecutionPolicy Bypass -File lab\replay\build_demo.ps1`
 
 | Account | Role | Can | Cannot |

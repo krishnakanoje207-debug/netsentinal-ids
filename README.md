@@ -24,12 +24,12 @@ than language conventions — each one ends up on a different node.
 | Package | Runs on | Contains | State |
 |---|---|---|---|
 | [`core/`](core) | everywhere | Feature contract and flow extraction | built |
-| [`training/`](training) | Kaggle GPU | Dataset prep, Tier A, Tier D | built |
+| [`training/`](training) | laptop CPU / Kaggle GPU | Dataset prep, Tiers A, C, D, the family model, the benchmark | built, trained |
 | [`scoring/`](scoring) | cloud VM | Model loader and fusion scorer | built |
 | [`writer/`](writer) | cloud VM | Bus consumer: explained detections into PostgreSQL | built |
 | [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
 | [`copilot/`](copilot) | laptop GPU | Read-only LLM summaries, schema-checked | built |
-| [`frontend/`](frontend) | browser | React SOC dashboard | D10 |
+| [`frontend/`](frontend) | browser | React SOC dashboard | built |
 | [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | D3/D8 |
 | [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | D2 onwards |
 
@@ -88,14 +88,23 @@ uv run netsentinel-train-tier-a --data data/processed --out artefacts/tier_a
 
 # D6 — Tier D Isolation Forest, trained on benign flows only
 uv run python -m netsentinel_training.models.tier_d --data data/processed --out artefacts/tier_d
+
+# Tier C graph model, on 20k-flow time windows; and the attack-family model
+uv run python -m netsentinel_training.models.tier_c --data data/processed --out artefacts/tier_c
+uv run python -m netsentinel_training.models.family --data data/processed --out artefacts/family
+
+# the measurements: learners, TTL audit, calibration, cross-dataset, held-out attacker
+uv run python -m netsentinel_training.eval.benchmark --data data/processed --out docs/evaluation
+uv run python -m netsentinel_training.eval.holdout --data data/processed
 ```
 
 Training refuses to emit artefacts unless the ONNX export agrees with the native
 model to within 1e-4. Each run writes a `model_card.json` whose fields map onto the
 `ml_models` table, and every model is born in `shadow` mode.
 
-Tiers B (1D-CNN + BiLSTM), C (E-GraphSAGE) and the Tier D autoencoder need PyTorch and
-belong in the Kaggle notebooks; they are not installed locally by design.
+Tier C trains on the laptop CPU in windows of 20,000 flows. Tier B (1D-CNN + BiLSTM)
+needs packet captures, which the NetFlow datasets do not have, and the Tier D
+autoencoder is not built yet.
 
 ## From the wire to the dashboard
 
