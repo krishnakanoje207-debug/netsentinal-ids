@@ -15,11 +15,13 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { PageHeader } from '../components/PageHeader'
 
 const ACTION_LABEL = {
   block_ip: 'Block IP address',
@@ -50,18 +52,24 @@ export function ActionCard({ action, onDecide, pending, canDecide }) {
         <code className="data rounded bg-[var(--color-panel-raised)] px-1.5 py-0.5">
           {action.target}
         </code>
-        <a
-          href={`/alerts/${action.alert_id}`}
+        <Link
+          to={`/alerts/${action.alert_id}`}
           className="ml-auto text-xs text-[var(--color-accent)] hover:underline"
         >
-          alert {action.alert_id}
-        </a>
+          Why? See alert {action.alert_id}
+        </Link>
       </div>
+      {action.action_type === 'block_ip' && (
+        <p className="mt-2 text-sm text-[var(--color-ink-dim)]">
+          If approved, this address is blocked at the network edge. The block lifts on its own
+          after a few hours, or earlier if someone rolls it back.
+        </p>
+      )}
 
       {canDecide ? (
         <div className="mt-3 space-y-2">
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--color-ink-faint)]">
+            <span className="text-xs text-[var(--color-ink-dim)]">
               Comment (required to reject)
             </span>
             <textarea
@@ -129,7 +137,10 @@ export function ApprovalQueue() {
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-semibold tracking-tight">Approval queue</h1>
+      <PageHeader
+        title="Approvals"
+        description="Blocks proposed by an administrator wait here. An analyst approves or rejects each one, and nothing is blocked until then. No one can approve their own proposal."
+      />
 
       {error && <ErrorNotice error={error} />}
       {decide.error && <ErrorNotice error={decide.error} />}

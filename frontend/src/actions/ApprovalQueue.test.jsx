@@ -6,6 +6,7 @@
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ActionCard } from './ApprovalQueue'
@@ -22,8 +23,11 @@ const ACTION = {
 
 function setup(canDecide = true) {
   const onDecide = vi.fn()
+  // The card links to its alert through the router, so it renders inside one.
   render(
-    <ActionCard action={ACTION} onDecide={onDecide} pending={false} canDecide={canDecide} />,
+    <MemoryRouter>
+      <ActionCard action={ACTION} onDecide={onDecide} pending={false} canDecide={canDecide} />
+    </MemoryRouter>,
   )
   return { onDecide, user: userEvent.setup() }
 }
@@ -89,7 +93,9 @@ describe('ActionCard', () => {
 
   it('disables both buttons while a decision is in flight', () => {
     render(
-      <ActionCard action={ACTION} onDecide={vi.fn()} pending canDecide />,
+      <MemoryRouter>
+        <ActionCard action={ACTION} onDecide={vi.fn()} pending canDecide />
+      </MemoryRouter>,
     )
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled()
   })

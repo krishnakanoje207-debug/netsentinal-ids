@@ -117,14 +117,20 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
 
   return (
     <section>
-      <header className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-xl font-semibold tracking-tight">Alerts</h1>
-          {data && (
-            <span className="numeric text-sm text-[var(--color-ink-dim)]">{data.length} shown</span>
-          )}
+      <header className="mb-5 flex flex-wrap items-end gap-x-4 gap-y-3">
+        <div className="max-w-xl">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-xl font-semibold tracking-tight">Alerts</h1>
+            {data && (
+              <span className="numeric text-sm text-[var(--color-ink-dim)]">{data.length} shown</span>
+            )}
+            <StreamIndicator status={stream.status} />
+          </div>
+          <p className="mt-1 text-sm text-[var(--color-ink-dim)]">
+            Every connection the models flagged, newest first. Open one to see why it was
+            flagged and what can be done about it.
+          </p>
         </div>
-        <StreamIndicator status={stream.status} />
 
         <div className="ml-auto flex flex-wrap items-start gap-2">
           <SearchBox value={q} onSearch={(next) => onFilterChange({ status, severity, q: next })} />
@@ -174,13 +180,13 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-[var(--color-line)] bg-[var(--color-panel)] text-left text-[11px] uppercase tracking-wider text-[var(--color-ink-faint)] [&>th]:px-3 [&>th]:py-2.5">
-              <th className="font-medium">Time</th>
-              <th className="font-medium">Severity</th>
-              <th className="font-medium">Source</th>
-              <th className="font-medium">From</th>
-              <th className="font-medium">To</th>
-              <th className="font-medium">Technique</th>
-              <th className="font-medium">Status</th>
+              <th className="font-medium" title="When the alert was raised. Click it to open the alert">Time</th>
+              <th className="font-medium" title="How urgent it is, from critical down to info">Severity</th>
+              <th className="font-medium" title="Which sensor or model raised it">Source</th>
+              <th className="font-medium" title="The address the traffic came from">From</th>
+              <th className="font-medium" title="The address it was aimed at">To</th>
+              <th className="font-medium" title="The MITRE ATT&CK technique, when one was identified">Technique</th>
+              <th className="font-medium" title="Where the alert is in its review">Status</th>
             </tr>
           </thead>
           <tbody>
