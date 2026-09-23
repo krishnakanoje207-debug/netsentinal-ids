@@ -21,6 +21,10 @@ deep = [
     "torch>=2.4",
     "torch-geometric>=2.6",
 ]
+eval = [
+    "matplotlib>=3.9",
+    "xgboost>=2.1",
+]
 
 [project.scripts]
 netsentinel-prep = "netsentinel_training.data.prep:main"
