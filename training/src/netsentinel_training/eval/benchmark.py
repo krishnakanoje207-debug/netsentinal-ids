@@ -208,18 +208,57 @@ def per_family(split, probs: np.ndarray, threshold: float) -> dict[str, float]:
 
 
 def tier_d_families(split) -> tuple[dict, dict]:
-    """Isolation Forest on benign traffic only: what unfamiliarity alone catches."""
-    from sklearn.ensemble import IsolationForest
-
+    """The Tier D detector on benign traffic only: what unfamiliarity alone catches."""
     train = split["train"].filter(pl.col(LABEL) == 0).select(FEATURES).to_numpy().astype(np.float32)
     val = split["val"].filter(pl.col(LABEL) == 0).select(FEATURES).to_numpy().astype(np.float32)
     xt, yt = xy(split["test"], FEATURES)
-    forest = IsolationForest(**tier_d.FOREST_PARAMS).fit(train)
-    levels, quantiles = tier_d.fit_quantiles(forest.decision_function(val))
-    probs = tier_d.anomaly_probability(forest.decision_function(xt), levels, quantiles)
+    detector = tier_d.fit_detector(train)
+    levels, quantiles = tier_d.fit_quantiles(detector.decision_function(tier_d.log_scale(val)))
+    probs = tier_d.anomaly_probability(
+        detector.decision_function(tier_d.log_scale(xt)), levels, quantiles
+    )
     threshold = 1.0 - tier_d.TARGET_MAX_FPR
     metrics = tier_d.evaluate(probs, yt, threshold)
     return metrics, per_family(split, probs, threshold)
+
+
+def tier_d_variants(split, benign_rows: int = 400_000, test_rows: int = 100_000) -> dict:
+    """Why Tier D is the forest it is: the M2 default, the served one, and LOF.
+
+    On samples, because LOF scores against every reference point and a full test split
+    would take hours on this machine; the samples are the same for all three.
+    """
+    from sklearn.ensemble import IsolationForest
+    from sklearn.neighbors import LocalOutlierFactor
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    benign = split["train"].filter(pl.col(LABEL) == 0)
+    train = benign.sample(n=min(benign_rows, benign.height), seed=SEED)
+    train = train.select(FEATURES).to_numpy().astype(np.float32)
+    val = split["val"].filter(pl.col(LABEL) == 0).select(FEATURES).to_numpy().astype(np.float32)
+    test = split["test"].sample(n=min(test_rows, split["test"].height), seed=SEED)
+    xt, yt = xy(test, FEATURES)
+    log = tier_d.log_scale
+    raw_forest = dict(tier_d.FOREST_PARAMS) | {"max_samples": 256}
+
+    variants = {
+        "Isolation Forest, raw features, 256-row subsamples (M2 default)":
+            (IsolationForest(**raw_forest).fit(train), lambda x: x),
+        "Isolation Forest, log features, 4096-row subsamples (served)":
+            (tier_d.fit_detector(train), log),
+        "Local Outlier Factor, log features (not servable: see Tier D)":
+            (make_pipeline(StandardScaler(), LocalOutlierFactor(n_neighbors=35, novelty=True,
+                                                                 n_jobs=-1)).fit(log(train[:60_000])),
+             log),
+    }
+    out = {}
+    for name, (model, transform) in variants.items():
+        levels, quantiles = tier_d.fit_quantiles(model.decision_function(transform(val)))
+        probs = tier_d.anomaly_probability(model.decision_function(transform(xt)), levels, quantiles)
+        out[name] = tier_d.evaluate(probs, yt, 1.0 - tier_d.TARGET_MAX_FPR)
+        print(f"  {name[:40]:<40} PR-AUC {out[name]['pr_auc']:.4f} recall {out[name]['recall']:.4f}")
+    return out
 
 
 def family_classifier(split) -> dict:
@@ -452,7 +491,7 @@ def report(results: dict) -> str:
         "(`contract.TIER_A_FEATURES`); the served model is the first row.",
         "", "![TTL ablation](ttl_ablation.png)", "",
         "## 3. Recall per attack family (at the 1%-FPR threshold)", "",
-        "| Family | Tier A (LightGBM) | Tier D (Isolation Forest, benign-only) |",
+        "| Family | Tier A (LightGBM) | Tier D (LOF, benign-only) |",
         "|---|---|---|",
     ]
     for family, recall in results["family_recall"]["tier_a"].items():
@@ -460,6 +499,20 @@ def report(results: dict) -> str:
             continue
         lines.append(f"| {family} | {pct(recall)} | {pct(results['family_recall']['tier_d'][family])} |")
     td = results["tier_d"]
+    lines += ["", "### Tier D: which unsupervised detector", "",
+              "Benign-only training, calibrated on validation benign flows, flagged at the "
+              "1% budget; on a 100k-flow test sample shared by all three.", "",
+              "| Detector | PR-AUC | Recall | FPR |", "|---|---|---|---|"]
+    for name, m in results["tier_d_variants"].items():
+        lines.append(f"| {name} | {m['pr_auc']:.4f} | {pct(m['recall'])} | "
+                     f"{pct(m['false_positive_rate'])} |")
+    lines += [
+        "",
+        "The log transform is what matters: counts span nine orders of magnitude and a forest "
+        "splits uniformly between a feature's extremes. LOF ranks best but exported to ONNX it "
+        "searches its reference set on every call (over 100 ms per flow against the 5 ms "
+        "budget of NFR-01), so the forest is served.",
+    ]
     lines += [
         "",
         f"Tier D never sees an attack in training; at a {pct(td['false_positive_rate'])} false-positive "
@@ -492,12 +545,25 @@ def report(results: dict) -> str:
             lines.append(f"| {name} | {pct(c['attack_share_test'])} | {u['pr_auc']:.4f} | "
                          f"{u['recall']:.4f} | {u['false_positive_rate']:.4f} | {d['pr_auc']:.4f} | "
                          f"{d['recall']:.4f} | {d['false_positive_rate']:.4f} |")
-        lines += ["", "![Cross-dataset](cross_dataset.png)", ""]
+        lines += [
+            "",
+            "Two different failures. Trained on UNSW and moved elsewhere, the model ranks "
+            "worse and its threshold is meaningless on the new traffic (the false-positive "
+            "column). Trained on the target itself, it ranks well (PR-AUC) but a threshold set "
+            "on the validation period misses most attacks in the test period, because the "
+            "attack mix changes over time. Both are why every model is born in shadow mode and "
+            "promoted only on measured, site-local evidence.",
+            "", "![Cross-dataset](cross_dataset.png)", ""]
     if results.get("onnx_latency"):
         lat = results["onnx_latency"]
         lines += ["## 6. Serving latency (NFR-01: ≤ 5 ms per flow)", "",
                   f"Exported ONNX graph, one flow per call over {lat['calls']:,} test flows: "
-                  f"p50 **{lat['p50_ms']:.3f} ms**, p99 **{lat['p99_ms']:.3f} ms**.", ""]
+                  f"p50 **{lat['p50_ms']:.3f} ms**, p99 **{lat['p99_ms']:.3f} ms** (Tier A)."]
+        if results.get("onnx_latency_tier_d"):
+            lat_d = results["onnx_latency_tier_d"]
+            lines.append(f"Tier D, the same way: p50 **{lat_d['p50_ms']:.3f} ms**, "
+                         f"p99 **{lat_d['p99_ms']:.3f} ms**.")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -516,12 +582,14 @@ def run(data_dir: Path, out: Path, cross: list[Path], onnx_path: Path) -> dict:
     print("2. TTL ablation"); results["ttl_ablation"] = ablate_ttl(split)
     print("3. Tier D and families")
     results["tier_d"], results["family_recall"]["tier_d"] = tier_d_families(split)
+    results["tier_d_variants"] = tier_d_variants(split)
     results["family_classifier"] = family_classifier(split)
     print(f"  macro-F1 {results['family_classifier']['macro_f1']:.4f}")
     print("4. calibration"); results["calibration"] = calibration(split)
     if cross:
         print("5. cross-dataset"); results["cross_dataset"] = cross_dataset(split, cross)
     results["onnx_latency"] = onnx_latency(onnx_path, split)
+    results["onnx_latency_tier_d"] = onnx_latency(onnx_path.parent.parent / "tier_d" / "tier_d.onnx", split)
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
