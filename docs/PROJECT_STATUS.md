@@ -11,11 +11,12 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | M1 objective O3 (PR-AUC >= 0.90) | Met | same |
 | Shortcut found and removed | TTL alone scores 0.998; excluded from the model | same, section 2 |
 | Tier D (Isolation Forest, benign-only) | Recall 0.2% -> 40% after log-scaling | same, section 3 |
-| Attack-family classification | macro-F1 0.56 | same |
+| Attack-family classification | macro-F1 0.52, accuracy 71% (attack flows only) | `artefacts/family/model_card.json` |
+| MITRE technique on ML alerts | Claimed only at >= 70% confidence, for families right >= 85% of the time on validation: Reconnaissance (T1046), Exploits (T1190), DoS (T1499). On the test split 55% of attacks get a label and 85% of labels are right. On the family-balanced demo replay, which over-represents the hard rare families, 21 of 31 labels were right (68%) and 104 alerts got none | same |
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
 | Latency per flow (NFR-01, <= 5 ms) | 0.07 ms | same, section 6 |
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
-| Automated tests | 682 Python + 90 dashboard, all passing | `uv run pytest`, `npx vitest run` |
+| Automated tests | 696 Python + 92 dashboard, all passing | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -51,7 +52,7 @@ dashboard redesign was one long session.
 
 | # | Task | For | Estimate |
 |---|---|---|---|
-| 1 | MITRE technique on every ML alert (family classifier -> ATT&CK mapping) | M3; fills the "--" column | 2-3 h |
+| 1 | ~~MITRE technique on ML alerts~~ | Done | |
 | 2 | Train and evaluate Tier C (graph model) on NetFlow | M3, accuracy | 3-4 h |
 | 3 | Copilot live: pull the model, add a summary panel to the alert page | M3 | 2 h |
 | 4 | Test report: coverage, Locust load test, bandit/pip-audit, requirement-by-requirement validation | M4 | 4-5 h |

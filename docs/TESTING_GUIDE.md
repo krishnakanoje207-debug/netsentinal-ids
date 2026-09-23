@@ -13,6 +13,8 @@ powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1
 - Dashboard: http://127.0.0.1:5173
 - API and its interactive docs: http://127.0.0.1:8010/api/v1/docs
 - Accounts and passwords: `lab\replay\out\demo_credentials.txt`
+- To reset everything to a clean demo (new passwords): close the API window, then
+  `powershell -ExecutionPolicy Bypass -File lab\replay\build_demo.ps1`
 
 | Account | Role | Can | Cannot |
 |---|---|---|---|
@@ -84,6 +86,7 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 | 4.3b | Click **Escalate to incident** | "Incident N opened", and an honest note that the case system is not connected in the demo |
 | 4.3c | Sign in as `viewer` and open any alert | The page says the account can read but not act; no buttons at all |
 | 4.4 | Open `/alerts/99999` in the address bar | A not-found message, not a crash |
+| 4.5 | Look at the Technique column in the feed; open alerts with and without one | About a quarter of alerts carry T1046, T1190 or T1499 with its title and "Suggested by the attack-family model"; the rest say why there is none. Compare against the dataset label in `lab\replay\out\flows.jsonl` (`"label"`) to measure it yourself |
 
 ## 5. The approval gate
 
@@ -118,8 +121,8 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 ## 8. The automated suites
 
 ```powershell
-uv run --no-sync pytest -q          # 682 Python tests, no database needed
-cd frontend; npx vitest run         # 90 dashboard tests
+uv run --no-sync pytest -q          # 696 Python tests, no database needed
+cd frontend; npx vitest run         # 92 dashboard tests
 ```
 
 Both must be all green. A failure is a bug in the code or in the test, and either is
