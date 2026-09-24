@@ -170,6 +170,8 @@ def export_onnx(model, path: Path) -> None:
         # Batch is dynamic; the feature width is not, and the registry checks it.
         dynamic_axes={"input": {0: "batch"}, "probability": {0: "batch"}},
         opset_version=17,
+        # One file: weights in a side .data file would sit outside onnx_sha256.
+        external_data=False,
     )
 
 

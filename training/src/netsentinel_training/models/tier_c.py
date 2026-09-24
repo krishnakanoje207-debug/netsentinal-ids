@@ -254,6 +254,8 @@ def export_onnx(model, edge_index: np.ndarray, edge_features: np.ndarray,
         # produced a silently wrong graph - 0.34 absolute drift - which the parity gate
         # caught. The dynamo exporter emits a scatter with add reduction.
         dynamo=True,
+        # One file: weights in a side .data file would sit outside onnx_sha256.
+        external_data=False,
     )
 
 

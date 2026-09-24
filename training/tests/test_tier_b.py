@@ -65,9 +65,14 @@ def data_dir(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def card(data_dir, tmp_path_factory):
+def out_dir(tmp_path_factory):
+    return tmp_path_factory.mktemp("artefacts")
+
+
+@pytest.fixture(scope="module")
+def card(data_dir, out_dir):
     """Trained once, briefly. The assertions are about behaviour, not convergence."""
-    return train(data_dir, tmp_path_factory.mktemp("artefacts"), version="0.1.0-test", epochs=12)
+    return train(data_dir, out_dir, version="0.1.0-test", epochs=12)
 
 
 # --- normalisation ---------------------------------------------------------
@@ -189,3 +194,10 @@ def test_normalisation_is_recorded_for_reference(card):
     """Baked into the graph, but recorded so a card explains itself."""
     assert len(card["normalisation"]["mean"]) == CHANNELS
     assert all(value > 0 for value in card["normalisation"]["std"])
+
+
+def test_the_weights_are_inside_the_hashed_file(card, out_dir):
+    """An external .data file would hold the weights outside what onnx_sha256 covers."""
+    assert [p.name for p in out_dir.iterdir() if p.name.startswith("tier_b.onnx")] == [
+        "tier_b.onnx"
+    ]

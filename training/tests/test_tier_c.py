@@ -61,8 +61,13 @@ def data_dir(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def card(data_dir, tmp_path_factory):
-    return train(data_dir, tmp_path_factory.mktemp("artefacts"), version="0.1.0-test", epochs=80)
+def out_dir(tmp_path_factory):
+    return tmp_path_factory.mktemp("artefacts")
+
+
+@pytest.fixture(scope="module")
+def card(data_dir, out_dir):
+    return train(data_dir, out_dir, version="0.1.0-test", epochs=80)
 
 
 # --- graph construction ----------------------------------------------------
@@ -202,3 +207,10 @@ def test_card_records_that_it_scores_a_window(card):
 
 def test_card_pins_the_edge_feature_order(card):
     assert card["feature_order"] == list(EDGE_FEATURES)
+
+
+def test_the_weights_are_inside_the_hashed_file(card, out_dir):
+    """An external .data file would hold the weights outside what onnx_sha256 covers."""
+    assert [p.name for p in out_dir.iterdir() if p.name.startswith("tier_c.onnx")] == [
+        "tier_c.onnx"
+    ]

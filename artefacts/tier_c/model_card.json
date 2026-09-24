@@ -2,7 +2,7 @@
   "name": "tier_c_egraphsage",
   "tier": "C",
   "version": "1.0.0",
-  "onnx_sha256": "0827f456292fad27c24911b1ad4c58f3369f241b0501a7ee50627ddc96246982",
+  "onnx_sha256": "b7854ee7c546e872c6285f598cc27c842c4941bdd1a5abe5474eecdafddd6245",
   "threshold": 0.18949706852436066,
   "mode": "shadow",
   "pr_auc": 0.9944268341453278,

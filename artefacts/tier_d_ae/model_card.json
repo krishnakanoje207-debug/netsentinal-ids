@@ -2,7 +2,7 @@
   "name": "tier_d_autoencoder",
   "tier": "D",
   "version": "1.0.0",
-  "onnx_sha256": "7dc7cdc146a57059f3dc4e6dcf0c40b23cf0fd9734ae08be3c7c1f6a039a217f",
+  "onnx_sha256": "a71826790a466310776275bc8cabc66ac5848237ed9b3bdc1698efc1fd178c90",
   "threshold": 0.99,
   "mode": "shadow",
   "pr_auc": 0.9330294753252475,
