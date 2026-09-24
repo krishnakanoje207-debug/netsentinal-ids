@@ -53,8 +53,8 @@ def data_dir(tmp_path_factory):
 def card(data_dir, tmp_path_factory):
     """Trained once, with a smaller forest.
 
-    The production 200 trees take about a minute to convert to ONNX, and none of the
-    assertions below depend on the count; a suite this slow stops being run.
+    None of the assertions below depend on the tree count, and a slow suite stops
+    being run.
     """
     from netsentinel_training.models import tier_d
 
@@ -160,6 +160,16 @@ def test_the_graph_takes_raw_features_and_logs_them_itself(card, data_dir, tmp_p
     ops = {node.op_type for node in __import__("onnx").load(str(onnx_files[0])).graph.node}
     assert {"Max", "Add", "Log"} <= ops
     assert session.get_inputs()[0].shape[1] == len(TIER_A_FEATURES)
+
+
+def test_the_whole_forest_is_one_graph_node(card, tmp_path_factory):
+    """NFR-01: per-tree nodes cost onnxruntime dispatch overhead per flow, 8 ms at 200 trees."""
+    import onnx
+
+    onnx_files = list(tmp_path_factory.getbasetemp().glob("artefacts*/tier_d.onnx"))
+    ops = [node.op_type for node in onnx.load(str(onnx_files[0])).graph.node]
+    assert ops.count("TreeEnsembleRegressor") == 1
+    assert len(ops) < 10
 
 
 def test_card_records_the_input_transform(card):

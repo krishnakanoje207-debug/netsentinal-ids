@@ -153,34 +153,88 @@ def evaluate(probabilities: np.ndarray, y: np.ndarray, threshold: float) -> dict
 
 
 def export_onnx(model, sample: np.ndarray, path: Path) -> None:
-    """The fitted forest, with ``log1p(max(x, 0))`` prepended as graph nodes."""
-    import onnx
-    from onnx import TensorProto, compose, helper
-    from skl2onnx import to_onnx
+    """The fitted forest as one TreeEnsembleRegressor, behind ``log1p(max(x, 0))``.
 
-    core = to_onnx(model, log_scale(sample[:1]).astype(np.float32), target_opset=TARGET_OPSET)
+    skl2onnx converts an Isolation Forest into about 27 nodes per tree, 5,400 for 200
+    trees, and onnxruntime pays a few microseconds of dispatch per node: 8 ms for one
+    flow against the 5 ms budget of NFR-01, nearly all of it overhead rather than tree
+    walking. Every leaf's contribution to sklearn's path length is fixed once the
+    forest is fitted, so it is stored as that leaf's weight and the ensemble sums the
+    trees in one node; what follows is the closed form of ``decision_function``.
+    """
+    import onnx
+    from onnx import TensorProto, helper
+    from sklearn.ensemble._iforest import _average_path_length
+
+    nodes = {key: [] for key in ("treeids", "nodeids", "featureids", "values", "modes",
+                                 "truenodeids", "falsenodeids")}
+    targets = {key: [] for key in ("treeids", "nodeids", "weights")}
+    # With every feature in use (max_features=1.0) sklearn applies each tree to X as
+    # it is and ignores estimators_features_, so tree.feature indexes X directly.
+    for t, estimator in enumerate(model.estimators_):
+        tree = estimator.tree_
+        # sklearn compares float32 features against float64 thresholds; rounding each
+        # threshold down to float32 keeps every comparison on the same side.
+        thresholds = tree.threshold.astype(np.float32)
+        above = thresholds > tree.threshold
+        thresholds[above] = np.nextafter(thresholds[above], np.float32(-np.inf))
+        leaf_length = (model._decision_path_lengths[t]
+                       + model._average_path_length_per_tree[t] - 1.0)
+        for n in range(tree.node_count):
+            leaf = tree.children_left[n] == -1
+            nodes["treeids"].append(t)
+            nodes["nodeids"].append(n)
+            nodes["featureids"].append(0 if leaf else int(tree.feature[n]))
+            nodes["values"].append(0.0 if leaf else float(thresholds[n]))
+            nodes["modes"].append("LEAF" if leaf else "BRANCH_LEQ")
+            nodes["truenodeids"].append(0 if leaf else int(tree.children_left[n]))
+            nodes["falsenodeids"].append(0 if leaf else int(tree.children_right[n]))
+            if leaf:
+                targets["treeids"].append(t)
+                targets["nodeids"].append(n)
+                targets["weights"].append(float(leaf_length[n]))
+
+    # decision_function = -2 ** (-depth / (trees * c(max_samples))) - offset_
+    denominator = len(model.estimators_) * _average_path_length([model.max_samples_])[0]
     width = sample.shape[1]
-    pre = helper.make_model(
-        helper.make_graph(
-            [
-                helper.make_node("Max", ["input", "zero"], ["clipped"]),
-                helper.make_node("Add", ["clipped", "one"], ["shifted"]),
-                helper.make_node("Log", ["shifted"], ["logged"]),
-            ],
-            "log_scale",
-            [helper.make_tensor_value_info("input", TensorProto.FLOAT, [None, width])],
-            [helper.make_tensor_value_info("logged", TensorProto.FLOAT, [None, width])],
-            initializer=[
-                helper.make_tensor("zero", TensorProto.FLOAT, [], [0.0]),
-                helper.make_tensor("one", TensorProto.FLOAT, [], [1.0]),
-            ],
-        ),
-        opset_imports=list(core.opset_import),
-        ir_version=core.ir_version,
+    graph = helper.make_graph(
+        [
+            helper.make_node("Max", ["input", "zero"], ["clipped"]),
+            helper.make_node("Add", ["clipped", "one"], ["shifted"]),
+            helper.make_node("Log", ["shifted"], ["logged"]),
+            helper.make_node(
+                "TreeEnsembleRegressor", ["logged"], ["depth"], domain="ai.onnx.ml",
+                n_targets=1, aggregate_function="SUM", post_transform="NONE",
+                nodes_treeids=nodes["treeids"], nodes_nodeids=nodes["nodeids"],
+                nodes_featureids=nodes["featureids"], nodes_values=nodes["values"],
+                nodes_modes=nodes["modes"], nodes_truenodeids=nodes["truenodeids"],
+                nodes_falsenodeids=nodes["falsenodeids"],
+                target_treeids=targets["treeids"], target_nodeids=targets["nodeids"],
+                target_ids=[0] * len(targets["weights"]), target_weights=targets["weights"],
+            ),
+            helper.make_node("Mul", ["depth", "scale"], ["exponent"]),
+            helper.make_node("Pow", ["two", "exponent"], ["abnormality"]),
+            helper.make_node("Neg", ["abnormality"], ["score_samples"]),
+            helper.make_node("Sub", ["score_samples", "offset"], ["scores"]),
+        ],
+        "tier_d_isolation_forest",
+        [helper.make_tensor_value_info("input", TensorProto.FLOAT, [None, width])],
+        [helper.make_tensor_value_info("scores", TensorProto.FLOAT, [None, 1])],
+        initializer=[
+            helper.make_tensor("zero", TensorProto.FLOAT, [], [0.0]),
+            helper.make_tensor("one", TensorProto.FLOAT, [], [1.0]),
+            helper.make_tensor("two", TensorProto.FLOAT, [], [2.0]),
+            helper.make_tensor("scale", TensorProto.FLOAT, [], [-1.0 / denominator]),
+            helper.make_tensor("offset", TensorProto.FLOAT, [], [model.offset_]),
+        ],
     )
-    merged = compose.merge_models(pre, core, io_map=[("logged", core.graph.input[0].name)])
-    onnx.checker.check_model(merged)
-    path.write_bytes(merged.SerializeToString())
+    opsets = [helper.make_opsetid(d, v) for d, v in TARGET_OPSET.items()]
+    # The IR version onnx writes by default can be newer than onnxruntime reads.
+    onnx_model = helper.make_model(
+        graph, opset_imports=opsets, ir_version=helper.find_min_ir_version_for(opsets)
+    )
+    onnx.checker.check_model(onnx_model)
+    path.write_bytes(onnx_model.SerializeToString())
 
 
 def verify_onnx_parity(model, onnx_path: Path, x: np.ndarray) -> float:
@@ -189,7 +243,6 @@ def verify_onnx_parity(model, onnx_path: Path, x: np.ndarray) -> float:
 
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     outputs = session.run(None, {session.get_inputs()[0].name: x.astype(np.float32)})
-    # Two outputs: the label, then the decision_function scores.
     onnx_scores = np.asarray(outputs[-1]).ravel()
     return float(np.max(np.abs(onnx_scores - model.decision_function(log_scale(x)))))
 
