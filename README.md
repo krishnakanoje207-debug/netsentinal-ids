@@ -68,7 +68,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 709 tests, no database or network needed
+uv run pytest            # 713 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -99,8 +99,10 @@ uv run python -m netsentinel_training.eval.holdout --data data/processed
 ```
 
 Training refuses to emit artefacts unless the ONNX export agrees with the native
-model to within 1e-4. Each run writes a `model_card.json` whose fields map onto the
-`ml_models` table, and every model is born in `shadow` mode.
+model within a per-tier tolerance: 1e-4 for Tiers A, B and C, 5e-4 for the Tier D
+Isolation Forest, whose float32 path-length sums drift further (served model: 1.74e-4).
+Each run writes a `model_card.json` whose fields map onto the `ml_models` table, and
+every model is born in `shadow` mode.
 
 Tier C trains on the laptop CPU in windows of 20,000 flows. Tier B (1D-CNN + BiLSTM)
 needs packet captures, which the NetFlow datasets do not have, and the Tier D
@@ -124,10 +126,11 @@ carry it. The sensor scores through ONNX and publishes the feature vector; the w
 holds the native booster and produces the explanation. That is also why LightGBM lives
 in `writer` and in `training`, and nowhere near the API.
 
-Not every flow becomes a row. ClickHouse holds every scored flow; PostgreSQL holds the
-ones at or above the deciding threshold. A shadow verdict is stored — against the
-shadow tier's own score and threshold, so the shadow period can be evaluated
-afterwards — and never raises an alert.
+Not every flow becomes a row. PostgreSQL holds the ones at or above the deciding
+threshold; the rest are counted and dropped. ClickHouse has a `network_flows` table
+and DDL for scored flows, but no sink writing to it is built yet. A shadow verdict is
+stored — against the shadow tier's own score and threshold, so the shadow period can be
+evaluated afterwards — and never raises an alert.
 
 Delivery is at-least-once: the bus offset is committed after the database transaction,
 so a crash replays a message rather than losing a detection.

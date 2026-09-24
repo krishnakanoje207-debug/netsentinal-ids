@@ -8,7 +8,8 @@ threshold for real.
 Three decisions worth stating, because each one is a judgement rather than an
 obvious mechanic.
 
-**Not every flow becomes a detection.** ClickHouse already holds every scored flow;
+**Not every flow becomes a detection.** The scored flows stay on the retained bus topic
+(ClickHouse has a ``network_flows`` table for them, but no sink writes to it yet);
 PostgreSQL holds the ones that mean something. A flow below the deciding threshold is
 counted and dropped, so the alert store stays the size of the interesting traffic
 rather than the size of the link.
@@ -174,8 +175,8 @@ class DetectionWriter:
 
         risk_score = float(risk_score)
         if risk_score < float(threshold):
-            # ClickHouse has this flow already. PostgreSQL is for the ones that mean
-            # something.
+            # The flow stays on the retained bus topic. PostgreSQL is for the ones that
+            # mean something.
             self.stats.below_threshold += 1
             return None
 

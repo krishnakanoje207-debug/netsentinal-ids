@@ -35,7 +35,7 @@ built and tested but not running. Nothing below was dropped from the design.
 | Apache Kafka | **Fallback** only | Not used, by design | The plan locks **Redpanda** (Kafka API, lighter). Redpanda is in `docker-compose` (profile `bus`) and the sensor/writer speak the Kafka protocol; not run locally |
 | Apache Flink | **Out of scope for v1.0** | Not built, by design | Listed as future work in the plan (section 9.2); the Python scorer does the streaming |
 | NVIDIA Triton | Dropped in rev. 1 | Not used, by design | Replaced by in-process ONNX Runtime (0.07 ms per flow, no GPU server) |
-| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and D are trees and trained on the laptop CPU in minutes; Tiers B/C need the GPU |
+| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and D are trees and trained on the laptop CPU in minutes; Tier C (E-GraphSAGE) was also trained on the laptop CPU; only Tier B needs the GPU |
 | Hugging Face | Not in the plan | Used for data only | Public mirror of the NF-v3 datasets (the UQ portal needs a web form) |
 | Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured, not running | In `docker-compose` (profile `sensors`); need a Linux host to capture |
 | ClickHouse, Vector, Grafana (F5, F19) | VM | Configured, not running | In `docker-compose`; the demo uses PostgreSQL only |

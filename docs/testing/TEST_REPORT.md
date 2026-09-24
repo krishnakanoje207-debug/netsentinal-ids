@@ -65,7 +65,7 @@ Raw figures: `load/run_stats.csv`.
 | Same action approved twice | 409 |
 | Block aimed at one of the estate's own assets | 422, with the reason |
 | Browser: admin proposes, analyst escalates and confirms | all succeed; escalation says honestly that the case system is not connected |
-| Copilot on live alerts (llama3.2:3b, laptop GPU) | final prompt: 12 of 12 valid, all consistent with the detector; earlier prompts were rejected by the guards below and fixed |
+| Copilot on live alerts (llama3.2:3b, laptop GPU) | 12 of 12 replies passed the guards at the time; one was later found to reverse the flow direction, and a guard was added (section 5); earlier prompts were rejected by the guards below and fixed |
 | Demo launcher (Docker deployment) | PostgreSQL, API and dashboard up and healthy in 34 s; `-Dev` mode also verified |
 
 ## 5. Bugs found and fixed while testing
@@ -95,7 +95,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 |---|---|---|---|
 | O1 | Telemetry visible within 10 s | Deferred | needs Suricata/Zeek/Wazuh on the VM |
 | O2 | Signature detection of scan, brute force, web attack | Deferred | Suricata configured, not running |
-| O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Met (3 of 4 tiers trained) | A 1.000, C 0.994, D 0.64; macro-F1 0.52; cross-dataset 0.74 / 0.05 reported |
+| O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, C 0.994, D 0.64; macro-F1 0.52; cross-dataset 0.74 / 0.05 reported |
 | O4 | Early-flow scoring, < 5 ms per flow | Partial | Tier A 0.07 ms, Tier D 8.2 ms; early-packet extractor built and parity-tested, served models use flow aggregates |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
 | O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet |
@@ -103,7 +103,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
 | FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Deferred | Suricata and Zeek are services in the `sensors` Compose profile, never run; the JA4 package is not installed; Wazuh and Sysmon are not in Compose (`infra/README.md` points to Wazuh's own stack) |
 | FR-04 | Early-flow features | Partial | extractor + offline/live parity test |
-| FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; DDL generated from the contract |
+| FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; ClickHouse `network_flows` DDL generated from the contract, but no sink writes scored flows to it (they go sensor -> Redpanda -> writer -> PostgreSQL) |
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
 | FR-07 | Tier B | Partial | code + tests; needs packet captures |
 | FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; not yet in the live path |
@@ -125,12 +125,12 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | NFR-01 | Latency | Partial | Tier A within budget; the served Tier D Isolation Forest is not (section 3) |
 | NFR-02 | Page load | Met | section 3 |
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
-| NFR-04 | HTTPS, bcrypt, JWT expiry, RBAC, secrets out of git | Partial | all but HTTPS; transport relies on the SSH tunnel in deployment |
+| NFR-04 | HTTPS, bcrypt, JWT expiry, RBAC, secrets out of git | Met | nginx terminates TLS 1.2/1.3 for the dashboard, `/api` and the alert WebSocket (wss) on 127.0.0.1:5180, and redirects plain HTTP to HTTPS; the self-signed certificate is made at image build, so no key is in the repository (`frontend/nginx.conf`, `frontend/Dockerfile`); verified live: health 200 and analyst login 200 over HTTPS, wss stream connects, bad token refused |
 | NFR-05 | Safe LLM | Met | section 2 and 4 |
 | NFR-06 | Restart policies, buffering | Partial | `restart: unless-stopped`; bus buffering designed, not run |
 | NFR-07 | Alert to decision in <= 3 clicks, clear text | Met | Overview -> alert -> action |
 | NFR-08 | Modular, versioned, documented | Met | 7 packages, OpenAPI at /api/v1/docs |
 | NFR-09 | Scalable later | Met (by design) | Kafka-protocol bus; Flink is future work |
 | NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; `app` profile verified (up in 34 s); full stack never run on a 16 GB host; Wazuh not in Compose |
-| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id` into ClickHouse, which is not running |
+| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the ClickHouse flow table that would hold them has no sink writing to it |
 | NFR-12 | Free licences, academic datasets, attacks only in the lab | Met | see O8; `lab/scenarios/_guard.sh` refuses any target outside 172.30.0.0/24; published ports bind to 127.0.0.1 |
