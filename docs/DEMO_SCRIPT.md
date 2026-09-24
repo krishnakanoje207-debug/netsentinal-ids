@@ -154,7 +154,7 @@ The note is honest that these are agreement with analysts, not ground truth."
 **Screen:** the Key results and Limitations slides, or the overview page.
 
 **Say:** "On a temporal test split the Tier A model reaches PR-AUC 1.0000 with a 0.05%
-false-positive rate, and 713 Python and 94 dashboard tests pass. What it does not
+false-positive rate, and 733 Python and 94 dashboard tests pass. What it does not
 claim: moved to other networks' traffic the same model drops to 0.74 and 0.05, which is
 why every model must earn its place in shadow mode; the anomaly detector is over the
 5 ms latency budget; and the signature and host sensors need a cloud VM that was not

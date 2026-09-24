@@ -11,6 +11,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | M1 objective O3 (PR-AUC >= 0.90) | Met | same |
 | Shortcut found and removed | TTL alone scores 0.998; excluded from the model | same, section 2 |
 | Tier D (Isolation Forest, benign-only) | Recall 0.2% -> 40% after log-scaling | same, section 3 |
+| Tier D autoencoder (benign-only), test split | PR-AUC 0.933, recall 0.86 at 1.9% FPR, p99 0.28 ms; shadow mode, not in the demo path | `artefacts/tier_d_ae/model_card.json` |
 | Attack-family classification | macro-F1 0.52, accuracy 71% (attack flows only) | `artefacts/family/model_card.json` |
 | MITRE technique on ML alerts | Claimed only at >= 70% confidence, for families right >= 85% of the time on validation: Reconnaissance (T1046), Exploits (T1190), DoS (T1499). On the test split the family model is >= 70% confident on 55% of attacks, and 85% of those confident families are right; only the confident ones in the three families above get a technique, so the technique share is lower (not measured). On the family-balanced demo replay, which over-represents the hard rare families, 21 of 31 labels were right (68%) and 104 alerts got none | same |
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
@@ -20,7 +21,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms | `docs/testing/TEST_REPORT.md` |
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities | same |
-| Automated tests | 709 Python (81% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
+| Automated tests | 733 Python (82% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -35,7 +36,7 @@ built and tested but not running. Nothing below was dropped from the design.
 | Apache Kafka | **Fallback** only | Not used, by design | The plan locks **Redpanda** (Kafka API, lighter). Redpanda is in `docker-compose` (profile `bus`) and the sensor/writer speak the Kafka protocol; not run locally |
 | Apache Flink | **Out of scope for v1.0** | Not built, by design | Listed as future work in the plan (section 9.2); the Python scorer does the streaming |
 | NVIDIA Triton | Dropped in rev. 1 | Not used, by design | Replaced by in-process ONNX Runtime (0.07 ms per flow, no GPU server) |
-| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and D are trees and trained on the laptop CPU in minutes; Tier C (E-GraphSAGE) was also trained on the laptop CPU; only Tier B needs the GPU |
+| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and the Tier D forest are trees and trained on the laptop CPU in minutes; Tier C (E-GraphSAGE) and the Tier D autoencoder were also trained on the laptop CPU; only Tier B needs the GPU |
 | Hugging Face | Not in the plan | Used for data only | Public mirror of the NF-v3 datasets (the UQ portal needs a web form) |
 | Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured, not running | In `docker-compose` (profile `sensors`); need a Linux host to capture |
 | ClickHouse, Vector, Grafana (F5, F19) | VM | Configured, not running | In `docker-compose`; the demo uses PostgreSQL only |
@@ -46,7 +47,7 @@ built and tested but not running. Nothing below was dropped from the design.
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
 | Tier B, 1D-CNN + BiLSTM (F7) | Kaggle | Code + tests; **not trained** | Needs packet captures (SPLT); NetFlow datasets have none |
 | Tier C, E-GraphSAGE (F8) | Kaggle | **Trained on the laptop CPU** (20k-flow windows) and evaluated | Not yet in the live scoring path: it scores windows, not single flows |
-| Tier D autoencoder (F9) | Kaggle | Not built | Isolation Forest half is done |
+| Tier D autoencoder (F9) | Kaggle | **Trained on the laptop CPU** and evaluated; card in shadow mode | Not yet registered in the demo, which serves the Isolation Forest |
 
 ## Remaining work, in order
 

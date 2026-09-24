@@ -68,7 +68,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 713 tests, no database or network needed
+uv run pytest            # 733 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -88,6 +88,8 @@ uv run netsentinel-train-tier-a --data data/processed --out artefacts/tier_a
 
 # D6 — Tier D Isolation Forest, trained on benign flows only
 uv run python -m netsentinel_training.models.tier_d --data data/processed --out artefacts/tier_d
+# and its second half, a dense autoencoder on the same benign flows
+uv run python -m netsentinel_training.models.tier_d_ae --data data/processed --out artefacts/tier_d_ae
 
 # Tier C graph model, on 20k-flow time windows; and the attack-family model
 uv run python -m netsentinel_training.models.tier_c --data data/processed --out artefacts/tier_c
@@ -104,9 +106,10 @@ Isolation Forest, whose float32 path-length sums drift further (served model: 1.
 Each run writes a `model_card.json` whose fields map onto the `ml_models` table, and
 every model is born in `shadow` mode.
 
-Tier C trains on the laptop CPU in windows of 20,000 flows. Tier B (1D-CNN + BiLSTM)
-needs packet captures, which the NetFlow datasets do not have, and the Tier D
-autoencoder is not built yet.
+Tier C trains on the laptop CPU in windows of 20,000 flows, and so does the Tier D
+autoencoder (PR-AUC 0.933 against the forest's 0.639, p99 0.28 ms); its card is in
+shadow mode and the demo still serves the forest. Tier B (1D-CNN + BiLSTM) needs
+packet captures, which the NetFlow datasets do not have.
 
 ## From the wire to the dashboard
 

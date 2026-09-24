@@ -9,11 +9,14 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 713 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 733 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 94 | all pass | `cd frontend; npx vitest run` |
 
-**Coverage** (Python, `coverage.txt`): **81%** of 4,505 statements. The uncovered code is
+The Python suite and coverage were re-run on 24 September after the Tier D autoencoder
+and the failed-login audit test were added.
+
+**Coverage** (Python, `coverage.txt`): **82%** of 4,667 statements. The uncovered code is
 concentrated in command-line entry points (intel sync, vulnerability import, the
 Copilot and writer CLIs: 0%) and in the real-database repository and WebSocket stream
 (about 50%), which the suite replaces with fakes. Those paths were exercised live in
@@ -107,7 +110,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
 | FR-07 | Tier B | Partial | code + tests; needs packet captures |
 | FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; not yet in the live path |
-| FR-09 | Tier D | Partial | Isolation Forest met; autoencoder not built |
+| FR-09 | Tier D | Met (offline) | Isolation Forest served; autoencoder trained on benign flows only: PR-AUC 0.933, recall 0.86 at 1.9% FPR, p99 0.28 ms; card in shadow mode, not in the demo path |
 | FR-10 | Fusion with signatures and intel | Partial | A+D fused; intel raises severity; signatures not running |
 | FR-11 | Shadow / active, switchable | Met | promotion gate, CLI and dashboard |
 | FR-12 | SHAP on every detection | Met | database constraint |
