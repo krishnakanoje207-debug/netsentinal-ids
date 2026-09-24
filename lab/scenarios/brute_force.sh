@@ -21,6 +21,8 @@ TARGET="${1:-$VICTIM_SSH}"
 require_lab_target "$TARGET"
 
 USER="labuser"
+# linuxserver/openssh-server listens on 2222, not 22.
+PORT=2222
 # A handful of wrong guesses, then the password the lab container ships with. The
 # point is the failed-then-succeeded pattern, not discovering anything: the answer
 # is in the compose file.
@@ -36,10 +38,10 @@ password
 password123
 PASSWORDS
 
-echo "[brute] ${USER}@${TARGET} over SSH, ${TARGET}:22"
+echo "[brute] ${USER}@${TARGET} over SSH, ${TARGET}:${PORT}"
 # -t 4 keeps the concurrency low enough that the lab container stays up and the flow
 # records stay legible; a real attack would go wider, and a wider run detects at
 # least as well.
-hydra -l "$USER" -P "$WORDLIST" -t 4 -f "ssh://${TARGET}" || true
+hydra -l "$USER" -P "$WORDLIST" -t 4 -f "ssh://${TARGET}:${PORT}" || true
 
 echo "[brute] done"
