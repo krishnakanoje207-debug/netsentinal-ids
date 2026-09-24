@@ -251,6 +251,17 @@ def test_the_nearest_label_wins(tmp_path):
     assert label_flows(flows, labels).get_column(ATTACK_COLUMN).to_list() == ["DDoS"]
 
 
+def test_an_attack_label_beats_a_benign_one_in_the_same_minute(tmp_path):
+    """CICFlowMeter also writes the server's side of an attacked conversation as a
+    reversed flow labelled BENIGN, in the same minute; that must not unlabel the attack."""
+    start = DAY.timestamp() + 10
+    flows = _flows(tmp_path, [start])
+    labels = pl.concat([labels_for([(40000, start, "BENIGN")], reverse=True),
+                        labels_for([(40000, start, "DDoS")])])
+    for order in (labels, labels.reverse()):
+        assert label_flows(flows, order).get_column(ATTACK_COLUMN).to_list() == ["DDoS"]
+
+
 def test_each_capture_is_split_by_its_own_timeline():
     """Test is always later than train, within every capture, however far apart they are."""
     frame = pl.DataFrame({

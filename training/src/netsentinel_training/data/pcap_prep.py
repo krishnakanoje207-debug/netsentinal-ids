@@ -244,6 +244,16 @@ def label_flows(flows: pl.DataFrame, labels: pl.DataFrame,
             (pl.col("Timestamp").dt.epoch("ms") / 1000 + 30.0).alias("_t"),
             pl.col("Label").str.strip_chars().alias("_label"),
         )
+        # CICFlowMeter also writes the server's side of an attacked conversation as a
+        # reversed flow labelled BENIGN in the same minute (Engelen et al., 2021); on
+        # such a tie the attack label wins, rather than whichever row the join meets.
+        .group_by("_key", "_t")
+        .agg(
+            pl.col("_label")
+            .filter(pl.col("_label").str.to_uppercase() != BENIGN_LABEL)
+            .first()
+            .fill_null(BENIGN_LABEL)
+        )
         .sort("_t")
     )
     matched = (
