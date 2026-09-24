@@ -52,6 +52,8 @@ def _sequences(rows: int, rng: np.random.Generator) -> pl.DataFrame:
     data = {name: lengths[:, i] for i, name in enumerate(TIER_B_FEATURES[:SPLT_N])}
     data.update({name: gaps[:, i] for i, name in enumerate(TIER_B_FEATURES[SPLT_N:])})
     data["Label"] = is_attack.astype(np.int8)
+    data["Attack"] = np.where(is_attack, "PortScan", "Benign")
+    data["source_capture"] = np.full(rows, "synthetic.pcap")
     return pl.DataFrame(data)
 
 
@@ -194,6 +196,22 @@ def test_normalisation_is_recorded_for_reference(card):
     """Baked into the graph, but recorded so a card explains itself."""
     assert len(card["normalisation"]["mean"]) == CHANNELS
     assert all(value > 0 for value in card["normalisation"]["std"])
+
+
+def test_card_records_latency_one_flow_per_call(card):
+    """NFR-01 is per flow, so the card times single-flow calls, as the sensor makes them."""
+    assert card["latency_ms"]["calls"] > 0
+    assert 0 < card["latency_ms"]["p50"] <= card["latency_ms"]["p99"]
+
+
+def test_card_reports_recall_per_attack(card):
+    assert set(card["attack_recall_test"]) == {"PortScan"}
+    assert 0.0 <= card["attack_recall_test"]["PortScan"] <= 1.0
+
+
+def test_card_names_the_captures_and_the_epochs(card):
+    assert card["sources"] == ["synthetic.pcap"]
+    assert 1 <= card["epochs_run"] <= 12
 
 
 def test_the_weights_are_inside_the_hashed_file(card, out_dir):

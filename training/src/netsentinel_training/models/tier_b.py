@@ -38,6 +38,7 @@ from netsentinel_core.features.contract import (
     SPLT_N,
     TIER_B_FEATURES,
 )
+from netsentinel_training.data.pcap_prep import ATTACK_COLUMN, SOURCE_COLUMN
 from netsentinel_training.models.tier_a import (
     LABEL_COLUMN,
     TARGET_MAX_FPR,
@@ -47,6 +48,7 @@ from netsentinel_training.models.tier_a import (
     fit_platt,
     sha256,
 )
+from netsentinel_training.models.tier_d_ae import onnx_latency, per_family
 
 #: Two channels: signed packet length, and inter-arrival time in milliseconds.
 CHANNELS = 2
@@ -238,6 +240,7 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
             optimiser.step()
 
         val_score = float(average_precision_score(y_val, _predict(model, x_val)))
+        print(f"  epoch {epoch + 1}: validation PR-AUC {val_score:.4f}")
         if val_score > best_score:
             best_score, since_best = val_score, 0
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
@@ -262,8 +265,15 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
 
     probs_test = np.clip(_predict(model, x_test), 1e-7, 1 - 1e-7)
     margin_test = np.log(probs_test / (1 - probs_test))
-    metrics = evaluate(apply_platt(margin_test, a, b), y_test.astype(np.int8), threshold)
+    calibrated_test = apply_platt(margin_test, a, b)
+    metrics = evaluate(calibrated_test, y_test.astype(np.int8), threshold)
     uncalibrated = evaluate(probs_test, y_test.astype(np.int8), threshold)
+    test_columns = pl.read_parquet_schema(data_dir / "test.parquet")
+    attack_recall = (
+        per_family(pl.read_parquet(data_dir / "test.parquet", columns=[ATTACK_COLUMN])
+                   .get_column(ATTACK_COLUMN).to_numpy(), y_test, calibrated_test >= threshold)
+        if ATTACK_COLUMN in test_columns else {}
+    )
 
     onnx_path = out_dir / "tier_b.onnx"
     export_onnx(model, onnx_path)
@@ -274,6 +284,7 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
             f"(tolerance {ONNX_TOLERANCE:.0e}); the served model would not be the model "
             "that was evaluated"
         )
+    latency = onnx_latency(onnx_path, x_test)
 
     card = {
         "name": "tier_b_cnn_bilstm",
@@ -291,15 +302,25 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
         "normalisation": {"mean": mean.tolist(), "std": std.tolist()},
         "metrics_test": metrics,
         "metrics_test_uncalibrated": uncalibrated,
+        "attack_recall_test": attack_recall,
+        "latency_ms": latency,
         "onnx_max_abs_drift": max_drift,
         "sequence_length": SPLT_N,
+        "epochs_run": epoch + 1,
+        # Which captures the splits were cut from, so the card says what it was trained on.
+        "sources": (
+            pl.read_parquet(data_dir / "test.parquet", columns=[SOURCE_COLUMN])
+            .get_column(SOURCE_COLUMN).unique().sort().to_list()
+            if SOURCE_COLUMN in test_columns else []
+        ),
     }
     (out_dir / "model_card.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
 
     print(f"PR-AUC {metrics['pr_auc']:.4f}  ROC-AUC {metrics['roc_auc']:.4f}")
     print(f"at threshold {threshold:.4f}: precision {metrics['precision']:.4f} "
           f"recall {metrics['recall']:.4f} FPR {metrics['false_positive_rate']:.4f}")
-    print(f"ONNX max drift {max_drift:.2e}")
+    print(f"ONNX max drift {max_drift:.2e}; latency p50 {latency['p50']:.3f} ms "
+          f"p99 {latency['p99']:.3f} ms")
     print(f"artefacts -> {out_dir}")
     return card
 
