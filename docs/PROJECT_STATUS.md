@@ -17,6 +17,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
 | Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D 8.2 ms (over budget) | same, section 6 |
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
+| Tier B (1D-CNN + BiLSTM, first 20 packets), CIC-IDS2017 Friday captures split by time | PR-AUC 0.997, recall 0.97 at 1.0% FPR; recall PortScan 1.00, DDoS 0.80, Bot 0.29 (0.80 and 0.94 on flows of 4+ packets); p99 1.2 ms; shadow mode | `artefacts/tier_b/model_card.json` |
 | Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874 | `artefacts/tier_c/model_card.json` |
 | Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms | `docs/testing/TEST_REPORT.md` |
@@ -36,7 +37,7 @@ built and tested but not running. Nothing below was dropped from the design.
 | Apache Kafka | **Fallback** only | Not used, by design | The plan locks **Redpanda** (Kafka API, lighter). Redpanda is in `docker-compose` (profile `bus`) and the sensor/writer speak the Kafka protocol; not run locally |
 | Apache Flink | **Out of scope for v1.0** | Not built, by design | Listed as future work in the plan (section 9.2); the Python scorer does the streaming |
 | NVIDIA Triton | Dropped in rev. 1 | Not used, by design | Replaced by in-process ONNX Runtime (0.07 ms per flow, no GPU server) |
-| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and the Tier D forest are trees and trained on the laptop CPU in minutes; Tier C (E-GraphSAGE) and the Tier D autoencoder were also trained on the laptop CPU; only Tier B needs the GPU |
+| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and the Tier D forest are trees and trained on the laptop CPU in minutes; Tier B, Tier C (E-GraphSAGE) and the Tier D autoencoder were also trained on the laptop CPU |
 | Hugging Face | Not in the plan | Used for data only | Public mirror of the NF-v3 datasets (the UQ portal needs a web form) |
 | Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured, not running | In `docker-compose` (profile `sensors`); need a Linux host to capture |
 | ClickHouse, Vector, Grafana (F5, F19) | VM | Configured, not running | In `docker-compose`; the demo uses PostgreSQL only |
@@ -45,7 +46,7 @@ built and tested but not running. Nothing below was dropped from the design.
 | CrowdSec + nftables (F16) | VM | Integration built and tested against fakes | Needs a Linux edge |
 | Greenbone/OpenVAS (F17) | VM, scan window | Importer built and tested | Runs in its own window on the VM |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
-| Tier B, 1D-CNN + BiLSTM (F7) | Kaggle | Code + tests; **not trained** | Needs packet captures (SPLT); NetFlow datasets have none |
+| Tier B, 1D-CNN + BiLSTM (F7) | Kaggle | **Trained on the laptop CPU** on four CIC-IDS2017 Friday capture windows (~400 MB fetched by range requests), labelled from the official labelled flows; card in shadow mode | Not yet in the live scoring path: the sensor must emit SPLT sequences to the scorer |
 | Tier C, E-GraphSAGE (F8) | Kaggle | **Trained on the laptop CPU** (20k-flow windows) and evaluated | Not yet in the live scoring path: it scores windows, not single flows |
 | Tier D autoencoder (F9) | Kaggle | **Trained on the laptop CPU** and evaluated; card in shadow mode | Not yet registered in the demo, which serves the Isolation Forest |
 
@@ -64,9 +65,9 @@ dashboard redesign was one long session.
 | 5 | One-command deployment (API + dashboard + DB in Compose) and user manual | M5 | 3-4 h |
 | 6 | Final report (SRS, design, implementation, testing) and slides | M5 | 4-6 h |
 | 7 | Cloud VM with Suricata/Zeek/Wazuh live (needs your Azure for Students account) | Full plan | 6-8 h, plus your account setup |
-| 8 | Tier B with packet captures (large download) | Full plan | 4-6 h |
+| 8 | ~~Tier B with packet captures~~ | Done (shadow) | |
 
-Items 1-6 fit the 7-day window. Items 7-8 depend on a cloud VM and are the honest
+Items 1-6 fit the 7-day window. Item 7 depends on a cloud VM and are the honest
 "future work" if the window closes first.
 
 ## What I need from you
