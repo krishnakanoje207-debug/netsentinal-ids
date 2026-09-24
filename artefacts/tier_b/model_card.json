@@ -1,0 +1,121 @@
+{
+  "name": "tier_b_cnn_bilstm",
+  "tier": "B",
+  "version": "1.0.0",
+  "onnx_sha256": "7cab3b5a3359cafb7fb55d768d67979a14de300910aa7b4b6bcb5f168270dbd3",
+  "threshold": 0.9542807936668396,
+  "mode": "shadow",
+  "pr_auc": 0.992463658516032,
+  "feature_order": [
+    "splt_len_0",
+    "splt_len_1",
+    "splt_len_2",
+    "splt_len_3",
+    "splt_len_4",
+    "splt_len_5",
+    "splt_len_6",
+    "splt_len_7",
+    "splt_len_8",
+    "splt_len_9",
+    "splt_len_10",
+    "splt_len_11",
+    "splt_len_12",
+    "splt_len_13",
+    "splt_len_14",
+    "splt_len_15",
+    "splt_len_16",
+    "splt_len_17",
+    "splt_len_18",
+    "splt_len_19",
+    "splt_iat_0",
+    "splt_iat_1",
+    "splt_iat_2",
+    "splt_iat_3",
+    "splt_iat_4",
+    "splt_iat_5",
+    "splt_iat_6",
+    "splt_iat_7",
+    "splt_iat_8",
+    "splt_iat_9",
+    "splt_iat_10",
+    "splt_iat_11",
+    "splt_iat_12",
+    "splt_iat_13",
+    "splt_iat_14",
+    "splt_iat_15",
+    "splt_iat_16",
+    "splt_iat_17",
+    "splt_iat_18",
+    "splt_iat_19"
+  ],
+  "calibration": {
+    "method": "platt",
+    "a": 1.1475764513015747,
+    "b": 1.2888127565383911
+  },
+  "target_max_fpr": 0.01,
+  "rows": {
+    "train": 103772,
+    "val": 43882,
+    "test": 44692
+  },
+  "class_balance_train": {
+    "attack": 80618,
+    "benign": 23154
+  },
+  "normalisation": {
+    "mean": [
+      -243.1810760498047,
+      238.67886352539062
+    ],
+    "std": [
+      1234.9708251953125,
+      1353.2669677734375
+    ]
+  },
+  "metrics_test": {
+    "pr_auc": 0.992463658516032,
+    "roc_auc": 0.9896169519357028,
+    "brier": 0.02244609035551548,
+    "precision": 0.9975905013498998,
+    "recall": 0.9265280811022136,
+    "f1": 0.9607470364571684,
+    "false_positive_rate": 0.010916743390766802,
+    "true_positives": 34364,
+    "false_positives": 83,
+    "false_negatives": 2725,
+    "true_negatives": 7520
+  },
+  "metrics_test_uncalibrated": {
+    "pr_auc": 0.9924629076012864,
+    "roc_auc": 0.9896169519357029,
+    "brier": 0.027053864672780037,
+    "precision": 0.9984871406959153,
+    "recall": 0.9075467119631158,
+    "f1": 0.9508474576271186,
+    "false_positive_rate": 0.006707878469025385,
+    "true_positives": 33660,
+    "false_positives": 51,
+    "false_negatives": 3429,
+    "true_negatives": 7552
+  },
+  "attack_recall_test": {
+    "Bot": 0.22699386503067484,
+    "DDoS": 0.24930491195551435,
+    "PortScan": 0.9949835257799282
+  },
+  "latency_ms": {
+    "p50": 0.40500000068277586,
+    "p99": 1.5469740004300543,
+    "calls": 2000
+  },
+  "onnx_max_abs_drift": 1.430511474609375e-06,
+  "sequence_length": 20,
+  "epochs_run": 17,
+  "sources": [
+    "benign_1159-1208.pcapng",
+    "bot_1336-1350.pcapng",
+    "ddos_1856-1859.pcapng",
+    "portscan_1751-1756.pcapng"
+  ]
+}
