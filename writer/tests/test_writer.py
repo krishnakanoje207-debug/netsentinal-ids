@@ -7,6 +7,11 @@ stops matching the build.
 
 from __future__ import annotations
 
+import contextlib
+import signal
+import sys
+import types
+
 import pytest
 
 from netsentinel_api.db.models import (
@@ -280,3 +285,62 @@ def test_a_refusal_leaves_the_offset_uncommitted(writer, session, make_payload):
     with pytest.raises(ContractMismatch):
         writer.run(consumer)
     assert consumer.commits == 0
+
+
+class _KafkaStoppedMidMessage:
+    """confluent_kafka.Consumer whose one message is in flight when SIGTERM arrives.
+    Committing on a closed consumer raises, as the real client does."""
+
+    def __init__(self, handlers, events) -> None:
+        self._handlers, self.events, self._closed = handlers, events, False
+
+    def subscribe(self, _topics) -> None:
+        pass
+
+    def poll(self, _timeout):
+        return types.SimpleNamespace(error=lambda: None, value=lambda: b"{}")
+
+    def commit(self, asynchronous: bool = True) -> None:
+        if self._closed:
+            raise RuntimeError("Consumer closed")
+        self.events.append("commit")
+
+    def close(self) -> None:
+        self._closed = True
+        self.events.append("close")
+
+
+def test_sigterm_mid_message_still_commits_its_offset(monkeypatch):
+    """Closing the consumer from the signal handler made the in-flight message's
+    offset commit raise, so the message was written again on restart."""
+    from netsentinel_writer import main as entry
+
+    handlers: dict = {}
+    events: list[str] = []
+    kafka = _KafkaStoppedMidMessage(handlers, events)
+    monkeypatch.setattr(entry.signal, "signal", lambda signum, h: handlers.__setitem__(signum, h))
+    monkeypatch.setitem(
+        sys.modules, "confluent_kafka", types.SimpleNamespace(Consumer=lambda _config: kafka)
+    )
+    monkeypatch.setattr(entry, "load_explainer", lambda *_: types.SimpleNamespace(
+        name="m", version="1", tier="A", identity="m:1"))
+    monkeypatch.setattr(entry, "get_sessionmaker", lambda: contextlib.nullcontext)
+    monkeypatch.setattr(entry, "resolve_model_id", lambda *_: 1)
+    monkeypatch.setattr(entry, "resolve_sensor_id", lambda _s, sensor_id: sensor_id)
+    monkeypatch.setattr(entry, "get_settings", lambda: None)
+    monkeypatch.setattr(entry, "forwarder_from", lambda _settings: None)
+
+    class Writer:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def run(self, consumer):
+            for _message in consumer.messages():
+                handlers[signal.SIGTERM](signal.SIGTERM, None)  # while it is handled
+                consumer.commit()
+            return types.SimpleNamespace(as_dict=dict)
+
+    monkeypatch.setattr(entry, "DetectionWriter", Writer)
+
+    assert entry.main(["--card", "card.json", "--sensor-id", "1"]) == 0
+    assert events == ["commit", "close"]

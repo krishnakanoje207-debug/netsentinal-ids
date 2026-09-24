@@ -139,15 +139,17 @@ def main(argv: list[str] | None = None) -> int:
         consumer = RedpandaConsumer(
             args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
         )
+        # SIGTERM is how Docker stops a container. Stopping, not closing, ends the
+        # loop after the message in flight and still lets its offset be committed;
+        # a closed consumer cannot commit, and the message would be written again.
+        for signal_name in ("SIGINT", "SIGTERM"):
+            if hasattr(signal, signal_name):
+                signal.signal(getattr(signal, signal_name), lambda *_: consumer.stop())
 
-    # SIGTERM is how Docker stops a container. Closing the consumer ends the loop
-    # after the message in flight, so no offset is committed for a write that did
-    # not happen.
-    for signal_name in ("SIGINT", "SIGTERM"):
-        if hasattr(signal, signal_name):
-            signal.signal(getattr(signal, signal_name), lambda *_: consumer.close())
-
-    stats = writer.run(consumer)
+    try:
+        stats = writer.run(consumer)
+    finally:
+        consumer.close()
     logger.info("finished: %s", stats.as_dict())
     return 0
 
