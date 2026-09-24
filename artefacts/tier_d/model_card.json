@@ -1,8 +1,8 @@
 {
   "name": "tier_d_isolation_forest",
   "tier": "D",
-  "version": "1.0.0",
-  "onnx_sha256": "5334bb274a36da78120b7d70a10768e3baad9415614a391f44538f8e383b075f",
+  "version": "1.0.1",
+  "onnx_sha256": "ec02fb758f8a232d63a67deeea94db76be5ffe3e29dc8616785625b73285cf62",
   "threshold": 0.99,
   "mode": "shadow",
   "pr_auc": 0.6389023052460401,
@@ -245,6 +245,6 @@
     "pr_auc": 0.6389023052460401,
     "roc_auc": 0.9522382529068278
   },
-  "onnx_max_abs_drift": 0.00017428703144950486,
+  "onnx_max_abs_drift": 0.00017434663609428025,
   "trained_on": "benign flows only"
 }
