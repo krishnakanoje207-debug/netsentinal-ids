@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from netsentinel_core.features.contract import TIER_A_FEATURES
@@ -112,3 +114,34 @@ def test_a_flow_missing_a_required_feature_is_refused(active_scorer, malicious_f
     del malicious_flow.scalars[TIER_A_FEATURES[0]]
     with pytest.raises(ScoringError, match="absent from this flow"):
         active_scorer.score(malicious_flow)
+
+
+# --- two models of one tier -----------------------------------------------
+
+def _tier_d_pair(card):
+    """The served forest and a shadow challenger of the same tier."""
+    forest = dataclasses.replace(load_model(card), mode="active")
+    challenger = dataclasses.replace(load_model(card), name="tier_d_autoencoder")
+    return forest, challenger
+
+
+def test_a_shadow_model_of_a_served_tier_does_not_move_the_verdict(
+    tier_d_shadow_card, malicious_flow
+):
+    forest, challenger = _tier_d_pair(tier_d_shadow_card)
+    alone = FusionScorer([forest]).score(malicious_flow)
+    verdict = FusionScorer([forest, challenger]).score(malicious_flow)
+
+    assert verdict.risk_score == alone.risk_score
+    assert verdict.threshold == alone.threshold
+    assert verdict.decided_by == alone.decided_by
+    # Recorded under its own name, beside the forest's score rather than over it.
+    assert verdict.model_scores["tier_d"] == alone.model_scores["tier_d"]
+    assert 0.0 <= verdict.model_scores["tier_d_autoencoder"] <= 1.0
+
+
+def test_two_active_models_of_one_tier_are_refused(tier_d_shadow_card):
+    """Weights are per tier, so the second would count the tier twice."""
+    forest, challenger = _tier_d_pair(tier_d_shadow_card)
+    with pytest.raises(ScoringError, match="more than one active model per tier"):
+        FusionScorer([forest, dataclasses.replace(challenger, mode="active")])

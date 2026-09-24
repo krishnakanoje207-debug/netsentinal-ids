@@ -69,8 +69,23 @@ class FusionScorer:
     ) -> None:
         if not models:
             raise ScoringError("a scorer needs at least one model")
+        active_tiers = [model.tier for model in models if model.is_active]
+        if len(active_tiers) != len(set(active_tiers)):
+            # Weights are per tier, so a second active model of one tier would count
+            # that tier twice in the fused score.
+            raise ScoringError(f"more than one active model per tier: {active_tiers}")
         self._models = models
         self._weights = weights or DEFAULT_TIER_WEIGHTS
+        tiers = [model.tier for model in models]
+        # A tier's score is reported as ``tier_x``. A shadow model sharing its tier
+        # with another model is reported under its own name instead, so it cannot
+        # overwrite the score of the model it is being compared against.
+        self._keys = [
+            f"tier_{model.tier.lower()}"
+            if model.is_active or tiers.count(model.tier) == 1
+            else model.name
+            for model in models
+        ]
 
     @property
     def models(self) -> list[LoadedModel]:
@@ -105,9 +120,9 @@ class FusionScorer:
 
         weighted_total = 0.0
         weight_sum = 0.0
-        for model in self._models:
+        for model, key in zip(self._models, self._keys):
             probability = float(model.score(self._vector_for(model, features))[0])
-            verdict.model_scores[f"tier_{model.tier.lower()}"] = probability
+            verdict.model_scores[key] = probability
 
             if not model.is_active:
                 continue
