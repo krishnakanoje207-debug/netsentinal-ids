@@ -129,6 +129,19 @@ def test_identical_matches_are_counted_not_collapsed():
     assert sync(second, found, first.added) == 1
 
 
+@pytest.mark.parametrize("signature", [
+    "ET INFO Unconfigured nginx Access",
+    "ET HUNTING curl User-Agent to Dotted Quad",
+])
+def test_informational_and_hunting_rules_are_not_imported(signature):
+    """Both fired on the lab's benign traffic; neither is a detection."""
+    found = parse_eve([_eve(alert={"signature": signature, "severity": 2})])
+    assert found[0].context
+    session = StubSession()
+    assert sync(session, found, []) == 0
+    assert session.added == []
+
+
 def test_a_model_alert_with_the_same_shape_does_not_hide_a_signature_alert():
     model_alert = Alert(source="ml", severity=Severity.high, src_ip="172.30.0.3",
                         dst_ip="172.30.0.10", mitre_technique="T1190", created_at=AT)
@@ -137,10 +150,11 @@ def test_a_model_alert_with_the_same_shape_does_not_hide_a_signature_alert():
 
 def test_the_import_is_audited(tmp_path):
     eve = tmp_path / "eve.json"
-    eve.write_text(_eve() + "\n" + _eve(event_type="flow") + "\n", encoding="utf-8")
+    info = _eve(alert={"signature": "ET INFO Unconfigured nginx Access", "severity": 3})
+    eve.write_text("\n".join([_eve(), _eve(event_type="flow"), info]) + "\n", encoding="utf-8")
     session = StubSession()
 
-    assert run(session, eve) == {"alerts": 1, "added": 1}
+    assert run(session, eve) == {"alerts": 2, "skipped": 1, "added": 1}
     audit, = [row for row in session.added if isinstance(row, AuditLog)]
     assert audit.action == "alerts.imported"
-    assert audit.details == {"alerts": 1, "added": 1}
+    assert audit.details == {"alerts": 2, "skipped": 1, "added": 1}

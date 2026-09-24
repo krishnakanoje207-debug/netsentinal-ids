@@ -9,6 +9,12 @@ Input is Suricata's ``eve.json``: one JSON object per line, of which only
 ``event_type: alert`` records are alerts. The rest (flow, http, ssh, stats) is
 telemetry the models have their own path for.
 
+Not every alert record is a detection. ET Open's ``ET INFO`` and ``ET HUNTING`` rules
+are context - curl talking to a bare IP, an unconfigured nginx - and on the lab's
+captures they outnumbered the attack signatures eight to one, and were every alert on
+the benign one. They are counted and skipped, so the feed holds what an analyst should
+act on.
+
 The table has no column for the signature itself, so the rule name and sid are not
 stored. What is kept is what the schema has room for: when, between whom, how bad,
 and the ATT&CK technique when the rule's metadata names one.
@@ -33,6 +39,10 @@ SOURCE = "suricata"
 #: compromise.
 SEVERITIES = {1: Severity.high, 2: Severity.medium, 3: Severity.low}
 
+#: Rule-name prefixes of ET Open's informational and hunting rules, which are not
+#: detections.
+CONTEXT_PREFIXES = ("ET INFO ", "ET HUNTING ")
+
 _TECHNIQUE = re.compile(r"^T\d{4}(\.\d{3})?$")
 
 
@@ -49,6 +59,11 @@ class SignatureAlert:
     dst_ip: str | None
     severity: Severity
     technique: str | None
+    signature: str
+
+    @property
+    def context(self) -> bool:
+        return self.signature.startswith(CONTEXT_PREFIXES)
 
     @property
     def key(self) -> tuple:
@@ -75,6 +90,7 @@ def parse_eve(lines: Iterable[str]) -> list[SignatureAlert]:
                 dst_ip=_ip(event.get("dest_ip")),
                 severity=SEVERITIES.get(alert.get("severity"), Severity.info),
                 technique=_technique(alert.get("metadata") or {}),
+                signature=alert.get("signature") or "",
             )
         )
     return found
@@ -106,6 +122,8 @@ def _technique(metadata: dict) -> str | None:
 def sync(session, found: Iterable[SignatureAlert], existing: Iterable[Alert]) -> int:
     """Insert the alerts not already recorded, and return how many were added.
 
+    Context rules (``CONTEXT_PREFIXES``) are never inserted.
+
     ``existing`` is passed in, as in ``services.vulns``, so the decision is testable
     without a database. Re-importing a file must not double the feed, and there is no
     event id column to be unique on, so the rows are compared as a multiset: a file
@@ -124,6 +142,8 @@ def sync(session, found: Iterable[SignatureAlert], existing: Iterable[Alert]) ->
     )
     added = 0
     for match in found:
+        if match.context:
+            continue
         if have[match.key] > 0:
             have[match.key] -= 1
             continue

@@ -24,7 +24,8 @@ def run(session, path: Path) -> dict[str, int]:
     with path.open(encoding="utf-8") as lines:
         found = parse_eve(lines)
     added = sync(session, found, session.scalars(select(Alert).where(Alert.source == SOURCE)))
-    stats = {"alerts": len(found), "added": added}
+    skipped = sum(match.context for match in found)
+    stats = {"alerts": len(found), "skipped": skipped, "added": added}
     session.add(
         AuditLog(
             user_id=None,  # an operator ran the import; nobody is logged in
