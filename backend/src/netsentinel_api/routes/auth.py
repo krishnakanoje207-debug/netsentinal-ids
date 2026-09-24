@@ -48,6 +48,9 @@ def login(
                 details={"reason": "bad_credentials"},
             )
         )
+        # Committed here because the 401 below makes get_session roll back, which
+        # would take this row with it.
+        session.commit()
         raise BAD_CREDENTIALS
 
     if not user.is_active:
@@ -59,6 +62,7 @@ def login(
                 details={"reason": "inactive_account"},
             )
         )
+        session.commit()
         # Same response as a wrong password: whether an account exists but is
         # disabled is not something an unauthenticated caller should learn.
         raise BAD_CREDENTIALS

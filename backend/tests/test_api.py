@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from netsentinel_api.db.models import ActionStatus, ActionType, AlertStatus, CopilotSummary
+from netsentinel_api.db import session as db_session
+from netsentinel_api.db.models import (
+    ActionStatus,
+    ActionType,
+    AlertStatus,
+    AuditLog,
+    CopilotSummary,
+)
 from netsentinel_api.routes.alerts import case_client
 from netsentinel_api.services.cases import CaseError
 from netsentinel_core.features.contract import FEATURE_DIM
@@ -101,6 +108,60 @@ def test_deactivated_account_cannot_log_in(client, analyst, session, analyst_pas
     )
     assert response.status_code == 401
     assert session.audit_entries()[0].details["reason"] == "inactive_account"
+
+
+class _TransactionalSession:
+    """Forgets uncommitted writes on rollback, as a real session does."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+        self.persisted: list[object] = []
+
+    def add(self, instance: object, /) -> None:
+        self.added.append(instance)
+
+    def commit(self) -> None:
+        self.persisted.extend(self.added)
+        self.added = []
+
+    def rollback(self) -> None:
+        self.added = []
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.fixture
+def real_session_client(client, monkeypatch):
+    """The client, but with the production ``get_session`` doing the committing.
+
+    The shared fake is handed to routes directly, so an exception after an audit
+    row is added never reaches a rollback. Here it does, the way it does live.
+    """
+    fake = _TransactionalSession()
+    monkeypatch.setattr(db_session, "get_sessionmaker", lambda: lambda: fake)
+    client.app.dependency_overrides.pop(db_session.get_session)
+    return client, fake
+
+
+@pytest.mark.parametrize("deactivate, reason", [
+    (False, "bad_credentials"),
+    (True, "inactive_account"),
+])
+def test_a_failed_login_is_still_recorded_after_the_401(
+    real_session_client, analyst, analyst_password, deactivate, reason
+):
+    client, fake = real_session_client
+    analyst.is_active = not deactivate
+    password = analyst_password if deactivate else "wrong"
+    response = client.post(
+        f"{V1}/auth/token", data={"username": analyst.username, "password": password}
+    )
+    assert response.status_code == 401
+    persisted = [e for e in fake.persisted if isinstance(e, AuditLog)]
+    assert [(e.action, e.details["reason"]) for e in persisted] == [
+        ("auth.login_failed", reason)
+    ]
 
 
 def test_a_valid_token_for_a_deactivated_user_stops_working(client, analyst, auth_header):
