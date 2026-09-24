@@ -28,29 +28,39 @@ FLOW_TTL_DAYS = 30
 SCALAR_TYPE = "Float64"
 
 
-def network_flows_ddl(database: str = "netsentinel") -> str:
-    """CREATE TABLE for the scored-flow table."""
-    columns: list[str] = [
-        "ts DateTime64(3)",
-        "flow_id String",
-        "sensor LowCardinality(String)",
-        "src_ip IPv4",
-        "dst_ip IPv4",
-        "src_port UInt16",
-        "dst_port UInt16",
+def network_flows_columns() -> list[tuple[str, str]]:
+    """(name, type) for every network_flows column, in table order.
+
+    Shared by the DDL and the flow sink, so the rows written and the table they are
+    written to come from the same list.
+    """
+    columns: list[tuple[str, str]] = [
+        ("ts", "DateTime64(3)"),
+        ("flow_id", "String"),
+        ("sensor", "LowCardinality(String)"),
+        ("src_ip", "IPv4"),
+        ("dst_ip", "IPv4"),
+        ("src_port", "UInt16"),
+        ("dst_port", "UInt16"),
     ]
-    columns += [f"{name} {SCALAR_TYPE}" for name in SCALAR_FIELDS]
+    columns += [(name, SCALAR_TYPE) for name in SCALAR_FIELDS]
     # Signed lengths: negative means server to client, so Int16 is required.
-    columns += [f"{name} Int16" for name in SPLT_LEN_FIELDS]
-    columns += [f"{name} Float32" for name in SPLT_IAT_FIELDS]
+    columns += [(name, "Int16") for name in SPLT_LEN_FIELDS]
+    columns += [(name, "Float32") for name in SPLT_IAT_FIELDS]
     columns += [
         # Ground truth, only ever set for replayed or labelled captures.
-        "label LowCardinality(Nullable(String))",
+        ("label", "LowCardinality(Nullable(String))"),
         # Null until the scorer has decided. Nullable on purpose: an undecided flow
         # must not be storable as 0, which would read as "confidently benign".
-        "risk_score Nullable(Float64)",
-        "shadow UInt8 DEFAULT 1",
+        ("risk_score", "Nullable(Float64)"),
+        ("shadow", "UInt8 DEFAULT 1"),
     ]
+    return columns
+
+
+def network_flows_ddl(database: str = "netsentinel") -> str:
+    """CREATE TABLE for the scored-flow table."""
+    columns = [f"{name} {type_}" for name, type_ in network_flows_columns()]
 
     body = ",\n    ".join(columns)
     return (

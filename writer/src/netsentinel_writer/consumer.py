@@ -64,6 +64,7 @@ class RedpandaConsumer:
         topic: str = FLOW_TOPIC,
         poll_timeout: float = 1.0,
         from_beginning: bool = False,
+        yield_idle: bool = False,
     ) -> None:
         try:
             from confluent_kafka import Consumer as KafkaConsumer
@@ -73,6 +74,9 @@ class RedpandaConsumer:
             ) from exc
 
         self._poll_timeout = poll_timeout
+        # The flow sink batches, and needs to hear about a quiet poll to flush a partial
+        # batch; the writer handles one message at a time and does not.
+        self._yield_idle = yield_idle
         self._consumer = KafkaConsumer(
             {
                 "bootstrap.servers": brokers,
@@ -88,11 +92,14 @@ class RedpandaConsumer:
         self._consumer.subscribe([topic])
         self._closed = False
 
-    def messages(self) -> Iterator[dict[str, Any]]:
-        """Yield decoded payloads until close() is called."""
+    def messages(self) -> Iterator[dict[str, Any] | None]:
+        """Yield decoded payloads until close() is called, and None on an idle poll
+        when ``yield_idle`` is set."""
         while not self._closed:
             message = self._consumer.poll(self._poll_timeout)
             if message is None:
+                if self._yield_idle:
+                    yield None
                 continue
             if message.error():
                 # Logged rather than raised: a partition rebalance surfaces here and
