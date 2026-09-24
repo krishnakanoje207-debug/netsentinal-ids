@@ -8,6 +8,8 @@ question.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import dpkt
 import polars as pl
 import pytest
@@ -19,9 +21,13 @@ from netsentinel_training.data.pcap_prep import (
     SOURCE_COLUMN,
     NoCapturesFound,
     assign_splits,
+    chronological_split,
+    extract_in_chunks,
     find_captures,
+    label_flows,
     label_for,
     prepare,
+    prepare_labelled,
 )
 
 CLIENT_MAC, SERVER_MAC = b"\xaa\xbb\xcc\x00\x00\x01", b"\xaa\xbb\xcc\x00\x00\x02"
@@ -161,3 +167,137 @@ def test_flows_are_counted_not_packets(capture_root, tmp_path):
     counts = prepare(capture_root, out)
     # 8 benign captures x 3 flows + 4 scan captures x 2 flows.
     assert sum(counts.values()) == 8 * 3 + 4 * 2
+
+
+# --- one capture labelled from a labelled-flow file ------------------------
+
+DAY = datetime(2017, 7, 7, 12, 0, tzinfo=timezone.utc)
+
+
+def write_timed_capture(path, starts: list[float]) -> None:
+    """One short TCP conversation per start time, each from its own client port."""
+    with open(path, "wb") as handle:
+        writer = dpkt.pcap.Writer(handle)
+        for index, start in enumerate(starts):
+            for step, flags in enumerate(
+                (dpkt.tcp.TH_SYN, dpkt.tcp.TH_ACK, dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK)
+            ):
+                frame = _frame("10.0.0.5", "10.0.0.9", 40000 + index, 80, flags)
+                writer.writepkt(frame, ts=start + step * 0.01)
+
+
+def labels_for(rows: list[tuple[int, float, str]], reverse: bool = False) -> pl.DataFrame:
+    """Labelled-flow rows (client port, start, label), timestamps floored to the minute."""
+    columns = {"Source IP": [], " Source Port": [], "Destination IP": [],
+               "Destination Port": [], "Protocol": [], "Timestamp": [], " Label": []}
+    for port, start, label in rows:
+        client, server = ("10.0.0.5", port), ("10.0.0.9", 80)
+        if reverse:
+            client, server = server, client
+        columns["Source IP"].append(client[0])
+        columns[" Source Port"].append(client[1])
+        columns["Destination IP"].append(server[0])
+        columns["Destination Port"].append(server[1])
+        columns["Protocol"].append(6)
+        when = datetime.fromtimestamp(start, timezone.utc).replace(second=0, microsecond=0)
+        columns["Timestamp"].append(when.replace(tzinfo=None))
+        columns[" Label"].append(label)
+    return pl.DataFrame(columns)
+
+
+def _flows(tmp_path, starts):
+    capture = tmp_path / "day.pcap"
+    write_timed_capture(capture, starts)
+    extract_in_chunks(capture, tmp_path / "parts")
+    return pl.read_parquet(tmp_path / "parts" / "*.parquet")
+
+
+def test_extraction_is_written_in_chunks(tmp_path):
+    capture = tmp_path / "day.pcap"
+    write_timed_capture(capture, [DAY.timestamp() + i for i in range(5)])
+    assert extract_in_chunks(capture, tmp_path / "parts", chunk_rows=2) == 5
+    assert len(list((tmp_path / "parts").glob("*.parquet"))) == 3
+    assert pl.read_parquet(tmp_path / "parts" / "*.parquet").height == 5
+
+
+def test_labels_join_on_the_five_tuple_in_either_direction(tmp_path):
+    start = DAY.timestamp() + 10
+    flows = _flows(tmp_path, [start, start + 1])
+    for reverse in (False, True):
+        labels = labels_for([(40000, start, "BENIGN"), (40001, start + 1, "PortScan")], reverse)
+        labelled = label_flows(flows, labels).sort("src_port")
+        assert labelled.get_column(LABEL_COLUMN).to_list() == [0, 1]
+        assert labelled.get_column(ATTACK_COLUMN).to_list() == ["Benign", "PortScan"]
+
+
+def test_an_unmatched_flow_is_dropped_not_called_benign(tmp_path):
+    start = DAY.timestamp() + 10
+    flows = _flows(tmp_path, [start, start + 1])
+    labelled = label_flows(flows, labels_for([(40000, start, "BENIGN")]))
+    assert labelled.height == 1
+
+
+def test_a_label_too_far_away_in_time_does_not_match(tmp_path):
+    """A reused port an hour later is a different conversation."""
+    start = DAY.timestamp() + 10
+    flows = _flows(tmp_path, [start])
+    assert label_flows(flows, labels_for([(40000, start + 3600, "DDoS")])).height == 0
+
+
+def test_the_nearest_label_wins(tmp_path):
+    start = DAY.timestamp() + 600
+    flows = _flows(tmp_path, [start])
+    labels = labels_for([(40000, start - 90, "BENIGN"), (40000, start, "DDoS")])
+    assert label_flows(flows, labels).get_column(ATTACK_COLUMN).to_list() == ["DDoS"]
+
+
+def test_each_capture_is_split_by_its_own_timeline():
+    """Test is always later than train, within every capture, however far apart they are."""
+    frame = pl.DataFrame({
+        "source": ["a"] * 20 + ["b"] * 20,
+        "ts": [float(i) for i in range(20)] + [5000.0 + 10 * i for i in range(20)],
+    }).with_columns(chronological_split(pl.col("ts"), "source").alias("split"))
+    for source in ("a", "b"):
+        part = frame.filter(pl.col("source") == source)
+        per_split = dict(part.group_by("split").len().iter_rows())
+        assert per_split == {"train": 14, "val": 3, "test": 3}
+        last_train = part.filter(pl.col("split") == "train").get_column("ts").max()
+        assert part.filter(pl.col("split") == "test").get_column("ts").min() > last_train
+
+
+def test_prepare_labelled_end_to_end(tmp_path):
+    start = DAY.timestamp()
+    captures, rows = [], []
+    for window in range(2):
+        starts = [start + window * 3600 + i * 30 for i in range(20)]
+        captures.append(tmp_path / f"window{window}.pcap")
+        write_timed_capture(captures[-1], starts)
+        rows += [(40000 + i, s, "PortScan" if i % 2 else "BENIGN") for i, s in enumerate(starts)]
+    labels_for(rows).write_parquet(tmp_path / "labels.parquet")
+
+    counts = prepare_labelled(captures, [tmp_path / "labels.parquet"], tmp_path / "out")
+    # Each window's first flow falls in its opening idle timeout and is skipped.
+    assert counts == {"train": 26, "val": 6, "test": 6}
+    test = pl.read_parquet(tmp_path / "out" / "test.parquet")
+    assert set(test.get_column(LABEL_COLUMN).to_list()) == {0, 1}
+    assert set(test.get_column(SOURCE_COLUMN).to_list()) == {"window0.pcap", "window1.pcap"}
+    for feature in FEATURE_ORDER:
+        assert feature in test.columns
+
+    # A second run reuses the extracted flows rather than reading the captures again.
+    for capture in captures:
+        capture.unlink()
+    assert prepare_labelled(captures, [tmp_path / "labels.parquet"], tmp_path / "out") == counts
+
+
+def test_flows_in_a_capture_s_opening_idle_timeout_are_skipped(tmp_path):
+    """They may be the tail of a conversation that began before the capture was cut."""
+    start = DAY.timestamp()
+    starts = [start, start + 5, start + 20, start + 40]
+    capture = tmp_path / "window.pcap"
+    write_timed_capture(capture, starts)
+    labels_for([(40000 + i, s, "BENIGN") for i, s in enumerate(starts)]).write_parquet(
+        tmp_path / "labels.parquet"
+    )
+    counts = prepare_labelled([capture], [tmp_path / "labels.parquet"], tmp_path / "out")
+    assert sum(counts.values()) == 2
