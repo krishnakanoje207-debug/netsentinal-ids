@@ -44,12 +44,15 @@ Remove-Item lab\replay\out\demo_credentials.txt -ErrorAction SilentlyContinue
 Step "accounts" { uv run --no-sync python lab/replay/demo_users.py --out lab/replay/out/demo_credentials.txt }
 Step "register Tier A" { uv run --no-sync netsentinel-register-model artefacts/tier_a/model_card.json --mode active }
 Step "register Tier D" { uv run --no-sync netsentinel-register-model artefacts/tier_d/model_card.json --mode active }
+# The autoencoder stays in shadow: it is scored and recorded beside the forest, and raises nothing.
+Step "register Tier D autoencoder" { uv run --no-sync netsentinel-register-model artefacts/tier_d_ae/model_card.json }
 $sensor = (uv run --no-sync python lab/replay/register_sensor.py | Select-Object -Last 1).Trim()
 
 Step "replay the test window" {
     uv run --no-sync python -W ignore lab/replay/dataset_replay.py `
         --dataset data/raw/NF-UNSW-NB15-v3.parquet `
         --models artefacts/tier_a/model_card.json artefacts/tier_d/model_card.json `
+        --shadow-models artefacts/tier_d_ae/model_card.json `
         --mode active --out lab/replay/out/flows.jsonl
 }
 Step "write explained alerts" {

@@ -25,6 +25,8 @@ model input, so the dashboard can be checked against the ground truth.
 ``--mode active`` overrides the cards' ``shadow`` for this replay only, and has to be
 typed, for the reason ``netsentinel-register-model --mode active`` does: a shadow
 model raises no alerts, and a demo database has no shadow period to promote on.
+``--shadow-models`` are exempt from it: they score beside the active tiers and are
+recorded, but move no verdict.
 """
 
 from __future__ import annotations
@@ -94,6 +96,8 @@ def main() -> None:
     parser.add_argument("--models", required=True, nargs="+", help="model cards to score with")
     parser.add_argument("--mode", choices=("card", "active"), default="card",
                         help="'active' overrides the cards' mode for this replay")
+    parser.add_argument("--shadow-models", nargs="+", default=[],
+                        help="model cards to score with in shadow mode, whatever --mode says")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--benign", type=int, default=400)
     parser.add_argument("--per-family", type=int, default=15)
@@ -103,6 +107,7 @@ def main() -> None:
     models = [load_model(card) for card in args.models]
     if args.mode == "active":
         models = [dataclasses.replace(model, mode="active") for model in models]
+    models += [dataclasses.replace(load_model(card), mode="shadow") for card in args.shadow_models]
     scorer = FusionScorer(models)
     index = model_index(models)
 
