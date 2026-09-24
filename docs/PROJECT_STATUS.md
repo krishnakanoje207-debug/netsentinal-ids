@@ -15,7 +15,7 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Attack-family classification | macro-F1 0.52, accuracy 71% (attack flows only) | `artefacts/family/model_card.json` |
 | MITRE technique on ML alerts | Claimed only at >= 70% confidence, for families right >= 85% of the time on validation: Reconnaissance (T1046), Exploits (T1190), DoS (T1499). On the test split the family model is >= 70% confident on 55% of attacks, and 85% of those confident families are right; only the confident ones in the three families above get a technique, so the technique share is lower (not measured). On the family-balanced demo replay, which over-represents the hard rare families, 21 of 31 labels were right (68%) and 104 alerts got none | same |
 | Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
-| Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D 8.2 ms (over budget) | same, section 6 |
+| Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D 0.08 ms p50, 0.23 ms p99 (was 8.2 ms before the forest was exported as one ONNX node) | same, section 6 (still shows the old 8.2 ms); `artefacts/tier_d/model_card.json` |
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
 | Tier B (1D-CNN + BiLSTM, first 20 packets), CIC-IDS2017 Friday captures split by time | PR-AUC 0.997, recall 0.97 at 1.0% FPR; recall PortScan 1.00, DDoS 0.80, Bot 0.29 (0.80 and 0.94 on flows of 4+ packets); p99 1.2 ms; shadow mode | `artefacts/tier_b/model_card.json` |
 | Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874 | `artefacts/tier_c/model_card.json` |
