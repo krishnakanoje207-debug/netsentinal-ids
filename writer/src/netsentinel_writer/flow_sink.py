@@ -158,13 +158,17 @@ def main(argv: list[str] | None = None) -> int:
             from_beginning=args.from_beginning,
             yield_idle=True,
         )
-
-    for signal_name in ("SIGINT", "SIGTERM"):
-        if hasattr(signal, signal_name):
-            signal.signal(getattr(signal, signal_name), lambda *_: consumer.close())
+        # Stopped rather than closed: the partial batch is inserted and its offset
+        # committed after the loop ends, and a closed consumer cannot commit.
+        for signal_name in ("SIGINT", "SIGTERM"):
+            if hasattr(signal, signal_name):
+                signal.signal(getattr(signal, signal_name), lambda *_: consumer.stop())
 
     sink = FlowSink(inserter.insert)
-    sink.run(consumer)
+    try:
+        sink.run(consumer)
+    finally:
+        consumer.close()
     logger.info("finished: %s rows in %s inserts", sink.rows, sink.inserts)
     return 0
 

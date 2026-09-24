@@ -116,6 +116,11 @@ class RedpandaConsumer:
     def commit(self) -> None:
         self._consumer.commit(asynchronous=False)
 
+    def stop(self) -> None:
+        """End messages() but leave the consumer open, so a caller holding a batch can
+        still commit it."""
+        self._closed = True
+
     def close(self) -> None:
         self._closed = True
         self._consumer.close()

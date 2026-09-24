@@ -6,6 +6,11 @@ inserted, and that an offset is never committed for rows that did not land.
 
 from __future__ import annotations
 
+import json
+import signal
+import sys
+import types
+
 import pytest
 
 from netsentinel_core.features.clickhouse import network_flows_ddl
@@ -18,6 +23,7 @@ from netsentinel_core.features.contract import (
 )
 from netsentinel_scoring.engine import Verdict
 from netsentinel_sensor.agent import flow_payload
+from netsentinel_writer import flow_sink
 from netsentinel_writer.consumer import ReplayConsumer
 from netsentinel_writer.flow_sink import COLUMNS, FlowSink, flow_row
 from netsentinel_writer.writer import ContractMismatch
@@ -160,3 +166,71 @@ def test_a_partial_batch_is_flushed_on_an_idle_poll_once_it_is_old_enough():
     # flow arrived. The second is the tail flushed when the source ends.
     assert [len(b) for b in clickhouse.batches] == [1, 1]
     assert consumer.commits == 2
+
+
+class FakeKafka:
+    """confluent_kafka.Consumer as the sink sees it: one message, then SIGTERM
+    arrives during the next poll. Committing on a closed consumer raises, as the real
+    client does."""
+
+    def __init__(self, _config, payload, handlers, events) -> None:
+        self._payload = payload
+        self._handlers = handlers
+        self.events = events
+        self._polls = 0
+        self._closed = False
+
+    def subscribe(self, _topics) -> None:
+        pass
+
+    def poll(self, _timeout):
+        self._polls += 1
+        if self._polls == 1:
+            return FakeMessage(self._payload)
+        self._handlers[signal.SIGTERM](signal.SIGTERM, None)
+        return None
+
+    def commit(self, asynchronous: bool = True) -> None:
+        if self._closed:
+            raise RuntimeError("Consumer closed")
+        self.events.append("commit")
+
+    def close(self) -> None:
+        self._closed = True
+        self.events.append("close")
+
+
+class FakeMessage:
+    def __init__(self, payload) -> None:
+        self._value = json.dumps(payload).encode("utf-8")
+
+    def error(self):
+        return None
+
+    def value(self):
+        return self._value
+
+
+def test_sigterm_commits_the_partial_batch_before_closing(monkeypatch):
+    """A stop request must not close the consumer under the tail flush, or its offset
+    commit fails and the batch is written again on restart."""
+    handlers: dict = {}
+    events: list[str] = []
+    payload = _payload()
+    monkeypatch.setattr(
+        flow_sink.signal, "signal", lambda signum, handler: handlers.__setitem__(signum, handler)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "confluent_kafka",
+        types.SimpleNamespace(
+            Consumer=lambda config: FakeKafka(config, payload, handlers, events)
+        ),
+    )
+    monkeypatch.setattr(
+        flow_sink.ClickHouseInserter, "insert", lambda _self, rows: events.append("insert")
+    )
+    monkeypatch.setenv("CLICKHOUSE_PASSWORD", "test")
+
+    assert flow_sink.main([]) == 0
+    assert events == ["insert", "commit", "close"]
