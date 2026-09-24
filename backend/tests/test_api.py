@@ -513,6 +513,19 @@ def test_deciding_on_a_missing_action_is_a_404(client, auth_header):
     assert response.status_code == 404
 
 
+def test_deciding_on_an_action_past_its_approval_is_refused(client, auth_header, action, session):
+    """A decision attached after the fact would read as the authority for it."""
+    action.status = ActionStatus.executed
+    response = client.post(
+        f"{V1}/actions/500/decision", json={"decision": "approved"}, headers=auth_header
+    )
+    assert response.status_code == 422
+    assert "not awaiting a decision" in response.json()["detail"]
+    assert action.approval is None
+    assert action.status is ActionStatus.executed
+    assert session.audit_entries() == []
+
+
 # --- proposing a response ---------------------------------------------------
 
 def test_an_administrator_proposes_a_block(client, admin_header, session):

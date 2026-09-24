@@ -8,8 +8,10 @@ say.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 
 from netsentinel_api.config import Settings
@@ -295,3 +297,65 @@ def test_a_timeline_entry_refuses_a_case_id_that_is_not_one():
     client = IrisClient("https://iris.local", "k", customer_id=1)
     with pytest.raises(CaseError, match="refusing to write"):
         client.add_timeline_event(None, response_event(_action(), when=NOW))
+
+
+# --- how the client reads IRIS's answer ------------------------------------
+
+def _iris() -> IrisClient:
+    return IrisClient("https://iris.local", "an-iris-key", customer_id=3)
+
+
+def test_a_case_is_opened_and_its_id_returned(replies):
+    sent = replies(lambda request: httpx.Response(
+        200, json={"status": "success", "data": {"case_id": 17}}
+    ))
+
+    case_id = _iris().create_case(_alert(), "title", "description")
+
+    assert case_id == 17
+    assert sent[0].url.path == "/manage/cases/add"
+    assert sent[0].headers["Authorization"] == "Bearer an-iris-key"
+    assert json.loads(sent[0].content)["case_customer"] == 3
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # IRIS reports a refused case in the body, under a 200.
+        httpx.Response(200, json={"status": "error", "message": "customer unknown"}),
+        httpx.Response(200, json={"status": "success", "data": {}}),
+        httpx.Response(200, json={"status": "success", "data": {"case_id": "17"}}),
+        httpx.Response(401, json={"status": "error"}),
+        httpx.Response(200, text="<html>login</html>"),
+    ],
+    ids=["refused-in-body", "no-id", "id-not-int", "unauthorised", "not-json"],
+)
+def test_an_answer_with_no_usable_case_is_a_case_error(replies, answer):
+    """Storing a case id that is not there is worse than storing none."""
+    replies(lambda request: answer)
+    with pytest.raises(CaseError):
+        _iris().create_case(_alert(), "title", "description")
+
+
+def test_a_timeline_entry_names_its_case_explicitly(replies):
+    """Without ``cid`` IRIS falls back to another case rather than failing."""
+    sent = replies(lambda request: httpx.Response(200, json={"status": "success"}))
+
+    _iris().add_timeline_event(17, response_event(_action(), when=NOW))
+
+    assert sent[0].url.path == "/case/timeline/events/add"
+    assert sent[0].url.params["cid"] == "17"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(200, json={"status": "error", "message": "case locked"}),
+        httpx.Response(503, text="unavailable"),
+    ],
+    ids=["refused-in-body", "unavailable"],
+)
+def test_a_timeline_entry_iris_did_not_record_is_a_case_error(replies, answer):
+    replies(lambda request: answer)
+    with pytest.raises(CaseError, match="timeline entry"):
+        _iris().add_timeline_event(17, response_event(_action(), when=NOW))

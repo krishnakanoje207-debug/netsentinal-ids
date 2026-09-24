@@ -13,8 +13,12 @@ failed to lift is still in force.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import pytest
 
+from netsentinel_api import responder
+from netsentinel_api.config import Settings
 from netsentinel_api.db.models import (
     ActionStatus,
     ActionType,
@@ -272,6 +276,16 @@ def test_an_undo_with_no_enforcement_point_is_left_requested():
     assert session.commits == 0
 
 
+def test_a_refused_undo_in_a_pass_is_counted_as_retrying():
+    action = _action(status=ActionStatus.rollback_requested)
+    session = StubSession([action])
+
+    stats = run_once(session, {ActionType.block_ip: StubEnforcer(undo_error="503")})
+
+    assert stats.retrying == 1 and stats.rolled_back == 0
+    assert action.status is ActionStatus.rollback_requested
+
+
 # --- the case timeline -----------------------------------------------------
 
 class StubCases:
@@ -357,3 +371,38 @@ def test_no_iris_configured_writes_nothing_and_still_executes():
 
     assert stats.executed == 1
     assert action.status is ActionStatus.executed
+
+
+# --- starting the worker ---------------------------------------------------
+
+SECRET = "K7vQp2xR9mLt4wZn6bYc3sEdJf8hGa1uNqXrVoWiTyBk5Pz0"
+
+
+def test_the_worker_refuses_to_start_with_nowhere_to_enforce(monkeypatch, capsys):
+    """A worker polling a queue it can never act on looks healthy while blocks pile up."""
+    monkeypatch.setattr(responder, "get_settings", lambda: Settings(jwt_secret=SECRET))
+    monkeypatch.setattr(responder, "enforcers_from", lambda settings: {})
+
+    def no_database():
+        raise AssertionError("the queue was polled with nothing to enforce it")
+
+    monkeypatch.setattr(responder, "get_sessionmaker", no_database)
+
+    assert responder.main(["--once"]) == 2
+    assert "no enforcement point configured" in capsys.readouterr().err
+
+
+def test_once_drains_the_queue_and_exits(monkeypatch, capsys):
+    action = _action()
+    session = StubSession([action])
+    enforcer = StubEnforcer()
+    monkeypatch.setattr(responder, "get_settings", lambda: Settings(jwt_secret=SECRET))
+    monkeypatch.setattr(
+        responder, "enforcers_from", lambda settings: {ActionType.block_ip: enforcer}
+    )
+    monkeypatch.setattr(responder, "get_sessionmaker", lambda: lambda: nullcontext(session))
+
+    assert responder.main(["--once"]) == 0
+    assert enforcer.applied == [action]
+    assert action.status is ActionStatus.executed
+    assert "'executed': 1" in capsys.readouterr().out

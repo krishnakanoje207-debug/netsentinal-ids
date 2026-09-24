@@ -543,3 +543,32 @@ def viewer_header(settings: Settings, viewer: User, session: FakeSession) -> dic
     session.user = viewer
     token = create_access_token(settings, viewer.user_id, VIEWER)
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def replies(monkeypatch):
+    """Answer the outbound HTTP of a client under test, and record what it sent.
+
+    The CrowdSec, Wazuh and IRIS clients open their own ``httpx.Client``, so the
+    transport is swapped underneath them. Nothing leaves the machine; what is being
+    tested is how a client reads an answer, not whether the service is up.
+    """
+    import httpx
+
+    real_client = httpx.Client
+
+    def install(handler) -> list[httpx.Request]:
+        sent: list[httpx.Request] = []
+
+        def recording(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return handler(request)
+
+        monkeypatch.setattr(
+            httpx,
+            "Client",
+            lambda **kwargs: real_client(transport=httpx.MockTransport(recording), **kwargs),
+        )
+        return sent
+
+    return install

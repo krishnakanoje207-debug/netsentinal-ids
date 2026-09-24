@@ -7,8 +7,10 @@ mostly about what it does and does not depend on.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 
 from netsentinel_api.config import Settings
@@ -123,3 +125,32 @@ def test_a_configured_keep_produces_a_forwarder():
     forwarder = forwarder_from(settings)
     assert isinstance(forwarder, KeepForwarder)
     assert forwarder._url == f"http://keep.local/alerts/event/{PROVIDER}"
+
+
+# --- sending ---------------------------------------------------------------
+
+def test_keep_being_down_is_logged_and_never_raised(monkeypatch, caplog):
+    """The alert is already in the database; a notification failing must not undo that."""
+    def refused(url, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(httpx, "post", refused)
+    forwarder = KeepForwarder("http://keep.local", "k")
+
+    with caplog.at_level(logging.ERROR, logger="netsentinel.soar"):
+        forwarder.send(_alert())
+
+    assert "could not forward alert 11 to Keep" in caplog.text
+
+
+def test_a_keep_refusal_is_logged_too(monkeypatch, caplog):
+    """A 4xx is as much a lost notification as a closed port."""
+    request = httpx.Request("POST", "http://keep.local")
+    monkeypatch.setattr(
+        httpx, "post", lambda url, **kwargs: httpx.Response(401, request=request)
+    )
+
+    with caplog.at_level(logging.ERROR, logger="netsentinel.soar"):
+        KeepForwarder("http://keep.local", "k").send(_alert())
+
+    assert "could not forward alert 11" in caplog.text

@@ -2,12 +2,16 @@
 
 The bodies are tested, not the clients: what CrowdSec and Wazuh are asked to do is
 the part that decides whether traffic stops, and it is the part that can be checked
-without either of them running. The HTTP around it is a handful of lines whose only
-honest test needs a real instance.
+without either of them running. The clients are tested for how they read an answer
+against a stubbed transport: a 200 that reports a failure, or a login with no token,
+must still come out as ``EnforcementError`` rather than as an action marked done.
 """
 
 from __future__ import annotations
 
+import json
+
+import httpx
 import pytest
 
 from netsentinel_api.config import Settings
@@ -193,6 +197,144 @@ def test_wazuh_refuses_to_undo_an_action_type_with_no_undo():
     wazuh = WazuhEnforcer("https://localhost:55000", "wazuh-wui", "a-wazuh-password")
     with pytest.raises(EnforcementError, match="cannot be undone"):
         wazuh.undo(_action(action_type=ActionType.kill_process, target="001:4172"))
+
+
+# --- how the clients read an answer ----------------------------------------
+
+CROWDSEC = "http://localhost:8080"
+WAZUH = "https://localhost:55000"
+
+
+def _crowdsec() -> CrowdSecEnforcer:
+    return CrowdSecEnforcer(CROWDSEC, "netsentinel", "a-machine-password")
+
+
+def _wazuh() -> WazuhEnforcer:
+    return WazuhEnforcer(WAZUH, "wazuh-wui", "a-wazuh-password")
+
+
+def _lapi(alerts: httpx.Response, login: httpx.Response | None = None):
+    """A LAPI that logs the watcher in, then answers the one call that matters."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/watchers/login":
+            return login or httpx.Response(200, json={"token": "lapi-token"})
+        return alerts
+    return handler
+
+
+def test_a_ban_is_posted_with_the_token_the_login_returned(replies):
+    sent = replies(_lapi(httpx.Response(201, json=["41"])))
+
+    result = _crowdsec().apply(_action())
+
+    assert [r.url.path for r in sent] == ["/v1/watchers/login", "/v1/alerts"]
+    ban = sent[1]
+    assert ban.headers["Authorization"] == "Bearer lapi-token"
+    assert json.loads(ban.content)[0]["decisions"][0]["value"] == "203.0.113.9"
+    assert result["target"] == "203.0.113.9"
+    assert result["alert_ids"] == ["41"]
+
+
+def test_a_target_that_is_not_an_address_never_reaches_crowdsec(replies):
+    sent = replies(_lapi(httpx.Response(201, json=["41"])))
+    with pytest.raises(EnforcementError, match="not an IP address"):
+        _crowdsec().apply(_action(target="db-server"))
+    assert sent == []
+
+
+@pytest.mark.parametrize(
+    "login",
+    [
+        httpx.Response(401, json={"message": "invalid machine"}),
+        httpx.Response(200, json={}),
+        httpx.Response(200, text="<html>proxy error</html>"),
+    ],
+    ids=["refused", "no-token", "not-json"],
+)
+def test_a_failed_crowdsec_login_posts_no_ban(replies, login):
+    sent = replies(_lapi(httpx.Response(201, json=["41"]), login=login))
+    with pytest.raises(EnforcementError, match="login"):
+        _crowdsec().apply(_action())
+    assert [r.url.path for r in sent] == ["/v1/watchers/login"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [httpx.Response(403, json={"message": "forbidden"}), httpx.Response(201, text="ok")],
+    ids=["refused", "not-json"],
+)
+def test_a_ban_crowdsec_did_not_accept_is_an_enforcement_error(replies, answer):
+    """The worker catches EnforcementError alone; an httpx error would escape it."""
+    replies(_lapi(answer))
+    with pytest.raises(EnforcementError):
+        _crowdsec().apply(_action())
+
+
+def test_lifting_a_ban_that_already_expired_is_a_success(replies):
+    """No ban in place is the state asked for; failing would retry forever."""
+    sent = replies(_lapi(httpx.Response(200, json={"nbDeleted": "0"})))
+
+    result = _crowdsec().undo(_action())
+
+    delete = sent[1]
+    assert delete.method == "DELETE"
+    assert dict(delete.url.params) == {"scope": "Ip", "value": "203.0.113.9"}
+    assert result["deleted"] == {"nbDeleted": "0"}
+
+
+def test_a_refused_unban_is_an_enforcement_error(replies):
+    replies(_lapi(httpx.Response(500, text="database locked")))
+    with pytest.raises(EnforcementError, match="lift the ban"):
+        _crowdsec().undo(_action())
+
+
+def _manager(active_response: httpx.Response, token: str | None = "wazuh-token"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/security/user/authenticate":
+            return httpx.Response(200, json={"data": {"token": token} if token else {}})
+        return active_response
+    return handler
+
+
+def test_a_host_command_is_sent_to_the_agent_the_action_names(replies):
+    sent = replies(_manager(httpx.Response(200, json={"data": {"failed_items": []}})))
+
+    result = _wazuh().apply(
+        _action(action_type=ActionType.kill_process, target="007:4172")
+    )
+
+    command = sent[1]
+    assert command.method == "PUT"
+    assert command.url.params["agents_list"] == "007"
+    assert command.headers["Authorization"] == "Bearer wazuh-token"
+    assert result == {
+        "backend": "wazuh",
+        "agent": "007",
+        "command": WAZUH_COMMANDS[ActionType.kill_process],
+    }
+
+
+def test_a_command_that_reached_no_agent_is_a_failure_despite_the_200(replies):
+    """Believing the status code would mark an unisolated host isolated."""
+    replies(_manager(httpx.Response(
+        200,
+        json={"data": {"failed_items": [{"id": ["007"], "error": {"code": 1707}}]}},
+    )))
+    with pytest.raises(EnforcementError, match="could not run"):
+        _wazuh().apply(_action(action_type=ActionType.isolate_host, target="007"))
+
+
+def test_a_wazuh_login_with_no_token_sends_no_command(replies):
+    sent = replies(_manager(httpx.Response(200, json={"data": {}}), token=None))
+    with pytest.raises(EnforcementError, match="no token"):
+        _wazuh().apply(_action(action_type=ActionType.isolate_host, target="007"))
+    assert [r.url.path for r in sent] == ["/security/user/authenticate"]
+
+
+def test_a_refused_host_command_is_an_enforcement_error(replies):
+    replies(_manager(httpx.Response(404, json={"title": "agent not found"})))
+    with pytest.raises(EnforcementError, match="refused"):
+        _wazuh().undo(_action(action_type=ActionType.isolate_host, target="007"))
 
 
 # --- wiring ----------------------------------------------------------------
