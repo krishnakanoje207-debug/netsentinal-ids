@@ -36,6 +36,7 @@ netsentinel-sync-intel = "netsentinel_api.sync_intel:main"
 netsentinel-respond = "netsentinel_api.responder:main"
 netsentinel-import-vulns = "netsentinel_api.sync_vulns:main"
 netsentinel-shadow-report = "netsentinel_api.shadow_report:main"
+netsentinel-import-suricata = "netsentinel_api.sync_suricata:main"
 
 [build-system]
 requires = ["hatchling"]
