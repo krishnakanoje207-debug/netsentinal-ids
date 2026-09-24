@@ -233,7 +233,10 @@ def label_flows(flows: pl.DataFrame, labels: pl.DataFrame,
     """Give each flow the label of the nearest labelled flow on the same 5-tuple.
 
     ``labels`` holds CIC-IDS2017 labelled-flow columns with ``Timestamp`` as a UTC
-    datetime. Flows with no match within the tolerance are dropped.
+    datetime. Flows with no match within the tolerance are dropped. An attack label
+    within the tolerance beats a nearer benign one: CICFlowMeter also writes the
+    server's side of an attacked conversation as a reversed flow labelled BENIGN
+    (Engelen et al., 2021), which would otherwise unlabel the attack.
     """
     labels = (
         labels.rename({c: c.strip() for c in labels.columns})
@@ -244,17 +247,10 @@ def label_flows(flows: pl.DataFrame, labels: pl.DataFrame,
             (pl.col("Timestamp").dt.epoch("ms") / 1000 + 30.0).alias("_t"),
             pl.col("Label").str.strip_chars().alias("_label"),
         )
-        # CICFlowMeter also writes the server's side of an attacked conversation as a
-        # reversed flow labelled BENIGN in the same minute (Engelen et al., 2021); on
-        # such a tie the attack label wins, rather than whichever row the join meets.
-        .group_by("_key", "_t")
-        .agg(
-            pl.col("_label")
-            .filter(pl.col("_label").str.to_uppercase() != BENIGN_LABEL)
-            .first()
-            .fill_null(BENIGN_LABEL)
-        )
         .sort("_t")
+    )
+    attacks = labels.filter(pl.col("_label").str.to_uppercase() != BENIGN_LABEL).rename(
+        {"_t": "_t_attack", "_label": "_attack"}
     )
     matched = (
         flows.with_columns(
@@ -264,7 +260,11 @@ def label_flows(flows: pl.DataFrame, labels: pl.DataFrame,
         .sort("ts")
         .join_asof(labels, left_on="ts", right_on="_t", by="_key", strategy="nearest",
                    tolerance=tolerance_s, check_sortedness=False)  # both sorted above
+        .join_asof(attacks, left_on="ts", right_on="_t_attack", by="_key", strategy="nearest",
+                   tolerance=tolerance_s, check_sortedness=False)
         .filter(pl.col("_label").is_not_null())
+        .with_columns(pl.coalesce("_attack", "_label").alias("_label"))
+        .drop("_t_attack", "_attack")
     )
     benign = pl.col("_label").str.to_uppercase() == BENIGN_LABEL
     return matched.with_columns(

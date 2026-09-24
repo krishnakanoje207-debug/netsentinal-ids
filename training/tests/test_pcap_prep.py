@@ -262,6 +262,15 @@ def test_an_attack_label_beats_a_benign_one_in_the_same_minute(tmp_path):
         assert label_flows(flows, order).get_column(ATTACK_COLUMN).to_list() == ["DDoS"]
 
 
+def test_an_attack_label_within_the_tolerance_beats_a_nearer_benign_one(tmp_path):
+    """The reversed BENIGN row can land a minute nearer than the attack row it shadows."""
+    start = DAY.timestamp() + 600
+    flows = _flows(tmp_path, [start])
+    labels = pl.concat([labels_for([(40000, start, "BENIGN")], reverse=True),
+                        labels_for([(40000, start + 60, "DDoS")])])
+    assert label_flows(flows, labels).get_column(ATTACK_COLUMN).to_list() == ["DDoS"]
+
+
 def test_each_capture_is_split_by_its_own_timeline():
     """Test is always later than train, within every capture, however far apart they are."""
     frame = pl.DataFrame({
