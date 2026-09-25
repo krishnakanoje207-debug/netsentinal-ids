@@ -56,7 +56,10 @@ def test_upgrade_creates_every_model_column(upgrade_sql):
         start = upgrade_sql.index(f"CREATE TABLE {name} ")
         body = upgrade_sql[start : upgrade_sql.index(");", start)]
         for column in table.c.keys():
-            assert column in body, f"{name}.{column} is missing from the migration"
+            # A later revision adds a column to an existing table rather than
+            # recreating it, so either form counts.
+            added = f"ALTER TABLE {name} ADD COLUMN {column} " in upgrade_sql
+            assert column in body or added, f"{name}.{column} is missing from the migration"
 
 
 def test_upgrade_creates_every_index(upgrade_sql):
@@ -80,6 +83,18 @@ def test_the_status_domain_ends_up_wide_enough_for_a_requested_rollback(upgrade_
     ) in upgrade_sql
     # The new value is longer than every old one, so the column has to grow with it.
     assert "ALTER COLUMN status TYPE VARCHAR(18)" in upgrade_sql
+
+
+def test_actions_record_who_proposed_them(upgrade_sql):
+    """0003: the gate refuses self-approval by person, so the person is stored."""
+    assert "ALTER TABLE response_actions ADD COLUMN proposed_by INTEGER" in upgrade_sql
+    assert "REFERENCES users (user_id)" in upgrade_sql.split("proposed_by INTEGER", 1)[1]
+
+    buffer = io.StringIO()
+    config = Config(str(BACKEND / "alembic.ini"), output_buffer=buffer)
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    command.downgrade(config, "0003:0002", sql=True)
+    assert "ALTER TABLE response_actions DROP COLUMN proposed_by" in buffer.getvalue()
 
 
 def test_named_check_constraints_survive_the_migration(upgrade_sql):

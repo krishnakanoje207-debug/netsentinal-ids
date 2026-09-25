@@ -30,6 +30,7 @@ from netsentinel_api.services.response import (
     InvalidTarget,
     NotExecutable,
     ProtectedTarget,
+    SelfApproval,
     mark_executed,
     mark_failed,
     mark_rolled_back,
@@ -97,6 +98,31 @@ def test_a_deactivated_user_cannot_approve(session, action, analyst):
     with pytest.raises(ApprovalRequired, match="deactivated"):
         record_decision(session, action, analyst, ApprovalDecision.approved)
     assert action.approval is None
+
+
+def test_the_proposer_cannot_approve_their_own_action(session, analyst):
+    """Two people, whatever the roles say. An account edited in the database to hold
+    both permissions still cannot open the gate on both sides."""
+    action = propose(session, _alert(), ActionType.block_ip, None, analyst)
+    action.action_id = 42
+
+    with pytest.raises(SelfApproval, match="proposed"):
+        record_decision(session, action, analyst, ApprovalDecision.approved)
+
+    assert action.approval is None
+    assert action.status is ActionStatus.pending_approval
+    refused = session.audit_entries()[-1]
+    assert refused.action == "response.self_approval_refused"
+    assert refused.user_id == analyst.user_id
+    assert refused.entity == "response_action:42"
+
+
+def test_somebody_else_can_approve_the_proposal(session, analyst):
+    action = propose(session, _alert(), ActionType.block_ip, None, analyst)
+    other = User(user_id=8, username="approver", email="b@example.test",
+                 password_hash="x", role_id=1, is_active=True)
+    record_decision(session, action, other, ApprovalDecision.approved)
+    assert action.status is ActionStatus.approved
 
 
 def test_an_action_cannot_be_decided_twice(session, action, analyst):
@@ -236,6 +262,7 @@ def test_a_proposal_arrives_awaiting_a_decision(session, analyst):
 
     assert action.status is ActionStatus.pending_approval
     assert action.approval is None
+    assert action.proposed_by == analyst.user_id
     assert "response.proposed" in [e.action for e in session.audit_entries()]
 
 

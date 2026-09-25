@@ -369,6 +369,9 @@ class ResponseAction(Base):
         default=ActionStatus.pending_approval,
     )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Who put this in the queue, so the gate can refuse their own approval whatever
+    # their role holds. Null only on rows proposed before it was recorded.
+    proposed_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"))
 
     alert: Mapped[Alert] = relationship(back_populates="actions")
     approval: Mapped[Approval | None] = relationship(back_populates="action", uselist=False)

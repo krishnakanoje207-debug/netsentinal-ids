@@ -59,6 +59,10 @@ class ApprovalRequired(ResponseError):
     """Refused: no human has approved this action."""
 
 
+class SelfApproval(ResponseError):
+    """Refused: the person who proposed an action cannot also approve it."""
+
+
 class NotExecutable(ResponseError):
     """Refused: the action is not in a state from which it could execute."""
 
@@ -158,6 +162,7 @@ def propose(
         action_type=action_type,
         target=target,
         status=ActionStatus.pending_approval,
+        proposed_by=actor.user_id,
     )
     action.alert = alert
     session.add(action)
@@ -195,6 +200,21 @@ def record_decision(
     if not approver.is_active:
         raise ApprovalRequired(
             f"user {approver.user_id} is deactivated and cannot approve actions"
+        )
+    if (
+        decision is ApprovalDecision.approved
+        and action.proposed_by is not None
+        and action.proposed_by == approver.user_id
+    ):
+        # Roles keep proposing and approving apart, but a role can be edited. This
+        # checks the person, so the two-person rule survives an account that holds
+        # both permissions. Audited here; the caller commits it past the refusal.
+        _audit(session, approver.user_id, "response.self_approval_refused",
+               action.action_id,
+               {"action_type": action.action_type.value, "target": action.target})
+        raise SelfApproval(
+            f"user {approver.user_id} proposed action {action.action_id} and "
+            "cannot also approve it"
         )
 
     approval = Approval(

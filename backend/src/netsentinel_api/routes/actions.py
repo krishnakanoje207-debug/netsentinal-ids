@@ -25,6 +25,7 @@ from netsentinel_api.services.response import (
     AlreadyDecided,
     ApprovalRequired,
     NotExecutable,
+    SelfApproval,
     record_decision,
     request_rollback,
 )
@@ -69,6 +70,11 @@ def decide(
     except AlreadyDecided as exc:
         # 409: the request was well formed, the resource is just past this point.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SelfApproval as exc:
+        # Committed here because the 403 below makes get_session roll back, which
+        # would take the refusal's audit row with it.
+        session.commit()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except (ApprovalRequired, NotExecutable) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)

@@ -506,6 +506,23 @@ def test_an_ml_engineer_cannot_approve_a_response(client, engineer_header, actio
     assert action.status is ActionStatus.pending_approval
 
 
+def test_approving_your_own_proposal_is_refused_and_audited(
+    client, auth_header, action, analyst, session
+):
+    """The role check passed; the person check is what stops this one."""
+    action.proposed_by = analyst.user_id
+    response = client.post(
+        f"{V1}/actions/500/decision", json={"decision": "approved"}, headers=auth_header
+    )
+    assert response.status_code == 403
+    assert "proposed" in response.json()["detail"]
+    assert action.status is ActionStatus.pending_approval
+    assert action.approval is None
+    assert [e.action for e in session.audit_entries()] == ["response.self_approval_refused"]
+    # Committed before the 403, which would otherwise roll the refusal back.
+    assert session.committed
+
+
 def test_deciding_on_a_missing_action_is_a_404(client, auth_header):
     response = client.post(
         f"{V1}/actions/999/decision", json={"decision": "approved"}, headers=auth_header
