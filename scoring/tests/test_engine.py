@@ -145,3 +145,38 @@ def test_two_active_models_of_one_tier_are_refused(tier_d_shadow_card):
     forest, challenger = _tier_d_pair(tier_d_shadow_card)
     with pytest.raises(ScoringError, match="more than one active model per tier"):
         FusionScorer([forest, dataclasses.replace(challenger, mode="active")])
+
+
+# --- several shadow models of one tier, none active ------------------------
+
+def test_two_shadow_models_of_a_tier_with_no_active_one_are_each_recorded(
+    shadow_card, malicious_flow
+):
+    """No model speaks for the tier, so none is reported as ``tier_a``; each shadow
+    score is kept under its own name and the verdict stays undecided."""
+    first = load_model(shadow_card)
+    second = dataclasses.replace(first, name="tier_a_challenger")
+    verdict = FusionScorer([first, second]).score(malicious_flow)
+
+    assert verdict.is_undecided and verdict.shadow is True
+    assert set(verdict.model_scores) == {first.name, "tier_a_challenger"}
+    assert all(0.0 <= score <= 1.0 for score in verdict.model_scores.values())
+
+
+def test_two_versions_of_one_shadow_model_are_both_recorded(shadow_card, malicious_flow):
+    """Same name, so the name alone would let the second overwrite the first."""
+    first = load_model(shadow_card)
+    second = dataclasses.replace(first, version="0.2.0")
+    verdict = FusionScorer([first, second]).score(malicious_flow)
+
+    assert set(verdict.model_scores) == {
+        f"{first.name}:{first.version}",
+        f"{first.name}:0.2.0",
+    }
+    assert verdict.is_undecided
+
+
+def test_the_same_model_loaded_twice_is_refused(shadow_card):
+    model = load_model(shadow_card)
+    with pytest.raises(ScoringError, match="more than once"):
+        FusionScorer([model, model])

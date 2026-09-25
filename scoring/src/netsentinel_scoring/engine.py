@@ -80,12 +80,24 @@ class FusionScorer:
         # A tier's score is reported as ``tier_x``. A shadow model sharing its tier
         # with another model is reported under its own name instead, so it cannot
         # overwrite the score of the model it is being compared against.
-        self._keys = [
+        # With several shadow models and no active one, no model speaks for the tier,
+        # so none is reported as ``tier_x``; each is kept under its own name.
+        keys = [
             f"tier_{model.tier.lower()}"
             if model.is_active or tiers.count(model.tier) == 1
             else model.name
             for model in models
         ]
+        # Two versions of one model share a name; the version tells them apart, so
+        # neither score overwrites the other.
+        self._keys = [
+            f"{model.name}:{model.version}"
+            if key == model.name and keys.count(key) > 1
+            else key
+            for model, key in zip(models, keys)
+        ]
+        if len(set(self._keys)) != len(self._keys):
+            raise ScoringError(f"a model is loaded more than once: {sorted(self._keys)}")
 
     @property
     def models(self) -> list[LoadedModel]:
