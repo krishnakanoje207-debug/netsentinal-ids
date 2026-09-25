@@ -1,0 +1,29 @@
+%YAML 1.1
+---
+# Loaded after the image's own suricata.yaml with --include, so it only overrides.
+#
+# Kept to mapping keys on purpose. Suricata merges an included file into the main
+# one key by key, but a list is merged by position: an `outputs:` list here would be
+# laid over the stock one entry by entry and produce a config nobody wrote. The stock
+# eve-log already writes alert, flow, dns, http and tls (extended) records to
+# /var/log/suricata/eve.json, which is what Vector tails and what
+# netsentinel_api.sync_suricata imports.
+
+vars:
+  address-groups:
+    HOME_NET: "[172.30.0.0/24]"
+    # The attacker sits on the lab subnet too. Left at its default of !$HOME_NET,
+    # every ET rule written $EXTERNAL_NET -> $HOME_NET would ignore the lab's own
+    # attacks. Same setting as lab/pcaps/sensors.sh.
+    EXTERNAL_NET: "any"
+  port-groups:
+    # victim-ssh listens on 2222.
+    SSH_PORTS: "[22,2222]"
+
+app-layer:
+  protocols:
+    tls:
+      # "auto" (the default) computes JA4 only when a loaded rule uses it. "yes"
+      # computes it for every client hello, and extended TLS logging - the stock
+      # eve setting - then writes it as tls.ja4.
+      ja4-fingerprints: yes
