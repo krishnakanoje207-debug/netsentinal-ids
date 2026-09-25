@@ -8,10 +8,11 @@ whenever the holder's token happens to expire.
 
 from __future__ import annotations
 
+import hmac
 from typing import Annotated, Callable
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -82,6 +83,39 @@ def require(*required: str) -> Callable[[User], User]:
         return user
 
     return guard
+
+
+sensor_bearer = HTTPBearer(auto_error=False)
+
+
+def sensor_token(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(sensor_bearer)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """The sensor's credential: the static token in ``Settings.sensor_token``.
+
+    A token rather than a user account, because the sensor is not a person: an
+    account would need a password, a role invented for it and a login on every
+    start, to end up holding the same kind of long-lived secret this is. The token
+    opens only the endpoints that take this dependency, and a JWT is never accepted
+    in its place, nor it in a JWT's.
+
+    Compared in constant time, so the response time says nothing about how much of
+    a guess was right.
+    """
+    expected = settings.sensor_token
+    if expected is None:
+        # Said plainly: the sensor stops on this, and an operator reading its log
+        # needs to know which side is misconfigured.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="no sensor token is configured on the API",
+        )
+    presented = credentials.credentials if credentials is not None else ""
+    if not hmac.compare_digest(
+        presented.encode("utf-8"), expected.get_secret_value().encode("utf-8")
+    ):
+        raise UNAUTHENTICATED
 
 
 def get_user_repo(

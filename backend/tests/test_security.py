@@ -155,6 +155,18 @@ def test_long_but_low_entropy_secret_is_refused():
         Settings(jwt_secret="abababababababababababababababababab")
 
 
+def test_a_blank_sensor_token_is_no_sensor_token():
+    """Compose passes a variable missing from .env as an empty string."""
+    assert Settings(jwt_secret=SECRET, sensor_token="").sensor_token is None
+
+
+def test_the_sensor_token_is_held_to_the_signing_key_s_bar():
+    with pytest.raises(ValueError, match="sensor_token must be at least 32 characters"):
+        Settings(jwt_secret=SECRET, sensor_token="tooshort")
+    with pytest.raises(ValueError, match="sensor_token looks like a placeholder"):
+        Settings(jwt_secret=SECRET, sensor_token="changeme-changeme-changeme-changeme")
+
+
 def test_none_algorithm_is_refused_by_settings():
     with pytest.raises(ValueError, match="disable signature verification"):
         Settings(jwt_secret=SECRET, jwt_algorithm="none")

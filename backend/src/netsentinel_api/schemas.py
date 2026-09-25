@@ -289,6 +289,15 @@ class ModelOut(BaseModel):
     )
 
 
+class ModelModeOut(BaseModel):
+    """A registry row reduced to what the sensor needs to run the model it names."""
+
+    name: str
+    version: str
+    tier: ModelTier
+    mode: ModelMode
+
+
 class PromoteIn(BaseModel):
     # The window the decision is made on, spelled as the report and the MISP sync
     # spell it. It travels in the request because the evidence recorded in the

@@ -13,6 +13,10 @@ moment a model stops observing and starts raising alerts people are paged on.
 
 The bar a candidate must clear is a deployment setting rather than a request
 parameter. See ``config.Settings.promotion_min_labelled``.
+
+One reader is not a person. The sensor reads ``/models/modes`` at start, to run each
+model in the mode promotion gave it, with its own token (``deps.sensor_token``) rather
+than a login; that token opens this one list and nothing else.
 """
 
 from __future__ import annotations
@@ -24,9 +28,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from netsentinel_api.config import Settings
 from netsentinel_api.db.models import MLModel, ModelMode
 from netsentinel_api.db.repositories import ModelRepository
-from netsentinel_api.deps import ModelRepoDep, SessionDep, SettingsDep, require
+from netsentinel_api.deps import (
+    ModelRepoDep,
+    SessionDep,
+    SettingsDep,
+    require,
+    sensor_token,
+)
 from netsentinel_api.rbac import MODELS_DEPLOY, MODELS_READ
-from netsentinel_api.schemas import EvidenceOut, ModelOut, PromoteIn
+from netsentinel_api.schemas import EvidenceOut, ModelModeOut, ModelOut, PromoteIn
 from netsentinel_api.services.shadow import (
     Outcome,
     PromotionRefused,
@@ -127,6 +137,23 @@ def list_models(
     """
     outcomes = _report(models, since)
     return [_rendered(model, outcomes, models, settings) for model in models.list()]
+
+
+@router.get("/modes", response_model=list[ModelModeOut])
+def list_modes(
+    models: ModelRepoDep,
+    _: Annotated[None, Depends(sensor_token)],
+) -> list[ModelModeOut]:
+    """Every registered model's mode, for the sensor to run it in.
+
+    Identity and mode only. The sensor matches on (name, version) and has no use for
+    the evidence, so none is computed: a sensor starting up should not wait on a
+    report window it would throw away.
+    """
+    return [
+        ModelModeOut(name=model.name, version=model.version, tier=model.tier, mode=model.mode)
+        for model in models.list()
+    ]
 
 
 @router.post("/{model_id}/promote", response_model=ModelOut)

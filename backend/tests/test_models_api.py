@@ -11,6 +11,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
+import pytest
+from pydantic import SecretStr
+
 from netsentinel_api.db.models import ModelMode
 from netsentinel_api.services.shadow import Scored
 
@@ -207,3 +210,48 @@ def test_promoting_a_model_that_does_not_exist_is_a_404(client, engineer_header)
     )
 
     assert response.status_code == 404
+
+
+# --- the sensor's read -------------------------------------------------------
+
+SENSOR_TOKEN = "q3Zt8wLx1RkV6yNb0cHs5mJf2dGp9aEu"
+
+
+@pytest.fixture
+def sensor_header(settings) -> dict[str, str]:
+    settings.sensor_token = SecretStr(SENSOR_TOKEN)
+    return {"Authorization": f"Bearer {SENSOR_TOKEN}"}
+
+
+def test_the_sensor_reads_which_model_is_deciding(client, sensor_header):
+    response = client.get("/api/v1/models/modes", headers=sensor_header)
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"name": "tier-a-lgbm", "version": "1.0.0", "tier": "A", "mode": "active"},
+        {"name": "tier-a-lgbm", "version": "1.1.0", "tier": "A", "mode": "shadow"},
+    ]
+
+
+def test_a_missing_or_wrong_sensor_token_is_refused(client, sensor_header):
+    for headers in ({}, {"Authorization": "Bearer not-the-sensor-token"}):
+        assert client.get("/api/v1/models/modes", headers=headers).status_code == 401
+
+
+def test_a_user_token_does_not_stand_in_for_the_sensor_s(client, sensor_header, auth_header):
+    # The analyst holds models:read, and still: the list takes the sensor's token only.
+    assert client.get("/api/v1/models/modes", headers=auth_header).status_code == 401
+
+
+def test_the_sensor_token_opens_nothing_else(client, sensor_header):
+    for path in ("/api/v1/models", "/api/v1/alerts", "/api/v1/auth/me"):
+        assert client.get(path, headers=sensor_header).status_code == 401
+
+
+def test_with_no_sensor_token_configured_the_list_is_off(client):
+    response = client.get(
+        "/api/v1/models/modes", headers={"Authorization": "Bearer anything-at-all"}
+    )
+
+    assert response.status_code == 503
+    assert "no sensor token" in response.json()["detail"]

@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from netsentinel_api.services.shadow import MIN_LABELLED, MIN_SHADOW_DAYS
@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # audit row, so a deployment that lowered them says so permanently.
     promotion_min_labelled: int = Field(default=MIN_LABELLED, ge=1)
     promotion_min_shadow_days: float = Field(default=MIN_SHADOW_DAYS, ge=0)
+
+    # What the sensor presents to read which models are active (GET /models/modes,
+    # and nothing else). Unset turns that endpoint off. A static token rather than
+    # an account, because the sensor is not a person: see deps.sensor_token.
+    sensor_token: SecretStr | None = None
 
     # Threat intelligence and SOAR. All optional: the pipeline detects, triages and
     # alerts perfectly well without either, so an unconfigured MISP is a feature that
@@ -101,13 +106,23 @@ class Settings(BaseSettings):
     # isolates hosts and disables accounts.
     wazuh_verify_tls: bool = True
 
-    @field_validator("jwt_secret")
+    @field_validator("sensor_token", mode="before")
     @classmethod
-    def _reject_weak_secret(cls, value: SecretStr) -> SecretStr:
+    def _blank_token_is_unset(cls, value):
+        # Compose passes a variable missing from .env through as an empty string.
+        return value or None
+
+    @field_validator("jwt_secret", "sensor_token")
+    @classmethod
+    def _reject_weak_secret(
+        cls, value: SecretStr | None, info: ValidationInfo
+    ) -> SecretStr | None:
+        if value is None:
+            return value
         raw = value.get_secret_value()
         if len(raw) < 32:
             raise ValueError(
-                "jwt_secret must be at least 32 characters; generate one with "
+                f"{info.field_name} must be at least 32 characters; generate one with "
                 "`python -c \"import secrets; print(secrets.token_urlsafe(48))\"`"
             )
         # Checked as substrings and against low-entropy padding, because the
@@ -119,10 +134,10 @@ class Settings(BaseSettings):
             for marker in ("changeme", "change-me", "placeholder", "your-secret",
                            "secret-key", "insecure", "example")
         ):
-            raise ValueError("jwt_secret looks like a placeholder value")
+            raise ValueError(f"{info.field_name} looks like a placeholder value")
         if len(set(raw)) < 8:
             raise ValueError(
-                f"jwt_secret uses only {len(set(raw))} distinct characters; "
+                f"{info.field_name} uses only {len(set(raw))} distinct characters; "
                 "it is long but not random"
             )
         return value
