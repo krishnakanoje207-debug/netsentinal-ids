@@ -187,6 +187,14 @@ export const api = {
   /** Totals across every alert, not only the page on screen. */
   alertSummary: (token) => request('/alerts/summary', { token }),
 
+  /**
+   * Flows checked and alerts raised per minute, oldest minute first. `flows` is null,
+   * not zero, when the flow store cannot be read.
+   *
+   * @returns {Promise<import('./types').Activity>}
+   */
+  activity: (token, minutes = 60) => request(`/activity?minutes=${minutes}`, { token }),
+
   /** Ask for containment. Nothing changes on the network until an analyst approves. */
   proposeAction: (token, alertId, actionType = 'block_ip', target = undefined) =>
     request(`/alerts/${alertId}/actions`, {

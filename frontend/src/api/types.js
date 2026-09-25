@@ -152,6 +152,26 @@
  */
 
 /**
+ * One minute of the activity strip.
+ *
+ * @typedef {object} ActivityBucket
+ * @property {string} start minute-aligned, UTC
+ * @property {number} alerts
+ * @property {number | null} flows null when flow counts are unavailable, never 0 for that
+ */
+
+/**
+ * GET /activity - the recent past, a minute at a time. The newest bucket is the
+ * current, still-filling minute.
+ *
+ * @typedef {object} Activity
+ * @property {number} minutes
+ * @property {string} until end of the newest bucket
+ * @property {ActivityBucket[]} buckets oldest first
+ * @property {boolean} flows_available
+ */
+
+/**
  * @typedef {object} Health
  * @property {string} status
  * @property {string} version
