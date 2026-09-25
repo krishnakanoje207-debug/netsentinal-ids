@@ -62,6 +62,26 @@ def test_a_family_whose_confident_answers_are_unreliable_loses_its_technique():
     assert kept == {"Reconnaissance": "T1046"}
 
 
+def test_the_class_bias_travels_with_the_model(trained):
+    card, _ = trained
+    assert len(card["class_bias"]) == len(card["classes"])
+
+
+def test_a_bias_moves_the_boundary_and_keeps_probabilities():
+    probs = np.array([[0.6, 0.4], [0.3, 0.7]])
+    shifted = family.apply_bias(probs, np.array([-1.0, 1.0]))
+    assert np.allclose(shifted.sum(axis=1), 1.0)
+    assert shifted.argmax(axis=1).tolist() == [1, 1]
+
+
+def test_the_bias_is_tuned_for_macro_f1():
+    # Class 1 is always under-scored; a bias recovers it without hurting class 0.
+    probs = np.array([[0.8, 0.2], [0.7, 0.3], [0.9, 0.1], [0.95, 0.05]])
+    y = np.array([1, 1, 0, 0])
+    bias = family.fit_bias(probs, y, ["a", "b"])
+    assert family.apply_bias(probs, bias).argmax(axis=1).tolist() == [1, 1, 0, 0]
+
+
 def test_the_confidence_floor_travels_with_the_model(trained):
     card, _ = trained
     assert card["min_confidence"] == family.MIN_CONFIDENCE

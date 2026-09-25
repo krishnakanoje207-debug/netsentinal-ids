@@ -10,8 +10,8 @@ question already answered.
 Two rules keep a guess from reading as a finding:
 
 * **Only confident answers become a technique.** Below ``MIN_CONFIDENCE`` the alert
-  keeps no technique at all. On NF-UNSW-NB15-v3 the model is right on 71% of attacks
-  overall but on about 85% of those it is at least 70% sure of - and a wrong technique
+  keeps no technique at all. On NF-UNSW-NB15-v3 (test) the model is right on 70% of
+  attacks overall and on 76% of those it is at least 70% sure of - and a wrong technique
   sends an analyst to the wrong playbook, which is worse than none.
 * **Only families with a defensible ATT&CK technique are candidates.** UNSW-NB15's
   categories were not designed against ATT&CK. Five map onto one technique cleanly;
@@ -19,12 +19,22 @@ Two rules keep a guess from reading as a finding:
   and are left unmapped rather than forced onto the nearest ID.
 * **A candidate has to earn its technique.** On the validation split, the model's
   confident predictions of that family must be right at least ``MIN_TECHNIQUE_PRECISION``
-  of the time. On NF-UNSW-NB15-v3 that keeps Reconnaissance (89%), Exploits (93%) and
-  DoS, and drops Fuzzers (79%) and Worms (61%): an analyst sent to the wrong playbook
+  of the time. On NF-UNSW-NB15-v3 that keeps Reconnaissance (98%), Exploits (97%) and
+  DoS (86%), and drops Fuzzers (68%) and Worms (73%): an analyst sent to the wrong playbook
   one time in five learns to ignore the column.
 
-No class weights: they raise recall on the rare families at the cost of precision on
-all of them, and here precision is what a technique label has to have.
+Rare families are helped in two steps, both chosen on validation. Training weights each
+class by the square root of its inverse frequency: full balancing over-predicts the
+rare families and scored lower on validation than no weights at all. The tree settings
+(15 leaves, 10 rows per leaf) were picked on validation from a small grid. Then a per-class
+bias is added to the log-probabilities (``class_bias`` in the card, applied by the
+writer too), tuned for validation macro-F1: it moves each family's decision boundary
+without retraining. Every probability below, including the confidence a technique is
+gated on, is the biased one.
+
+Backdoor, DoS, Analysis and Exploits stay largely confused with each other and with
+Fuzzers: in NetFlow aggregates their flows look alike, and no setting tried separates
+them. The card's confusion matrix shows where each family goes.
 """
 
 from __future__ import annotations
@@ -61,13 +71,17 @@ TECHNIQUES: dict[str, str] = {
 
 LGBM_PARAMS = dict(
     objective="multiclass",
-    n_estimators=400,
+    n_estimators=1000,
     learning_rate=0.05,
-    num_leaves=63,
-    min_child_samples=30,
+    num_leaves=15,
+    min_child_samples=10,
     n_jobs=-1,
     verbose=-1,
 )
+
+#: Values tried for each class's log-probability bias, in coordinate ascent.
+BIAS_GRID = np.linspace(-3.0, 3.0, 25)
+BIAS_ROUNDS = 3
 
 
 def load_attacks(data_dir: Path, name: str) -> pl.DataFrame:
@@ -88,9 +102,47 @@ def encode(frame: pl.DataFrame, classes: list[str]) -> tuple[np.ndarray, np.ndar
     return x, y
 
 
+def class_weights(y: np.ndarray, classes: list[str]) -> np.ndarray:
+    """Per-row weight: the square root of the row's class's inverse frequency."""
+    counts = np.bincount(y, minlength=len(classes)).astype(float)
+    return (np.sqrt(len(y) / (len(classes) * np.maximum(counts, 1.0))))[y]
+
+
+def apply_bias(probs: np.ndarray, bias: np.ndarray) -> np.ndarray:
+    """Shift each class's log-probability by its bias, and renormalise."""
+    logits = np.log(np.clip(probs, 1e-12, 1.0)) + bias
+    logits -= logits.max(axis=1, keepdims=True)
+    shifted = np.exp(logits)
+    return shifted / shifted.sum(axis=1, keepdims=True)
+
+
+def fit_bias(probs: np.ndarray, y: np.ndarray, classes: list[str]) -> np.ndarray:
+    """The per-class bias that maximises macro-F1 on these (validation) flows."""
+    from sklearn.metrics import f1_score
+
+    logp = np.log(np.clip(probs, 1e-12, 1.0))
+
+    def macro_f1(bias: np.ndarray) -> float:
+        return f1_score(y, (logp + bias).argmax(axis=1), labels=range(len(classes)),
+                        average="macro", zero_division=0)
+
+    bias = np.zeros(len(classes))
+    for _ in range(BIAS_ROUNDS):
+        for k in range(len(classes)):
+            best_score, best_value = macro_f1(bias), bias[k]
+            for value in BIAS_GRID:
+                trial = bias.copy()
+                trial[k] = value
+                score = macro_f1(trial)
+                if score > best_score + 1e-9:
+                    best_score, best_value = score, value
+            bias[k] = best_value
+    return bias - bias.mean()
+
+
 def evaluate(probs: np.ndarray, y: np.ndarray, classes: list[str]) -> dict:
     """Overall quality, and quality on the answers that would become a technique."""
-    from sklearn.metrics import f1_score
+    from sklearn.metrics import confusion_matrix, f1_score
 
     predicted = probs.argmax(axis=1)
     confident = probs.max(axis=1) >= MIN_CONFIDENCE
@@ -105,6 +157,9 @@ def evaluate(probs: np.ndarray, y: np.ndarray, classes: list[str]) -> dict:
         if (known & confident).any()
         else 0.0,
         "f1_per_family": {c: float(v) for c, v in zip(classes, per_class)},
+        # Rows are the true family, columns the predicted one, both in ``classes`` order.
+        "confusion": confusion_matrix(y[known], predicted[known],
+                                      labels=range(len(classes))).tolist(),
     }
 
 
@@ -147,10 +202,14 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
     print(f"training on {len(y):,} attack flows across {len(classes)} families")
 
     model = lgb.LGBMClassifier(**LGBM_PARAMS)
-    model.fit(x, y, eval_set=[(xv, yv)],
+    model.fit(x, y, sample_weight=class_weights(y, classes), eval_set=[(xv, yv)],
               callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(0)])
-    metrics = evaluate(model.predict_proba(xt), yt, classes)
-    techniques, precision_val = earned_techniques(model.predict_proba(xv), yv, classes)
+    # The bias and the technique gate are both set on validation, never on test.
+    probs_val = model.predict_proba(xv)
+    bias = fit_bias(probs_val, yv, classes)
+    probs_val = apply_bias(probs_val, bias)
+    metrics = evaluate(apply_bias(model.predict_proba(xt), bias), yt, classes)
+    techniques, precision_val = earned_techniques(probs_val, yv, classes)
 
     booster_path = out_dir / "family.lgb.txt"
     model.booster_.save_model(str(booster_path))
@@ -160,12 +219,15 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
         "booster_sha256": sha256(booster_path),
         "feature_order": list(TIER_A_FEATURES),
         "classes": classes,
+        # Added to the log-probabilities before argmax and confidence; see the docstring.
+        "class_bias": [float(v) for v in bias],
         "min_confidence": MIN_CONFIDENCE,
         "techniques": techniques,
         "technique_precision_val": precision_val,
         "min_technique_precision": MIN_TECHNIQUE_PRECISION,
         "trained_on": "attack flows only",
         "rows": {"train": int(len(y)), "val": int(len(yv)), "test": int(len(yt))},
+        "metrics_val": evaluate(probs_val, yv, classes),
         "metrics_test": metrics,
     }
     (out_dir / "model_card.json").write_text(json.dumps(card, indent=2), encoding="utf-8")

@@ -49,6 +49,9 @@ class Labeller:
     min_confidence: float
     techniques: dict[str, str]
     booster: Any
+    #: Added to each class's log-probability before the argmax and the confidence, as in
+    #: training (family.apply_bias). Empty for a card that predates it.
+    class_bias: tuple[float, ...] = ()
 
     def label(self, flow: Mapping[str, Any]) -> Label:
         """The most likely family, how sure, and the technique if it may be claimed."""
@@ -59,6 +62,10 @@ class Labeller:
             raise LabellerError(f"flow is missing features the family model reads: {missing}")
         vector = np.array([[float(flow[name]) for name in self.feature_order]])
         probs = self.booster.predict(vector)[0]
+        if self.class_bias:
+            logits = np.log(np.clip(probs, 1e-12, 1.0)) + np.asarray(self.class_bias)
+            probs = np.exp(logits - logits.max())
+            probs /= probs.sum()
         best = int(np.argmax(probs))
         family, confidence = self.classes[best], float(probs[best])
         technique = self.techniques.get(family) if confidence >= self.min_confidence else None
@@ -100,6 +107,12 @@ def load_labeller(card_path: str | Path) -> Labeller:
             f"booster predicts {booster.num_model_per_iteration()} classes; "
             f"the card names {len(card['classes'])}"
         )
+    class_bias = tuple(float(v) for v in card.get("class_bias", ()))
+    if class_bias and len(class_bias) != len(card["classes"]):
+        raise LabellerError(
+            f"family model card has {len(class_bias)} class biases for "
+            f"{len(card['classes'])} classes"
+        )
     return Labeller(
         name=str(card["name"]),
         version=str(card["version"]),
@@ -108,4 +121,5 @@ def load_labeller(card_path: str | Path) -> Labeller:
         min_confidence=float(card["min_confidence"]),
         techniques=dict(card["techniques"]),
         booster=booster,
+        class_bias=class_bias,
     )

@@ -85,6 +85,23 @@ def test_a_booster_that_does_not_match_its_card_is_refused(family_dir):
         load_labeller(family_dir / "tampered.json")
 
 
+def test_the_cards_class_bias_moves_the_answer(family_dir, make_flow):
+    card = json.loads((family_dir / "model_card.json").read_text(encoding="utf-8"))
+    card["class_bias"] = [0.0, 0.0, 30.0]  # Reconnaissance outweighs anything the trees say
+    (family_dir / "biased.json").write_text(json.dumps(card), encoding="utf-8")
+    label = load_labeller(family_dir / "biased.json").label(make_flow(duration_ms=5000.0))
+    assert label.family == "Reconnaissance"
+    assert label.technique == "T1046"
+
+
+def test_a_class_bias_of_the_wrong_length_is_refused(family_dir):
+    card = json.loads((family_dir / "model_card.json").read_text(encoding="utf-8"))
+    card["class_bias"] = [0.0, 1.0]
+    (family_dir / "short_bias.json").write_text(json.dumps(card), encoding="utf-8")
+    with pytest.raises(LabellerError, match="class biases"):
+        load_labeller(family_dir / "short_bias.json")
+
+
 def test_a_card_reading_features_outside_the_contract_is_refused(family_dir):
     card = json.loads((family_dir / "model_card.json").read_text(encoding="utf-8"))
     card["feature_order"] = ["vibes"] + card["feature_order"][1:]
