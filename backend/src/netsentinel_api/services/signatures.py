@@ -70,22 +70,47 @@ class SignatureAlert:
         return (self.at, self.src_ip, self.dst_ip, self.severity, self.technique)
 
 
-def parse_eve(lines: Iterable[str]) -> list[SignatureAlert]:
-    """The alert records in an eve.json stream, in file order."""
+def parse_eve(lines: Iterable[str], malformed: list[int] | None = None) -> list[SignatureAlert]:
+    """The alert records in an eve.json stream, in file order.
+
+    A line that is not a usable record is skipped and its number appended to
+    ``malformed``: one bad line must not cost every alert after it. The exception is
+    a last line with no newline that does not parse. Suricata is still appending it,
+    so it is left alone; the next run reads the file from the start again and finds
+    it finished.
+    """
     found: list[SignatureAlert] = []
+    skipped = malformed if malformed is not None else []
+    unfinished: int | None = None
     for number, line in enumerate(lines, start=1):
+        if unfinished is not None:
+            # A line followed by another was not being written; it is just bad.
+            skipped.append(unfinished)
+            unfinished = None
         if not line.strip():
             continue
         try:
             event = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise EveError(f"line {number} is not JSON: {exc}") from exc
+        except json.JSONDecodeError:
+            if line.endswith("\n"):
+                skipped.append(number)
+            else:
+                unfinished = number
+            continue
+        if not isinstance(event, dict):
+            skipped.append(number)
+            continue
         if event.get("event_type") != "alert":
+            continue
+        try:
+            at = _time(event.get("timestamp"), number)
+        except EveError:
+            skipped.append(number)
             continue
         alert = event.get("alert") or {}
         found.append(
             SignatureAlert(
-                at=_time(event.get("timestamp"), number),
+                at=at,
                 src_ip=_ip(event.get("src_ip")),
                 dst_ip=_ip(event.get("dest_ip")),
                 severity=SEVERITIES.get(alert.get("severity"), Severity.info),

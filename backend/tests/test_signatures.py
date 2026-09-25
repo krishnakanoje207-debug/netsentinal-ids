@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import pytest
 
 from netsentinel_api.db.models import Alert, AuditLog, Severity
-from netsentinel_api.services.signatures import EveError, parse_eve, sync
+from netsentinel_api.services.signatures import parse_eve, sync
 from netsentinel_api.sync_suricata import run
 
 AT = datetime(2026, 9, 24, 4, 20, 43, 130707, tzinfo=timezone.utc)
@@ -92,9 +92,49 @@ def test_a_rule_without_a_technique_leaves_the_column_empty():
     assert parse_eve([_eve(metadata={"mitre_technique_id": ["nonsense"]})])[0].technique is None
 
 
-def test_a_line_that_is_not_json_is_refused_by_number():
-    with pytest.raises(EveError, match="line 2"):
-        parse_eve([_eve(), "{truncated"])
+def test_a_malformed_line_in_the_middle_is_skipped_and_counted():
+    """One bad line must not cost every alert after it."""
+    malformed: list[int] = []
+    lines = [_eve() + "\n", "{garbage\n", _eve(src_ip="203.0.113.9") + "\n"]
+    found = parse_eve(lines, malformed)
+    assert [match.src_ip for match in found] == ["172.30.0.3", "203.0.113.9"]
+    assert malformed == [2]
+
+
+@pytest.mark.parametrize("bad", ["[1, 2]\n", _eve(timestamp="yesterday") + "\n"])
+def test_a_record_that_is_json_but_not_usable_is_skipped_and_counted(bad):
+    malformed: list[int] = []
+    assert len(parse_eve([bad, _eve() + "\n"], malformed)) == 1
+    assert malformed == [1]
+
+
+def test_a_half_written_last_line_is_left_for_the_next_run():
+    """Suricata is still appending: the last line has no newline yet and does not
+    parse. It is neither an error nor malformed, just not finished."""
+    malformed: list[int] = []
+    assert len(parse_eve([_eve() + "\n", _eve()[:40]], malformed)) == 1
+    assert malformed == []
+
+
+def test_a_line_without_a_newline_that_is_not_last_is_malformed():
+    malformed: list[int] = []
+    assert len(parse_eve(["{trunc", _eve()], malformed)) == 1
+    assert malformed == [1]
+
+
+def test_the_import_survives_a_file_still_being_written(tmp_path):
+    eve = tmp_path / "eve.json"
+    complete = _eve() + "\n"
+    second = _eve(src_ip="203.0.113.9")
+    eve.write_text(complete + "{garbage\n" + second[:40], encoding="utf-8")
+    session = StubSession()
+
+    assert run(session, eve) == {"alerts": 1, "skipped": 0, "added": 1, "malformed": 1}
+
+    # Suricata finishes the line; the next run picks it up and adds only it.
+    eve.write_text(complete + "{garbage\n" + second + "\n", encoding="utf-8")
+    session.existing = [row for row in session.added if isinstance(row, Alert)]
+    assert run(session, eve) == {"alerts": 2, "skipped": 0, "added": 1, "malformed": 1}
 
 
 # --- the insert ------------------------------------------------------------
@@ -154,7 +194,7 @@ def test_the_import_is_audited(tmp_path):
     eve.write_text("\n".join([_eve(), _eve(event_type="flow"), info]) + "\n", encoding="utf-8")
     session = StubSession()
 
-    assert run(session, eve) == {"alerts": 2, "skipped": 1, "added": 1}
+    assert run(session, eve) == {"alerts": 2, "skipped": 1, "added": 1, "malformed": 0}
     audit, = [row for row in session.added if isinstance(row, AuditLog)]
     assert audit.action == "alerts.imported"
-    assert audit.details == {"alerts": 2, "skipped": 1, "added": 1}
+    assert audit.details == {"alerts": 2, "skipped": 1, "added": 1, "malformed": 0}

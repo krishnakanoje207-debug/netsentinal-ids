@@ -17,15 +17,19 @@ from sqlalchemy import select
 
 from netsentinel_api.db.models import Alert, AuditLog
 from netsentinel_api.db.session import get_sessionmaker
-from netsentinel_api.services.signatures import SOURCE, EveError, parse_eve, sync
+from netsentinel_api.services.signatures import SOURCE, parse_eve, sync
 
 
 def run(session, path: Path) -> dict[str, int]:
+    malformed: list[int] = []
     with path.open(encoding="utf-8") as lines:
-        found = parse_eve(lines)
+        found = parse_eve(lines, malformed)
+    if malformed:
+        print(f"skipped malformed lines in {path}: {malformed}", file=sys.stderr)
     added = sync(session, found, session.scalars(select(Alert).where(Alert.source == SOURCE)))
     skipped = sum(match.context for match in found)
-    stats = {"alerts": len(found), "skipped": skipped, "added": added}
+    stats = {"alerts": len(found), "skipped": skipped, "added": added,
+             "malformed": len(malformed)}
     session.add(
         AuditLog(
             user_id=None,  # an operator ran the import; nobody is logged in
@@ -47,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         for path in args.eve:
             try:
                 stats = run(session, path)
-            except (OSError, EveError) as exc:
+            except OSError as exc:
                 print(f"import failed on {path}: {exc}", file=sys.stderr)
                 return 2
             # Flushed so the next file's comparison sees this file's rows; sessions
