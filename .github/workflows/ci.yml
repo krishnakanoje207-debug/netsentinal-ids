@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # Every member and the dev and eval groups, as `uv sync` does locally, minus the
+      # deep group: torch is only for the Tier B, Tier C and autoencoder training
+      # tests, which skip themselves without it.
+      - name: Sync the workspace
+        run: uv sync --locked --no-group deep
+      # One package at a time, as locally. Model artefacts and datasets are gitignored,
+      # so the tests that need them skip.
+      - name: core
+        run: uv run --no-sync pytest core/tests
+      - name: sensors
+        run: uv run --no-sync pytest sensors/tests
+      - name: scoring
+        run: uv run --no-sync pytest scoring/tests
+      - name: writer
+        run: uv run --no-sync pytest writer/tests
+      - name: backend
+        run: uv run --no-sync pytest backend/tests
+      - name: copilot
+        run: uv run --no-sync pytest copilot/tests
+      - name: training
+        run: uv run --no-sync pytest training/tests
+      - name: end to end
+        run: uv run --no-sync pytest tests/e2e
+
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The dashboard image builds on node:22 (frontend/Dockerfile).
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run
+      - run: npm run build
+
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # Medium severity and confidence upward. The accepted low findings recorded in
+      # docs/testing/TEST_REPORT.md stay out of the gate; anything new at medium fails.
+      - name: bandit
+        run: >-
+          uvx bandit==1.9.4 -r backend/src copilot/src core/src scoring/src
+          sensors/src training/src writer/src -ll -ii
+      # The locked set, with hashes, so pip-audit audits exactly what uv.lock pins
+      # without resolving anything itself. The deep group is left out: the CPU torch
+      # build is not on PyPI, so it cannot be looked up.
+      - name: pip-audit
+        run: |
+          uv export --locked --all-packages --extra bus --no-group deep \
+            --no-emit-workspace -o requirements-audit.txt
+          uvx pip-audit==2.10.1 -r requirements-audit.txt --disable-pip --require-hashes
+      - name: npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  compose:
+    name: Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every variable filled with a placeholder: compose interpolates the whole file
+      # before it selects a profile.
+      - name: Dummy .env
+        run: sed -E 's/^([A-Z_]+)=$/\1=ci-placeholder/' infra/.env.example > infra/.env
+      # storage is named with every profile, and bus with pipeline, because compose
+      # refuses a dependency on a service outside the selected profiles.
+      - name: docker compose config
+        run: |
+          for profiles in storage bus ingest lab sensors "bus pipeline" dashboards \
+                          intel response app hids hids-certs case scan; do
+            args="--profile storage"
+            for p in $profiles; do args="$args --profile $p"; done
+            echo "== $args"
+            docker compose -f infra/docker-compose.yml $args config -q
+          done
