@@ -1,11 +1,11 @@
 {
   "name": "tier_b_cnn_bilstm",
   "tier": "B",
-  "version": "1.1.0",
-  "onnx_sha256": "cb8cbbc567296e3d3d2d73bff8d458cf557cd5f203d227c8dc984faf34ca33a2",
-  "threshold": 0.9889581203460693,
+  "version": "1.2.0",
+  "onnx_sha256": "11864b6505f44dbcc7e5526b3926538548a88535b43990de231e627b0dd7a729",
+  "threshold": 0.7682955861091614,
   "mode": "shadow",
-  "pr_auc": 0.9970242881616714,
+  "pr_auc": 0.9957071851571333,
   "feature_order": [
     "splt_len_0",
     "splt_len_1",
@@ -50,71 +50,73 @@
   ],
   "calibration": {
     "method": "platt",
-    "a": 1.0118794441223145,
-    "b": 2.623626470565796
+    "a": 1.1443108320236206,
+    "b": 1.9183026552200317
   },
   "target_max_fpr": 0.01,
   "rows": {
-    "train": 103772,
-    "val": 43882,
-    "test": 44692
+    "train": 139248,
+    "val": 48004,
+    "test": 50665
   },
   "class_balance_train": {
-    "attack": 85650,
-    "benign": 18122
+    "attack": 86254,
+    "benign": 52994
   },
   "normalisation": {
     "mean": [
-      -243.1810760498047,
-      238.67886352539062
+      -192.27197265625,
+      314.734130859375
     ],
     "std": [
-      1234.9708251953125,
-      1353.2669677734375
+      1045.3389892578125,
+      1591.17041015625
     ]
   },
   "metrics_test": {
-    "pr_auc": 0.9970242881616714,
-    "roc_auc": 0.9908411255315189,
-    "brier": 0.01280405092984438,
-    "precision": 0.9985014197076454,
-    "recall": 0.9691981830245496,
-    "f1": 0.9836316075729714,
-    "false_positive_rate": 0.010352342898656011,
-    "true_positives": 37979,
-    "false_positives": 57,
-    "false_negatives": 1207,
-    "true_negatives": 5449
+    "pr_auc": 0.9957071851571333,
+    "roc_auc": 0.9935112638191909,
+    "brier": 0.01309618167579174,
+    "precision": 0.9979737628263411,
+    "recall": 0.9768606809571032,
+    "f1": 0.9873043612346123,
+    "false_positive_rate": 0.006879520197565709,
+    "true_positives": 38417,
+    "false_positives": 78,
+    "false_negatives": 910,
+    "true_negatives": 11260
   },
   "metrics_test_uncalibrated": {
-    "pr_auc": 0.9969652022266495,
-    "roc_auc": 0.9908411301663387,
-    "brier": 0.018932979553937912,
-    "precision": 0.9890202702702703,
-    "recall": 0.08964936456897872,
-    "f1": 0.16439702372595816,
-    "false_positive_rate": 0.007083181983290956,
-    "true_positives": 3513,
-    "false_positives": 39,
-    "false_negatives": 35673,
-    "true_negatives": 5467
+    "pr_auc": 0.9956907262852699,
+    "roc_auc": 0.9935112694259608,
+    "brier": 0.01611834578216076,
+    "precision": 0.9983358468979147,
+    "recall": 0.9762758410252498,
+    "f1": 0.9871826187568298,
+    "false_positive_rate": 0.005644734521079556,
+    "true_positives": 38394,
+    "false_positives": 64,
+    "false_negatives": 933,
+    "true_negatives": 11274
   },
   "attack_recall_test": {
-    "Bot": 0.294478527607362,
-    "DDoS": 0.7952755905511811,
+    "Bot": 0.34539473684210525,
+    "DDoS": 0.8667041619797525,
     "PortScan": 1.0
   },
   "latency_ms": {
-    "p50": 0.409600000239152,
-    "p99": 1.1836399990897908,
+    "p50": 0.37030000021331944,
+    "p99": 0.6703050027135758,
     "calls": 2000
   },
-  "onnx_max_abs_drift": 1.0728836059570312e-06,
+  "onnx_max_abs_drift": 8.940696716308594e-07,
   "sequence_length": 20,
-  "epochs_run": 30,
+  "epochs_run": 27,
   "sources": [
     "benign_1159-1208.pcapng",
+    "bot_1320-1336.pcapng",
     "bot_1336-1350.pcapng",
+    "bot_1350-1400.pcapng",
     "ddos_1856-1859.pcapng",
     "portscan_1751-1756.pcapng"
   ]
