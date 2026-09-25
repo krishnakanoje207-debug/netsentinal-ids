@@ -1,7 +1,21 @@
+/**
+ * The way in. The name is posted on the board as the station would post it, and the
+ * board says in three lines what this console does - no numbers, because nothing has
+ * been measured for this visitor yet.
+ */
+
 import { useState } from 'react'
 
+import { FlapText } from '../components/FlapText'
 import { Mark } from '../components/Mark'
+import { ThemeToggle } from '../theme/theme'
 import { useAuth } from './AuthContext'
+
+const DOES = [
+  ['Watch', 'Every network conversation is scored by AI detectors as it happens.'],
+  ['Explain', 'Every alert shows which measurements made it look like an attack.'],
+  ['Decide', 'Nothing is blocked until a person approves it.'],
+]
 
 export function LoginPage() {
   const { signIn, error } = useAuth()
@@ -22,61 +36,83 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,var(--color-panel-raised),var(--color-surface)_60%)] p-6">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-sm rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-7 shadow-[0_24px_48px_-12px_rgb(0_0_0/0.55)]"
-      >
-        <Mark size={32} className="mb-4 text-[var(--color-accent)]" />
-        <h1 className="text-xl font-semibold tracking-tight">NetSentinel-AI</h1>
-        <p className="mt-1 mb-6 text-sm text-[var(--color-ink-dim)]">
-          Security operations console
-        </p>
+    <main className="grid min-h-screen lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+      <section className="board m-3 flex flex-col justify-between rounded-xl p-6 md:m-4 md:p-10 lg:mr-0">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-md bg-white text-board" aria-hidden="true">
+            <Mark size={24} />
+          </span>
+          <span className="text-sm font-bold tracking-[0.08em] text-board-dim uppercase">Security operations console</span>
+        </div>
 
-        {error && (
-          <p
-            role="alert"
-            className="mb-4 rounded border border-[var(--color-sev-high)]/60 bg-[var(--color-sev-high)]/10 p-2 text-sm"
-          >
-            {error}
+        <div className="my-10 lg:my-0">
+          <h1 className="text-[clamp(1.5rem,4.2vw,3.75rem)] leading-none">
+            <FlapText text="NetSentinel AI" />
+          </h1>
+          <p className="mt-6 max-w-xl text-[1.0625rem] leading-relaxed text-board-dim md:text-lg">
+            Watches your network, explains every alert in plain words, and waits for a person
+            before anything is blocked.
           </p>
-        )}
+        </div>
 
-        <label className="block">
-          <span className="text-xs font-medium text-[var(--color-ink-dim)]">
-            Username
-          </span>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            autoComplete="username"
-            required
-            className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-          />
-        </label>
+        <ol className="grid gap-px overflow-hidden rounded-lg bg-board-line/60 md:grid-cols-3">
+          {DOES.map(([name, text], index) => (
+            <li key={name} className="rise-in bg-board-deep p-4" style={{ animationDelay: `${700 + index * 120}ms` }}>
+              <p className="font-bold">{name}</p>
+              <p className="mt-1 text-[0.9375rem] leading-snug text-board-dim">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
 
-        <label className="mt-4 block">
-          <span className="text-xs font-medium text-[var(--color-ink-dim)]">
-            Password
-          </span>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete="current-password"
-            required
-            className="mt-1.5 w-full rounded-md border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-          />
-        </label>
+      <section className="relative flex items-center justify-center p-6 md:p-10">
+        <div className="absolute top-4 right-4 md:top-6 md:right-6">
+          <ThemeToggle />
+        </div>
+        <form onSubmit={submit} className="rise-in w-full max-w-sm">
+          <h2 className="text-[1.75rem] font-extrabold tracking-tight">Sign in</h2>
+          <p className="mt-1 mb-7 text-[0.9375rem] text-ink-dim">
+            Use the account your administrator gave you.
+          </p>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-6 w-full rounded-md bg-[var(--color-accent)] px-3 py-2.5 text-sm font-semibold text-white transition-[filter,transform] duration-150 hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
-        >
-          {submitting ? 'Signing in...' : 'Sign in'}
-        </button>
-      </form>
+          {error && (
+            <p role="alert" className="mb-5 rounded-md border border-sev-critical/50 bg-fill-critical/10 p-3 text-[0.9375rem]">
+              {error}
+            </p>
+          )}
+
+          <label className="block">
+            <span className="text-sm font-semibold text-ink-dim">Username</span>
+            <input
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              required
+              className="control mt-1.5 h-11 w-full text-base"
+            />
+          </label>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-semibold text-ink-dim">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+              className="control mt-1.5 h-11 w-full text-base"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="press btn-primary mt-7 h-11 w-full rounded-md text-base font-bold disabled:opacity-50"
+          >
+            {submitting ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+      </section>
     </main>
   )
 }

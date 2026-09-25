@@ -17,6 +17,7 @@ import { useMutation } from '@tanstack/react-query'
 
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { DownloadSimple } from '../components/icons'
 
 /**
  * Hand the blob to the browser as a download.
@@ -60,8 +61,9 @@ export function ExportButton({ status, severity, q, save = saveBlob }) {
         type="button"
         disabled={exportAlerts.isPending}
         onClick={() => exportAlerts.mutate()}
-        className="control disabled:opacity-50"
+        className="control press inline-flex items-center gap-1.5 font-semibold disabled:opacity-50"
       >
+        <DownloadSimple size={15} weight="bold" aria-hidden="true" />
         {exportAlerts.isPending ? 'Exporting...' : 'Export CSV'}
       </button>
 
@@ -69,7 +71,7 @@ export function ExportButton({ status, severity, q, save = saveBlob }) {
         <p
           role="status"
           data-testid="export-truncated"
-          className="mt-1 max-w-[16rem] text-right text-[11px] text-[var(--color-sev-medium)]"
+          className="mt-1.5 max-w-[16rem] text-right text-[0.8125rem] font-semibold text-sev-medium"
         >
           The export hit the server's row cap, so the file is partial. Narrow the filters
           and export again.
@@ -77,7 +79,7 @@ export function ExportButton({ status, severity, q, save = saveBlob }) {
       )}
 
       {exportAlerts.isError && (
-        <p className="mt-1 text-[11px] text-[var(--color-sev-high)]" role="alert">
+        <p className="mt-1.5 text-[0.8125rem] text-sev-critical" role="alert">
           {exportAlerts.error.message}
         </p>
       )}

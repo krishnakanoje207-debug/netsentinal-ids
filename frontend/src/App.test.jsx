@@ -78,6 +78,14 @@ describe('App', () => {
           }),
         }
       }
+      if (url.includes('/activity')) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ minutes: 60, until: new Date().toISOString(), buckets: [], flows_available: false }),
+        }
+      }
       return {
         ok: true,
         status: 200,

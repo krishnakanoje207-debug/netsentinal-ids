@@ -1,22 +1,28 @@
 /**
- * The first page anyone sees: how things stand, in sentences.
+ * The first page anyone sees: how things stand, in sentences, with the live board beside.
  *
- * Written for the person who has never opened a SOC console - a manager, the owner of a
- * server, a visitor to the demo - as much as for the analyst starting a shift. Every
+ * Written for the person who has never opened a SOC console - an examiner, the owner of
+ * a server, a visitor to the demo - as much as for the analyst starting a shift. Every
  * number here is a count over the whole estate (GET /alerts/summary), not over the page
  * of the feed that happens to be loaded, and every number leads somewhere: clicking a
  * severity or an address opens the feed already filtered to it.
  */
 
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { ActivityStrip, activityTotals } from '../components/ActivityStrip'
+import { Board } from '../components/Board'
 import { ErrorNotice } from '../components/ErrorNotice'
-import { ArrowRight, Brain, Broadcast, ChartBar, Scales } from '../components/icons'
+import { FlipNumber } from '../components/FlipNumber'
+import { HoverCard } from '../components/HoverCard'
+import { ArrowRight, House } from '../components/icons'
+import { LineMap } from '../components/LineMap'
 import { PageHeader } from '../components/PageHeader'
+import { SeverityBadge } from '../components/SeverityBadge'
 import { ROLES, SEVERITY_MEANING, TIERS, roleName } from '../lib/glossary'
 
 const POLL_MS = 5000
@@ -54,62 +60,70 @@ export function headline(summary, pending) {
   return sentence
 }
 
-/** @param {{children: import('react').ReactNode, title: string, action?: import('react').ReactNode}} props */
-function Section({ title, action, children }) {
+/**
+ * The same sentence set in display type, with its counts on split-flap cells. Shown to
+ * sighted readers; the plain sentence above it is what assistive technology reads.
+ */
+function DisplayHeadline({ summary, pending }) {
+  if (summary.total === 0) {
+    return (
+      <p className="text-[1.625rem] leading-snug font-bold md:text-[2rem]" aria-hidden="true">
+        No threats have been detected yet. The detectors are running.
+      </p>
+    )
+  }
+  const open = (summary.by_status.new ?? 0) + (summary.by_status.triaging ?? 0)
+  const critical = summary.by_severity.critical ?? 0
   return (
-    <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-5">
-      <div className="mb-4 flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
+    <p className="text-[1.625rem] leading-[1.55] font-bold md:text-[2rem]" aria-hidden="true">
+      <FlipNumber value={summary.total} size="lg" /> {summary.total === 1 ? 'threat' : 'threats'} detected
+      {critical > 0 && (
+        <>
+          , <FlipNumber value={critical} size="lg" className="flap-critical" />{' '}
+          <span className="text-sev-critical">critical</span>
+        </>
+      )}
+      . <FlipNumber value={open} size="lg" /> still open
+      {pending !== undefined && pending > 0 && (
+        <>
+          , <FlipNumber value={pending} size="lg" /> waiting for a decision
+        </>
+      )}
+      .
+    </p>
   )
 }
 
-/** @param {{to: string, children: import('react').ReactNode}} props */
-function MoreLink({ to, children }) {
+/** @param {{to: string, children: import('react').ReactNode, onBoard?: boolean}} props */
+function MoreLink({ to, children, onBoard = false }) {
   return (
     <Link
       to={to}
-      className="inline-flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline"
+      viewTransition
+      className={`group inline-flex items-center gap-1 text-[0.8125rem] font-semibold ${
+        onBoard ? 'text-board-ink' : 'text-accent'
+      }`}
     >
-      {children}
-      <ArrowRight size={12} aria-hidden="true" />
+      <span className="group-hover:underline">{children}</span>
+      <ArrowRight size={13} weight="bold" className="transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
     </Link>
   )
 }
 
-const STEPS = [
-  {
-    icon: Broadcast,
-    title: 'Watch',
-    text: 'Every network conversation is summarised into a few numbers: how long, how fast, how much data.',
-  },
-  {
-    icon: Brain,
-    title: 'Score',
-    text: 'Two AI models rate each conversation. One knows known attacks; one flags anything unusual.',
-  },
-  {
-    icon: ChartBar,
-    title: 'Explain',
-    text: 'Each alert shows which measurements made it look like an attack, so a person can check the reasoning.',
-  },
-  {
-    icon: Scales,
-    title: 'Decide',
-    text: 'Blocking an address always needs a person to approve it. The AI never acts alone.',
-  },
-]
-
 /** @param {{onFilter: (filters: {status: string, severity: string, q: string}) => void}} props */
 export function Overview({ onFilter }) {
   const { token, can, user } = useAuth()
+  const navigate = useNavigate()
 
   const summary = useQuery({
     queryKey: ['alert-summary'],
     queryFn: () => api.alertSummary(token),
+    enabled: token !== null,
+    refetchInterval: POLL_MS,
+  })
+  const latest = useQuery({
+    queryKey: ['alerts', 'board'],
+    queryFn: () => api.alerts(token, { limit: 8 }),
     enabled: token !== null,
     refetchInterval: POLL_MS,
   })
@@ -124,164 +138,234 @@ export function Overview({ onFilter }) {
     queryFn: () => api.models(token, '7d'),
     enabled: token !== null && can(PERMISSIONS.modelsRead),
   })
+  const activity = useQuery({
+    queryKey: ['activity', 60],
+    queryFn: () => api.activity(token, 60),
+    enabled: token !== null,
+    refetchInterval: 10_000,
+  })
 
   const data = summary.data
-  const largest = data ? Math.max(1, ...Object.values(data.by_severity)) : 1
+  const flows = activity.data?.buckets ? activityTotals(activity.data.buckets).flows : null
+  const canSeeModels = can(PERMISSIONS.modelsRead)
+  const lineStats = {
+    flows,
+    alerts: data?.total ?? null,
+    deciding: canSeeModels && models.data ? models.data.filter((model) => model.mode === 'active').length : null,
+    watching: canSeeModels && models.data ? models.data.filter((model) => model.mode === 'shadow').length : null,
+    pending: pending.data?.length ?? null,
+  }
+
+  const filterBy = (filters) => {
+    onFilter({ status: '', severity: '', q: '', ...filters })
+    navigate('/alerts', { viewTransition: true })
+  }
 
   return (
     <section>
       <PageHeader
+        icon={House}
         title="Overview"
-        description="How things stand right now. Click any number to see the alerts behind it."
+        description="How things stand right now, in plain words. Hover anything for more; click a number to see the alerts behind it."
       />
 
       {summary.error && <ErrorNotice error={summary.error} />}
-      {summary.isLoading && (
-        <p className="text-sm text-[var(--color-ink-dim)]">Counting alerts...</p>
-      )}
 
-      {data && (
-        <>
-          <p
-            className="mb-8 max-w-3xl text-lg leading-relaxed text-[var(--color-ink)]"
-            data-testid="overview-headline"
-          >
-            {headline(data, pending.data?.length)}
-          </p>
-          {user?.role && ROLES[user.role] && (
-            <p className="-mt-5 mb-8 text-sm text-[var(--color-ink-dim)]" data-testid="overview-access">
-              You are signed in as <span className="text-[var(--color-ink)]">{roleName(user.role)}</span>.{' '}
-              {ROLES[user.role].can}
-            </p>
-          )}
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="space-y-6 lg:col-span-5">
+          <div data-tour="headline" className="rise-in">
+            {summary.isLoading && <p className="text-ink-dim">Counting alerts...</p>}
+            {data && (
+              <>
+                <p className="sr-only" data-testid="overview-headline">
+                  {headline(data, pending.data?.length)}
+                </p>
+                <DisplayHeadline summary={data} pending={pending.data?.length} />
+                {user?.role && ROLES[user.role] && (
+                  <p className="mt-3 text-[0.9375rem] text-ink-dim" data-testid="overview-access">
+                    You are signed in as <span className="font-semibold text-ink">{roleName(user.role)}</span>.{' '}
+                    {ROLES[user.role].can}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
 
-          <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
-            <Section
-              title="Threats by severity"
-              action={<MoreLink to="/alerts">All alerts</MoreLink>}
-            >
-              <ul className="space-y-1">
+          {data && (
+            <section className="panel p-2" data-tour="severity" aria-labelledby="severity-heading">
+              <h2 id="severity-heading" className="px-3 pt-2 pb-1 text-sm font-bold text-ink-dim">
+                Threats by severity
+              </h2>
+              <ul>
                 {SEVERITY_ORDER.map((severity) => {
                   const count = data.by_severity[severity] ?? 0
+                  const share = data.total === 0 ? 0 : count / data.total
                   return (
                     <li key={severity}>
-                      <Link
-                        to="/alerts"
-                        onClick={() => onFilter({ status: '', severity, q: '' })}
-                        className="group grid grid-cols-[6.5rem_1fr_3.5rem] items-center gap-3 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-[var(--color-panel-raised)]"
-                        data-testid={`severity-row-${severity}`}
+                      <HoverCard
+                        as="div"
+                        width={280}
+                        content={() => (
+                          <div className="space-y-1.5">
+                            <SeverityBadge severity={severity} />
+                            <p className="font-semibold">{SEVERITY_MEANING[severity]}</p>
+                            <p className="numeric text-ink-dim">
+                              {count.toLocaleString()} of {data.total.toLocaleString()} alerts
+                              {data.total > 0 ? ` (${Math.round(share * 100)}%)` : ''}.
+                            </p>
+                            <p className="text-xs text-ink-faint">Click to open exactly these alerts.</p>
+                          </div>
+                        )}
                       >
-                        <span className="text-sm font-medium capitalize" style={{ color: `var(--color-sev-${severity})` }}>
-                          {severity}
-                        </span>
-                        <span className="min-w-0">
-                          <span
-                            className="block h-1.5 rounded-full"
-                            style={{
-                              width: `${count === 0 ? 0 : Math.max(2, (count / largest) * 100)}%`,
-                              background: `var(--color-sev-${severity})`,
-                            }}
-                          />
-                          <span className="mt-1 block truncate text-xs text-[var(--color-ink-faint)]">
-                            {SEVERITY_MEANING[severity]}
+                        <button
+                          type="button"
+                          onClick={() => filterBy({ severity })}
+                          className="group grid w-full grid-cols-[5.25rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors duration-150 hover:bg-sunk"
+                          data-testid={`severity-row-${severity}`}
+                        >
+                          <SeverityBadge severity={severity} />
+                          <span className="relative block h-2 overflow-hidden rounded-full bg-sunk group-hover:bg-panel">
+                            <span
+                              className="severity-bar absolute inset-0 rounded-full"
+                              style={{
+                                scale: `${count === 0 ? 0 : Math.max(0.02, share)} 1`,
+                                background: `var(--color-fill-${severity})`,
+                              }}
+                            />
                           </span>
-                        </span>
-                        <span className="numeric text-right text-sm font-semibold">{count}</span>
-                      </Link>
+                          <span className="numeric min-w-[2.5rem] text-right text-lg font-bold">
+                            {count.toLocaleString()}
+                          </span>
+                        </button>
+                      </HoverCard>
                     </li>
                   )
                 })}
               </ul>
-            </Section>
+            </section>
+          )}
+        </div>
 
-            <div className="grid content-start gap-5">
-              <Section
-                title="Waiting for a decision"
-                action={<MoreLink to="/approvals">Open approvals</MoreLink>}
-              >
-                {pending.data && pending.data.length === 0 && (
-                  <p className="text-sm text-[var(--color-ink-dim)]">
-                    Nothing is waiting. Proposed blocks appear here until an analyst approves or
-                    rejects them.
-                  </p>
-                )}
-                {pending.data && pending.data.length > 0 && (
-                  <ul className="space-y-2 text-sm">
-                    {pending.data.slice(0, 4).map((action) => (
-                      <li key={action.action_id} className="flex items-center justify-between gap-3">
-                        <span>
-                          Block <span className="data">{action.target}</span>
-                        </span>
-                        <Link
-                          to={`/alerts/${action.alert_id}`}
-                          className="text-xs text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]"
-                        >
-                          why?
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Section>
+        <div className="lg:col-span-7">
+          <Board
+            tour="board"
+            title="Latest alerts"
+            alerts={latest.data}
+            loading={latest.isLoading}
+            updatedAt={latest.dataUpdatedAt}
+            intervalMs={POLL_MS}
+            emptyText="No alerts yet. The detectors are running, and alerts are posted here the moment one is raised."
+            action={<MoreLink to="/alerts" onBoard>All alerts</MoreLink>}
+          />
+          {latest.error && <ErrorNotice error={latest.error} />}
+        </div>
+      </div>
 
-              <Section title="Addresses raising the most alerts">
-                {data.top_sources.length === 0 ? (
-                  <p className="text-sm text-[var(--color-ink-dim)]">No source addresses yet.</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {data.top_sources.map((source) => (
-                      <li key={source.address}>
-                        <Link
-                          to="/alerts"
-                          onClick={() => onFilter({ status: '', severity: '', q: source.address })}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-[var(--color-panel-raised)]"
-                        >
-                          <span className="data">{source.address}</span>
-                          <span className="numeric text-sm text-[var(--color-ink-dim)]">
-                            {plural(source.alerts, 'alert', 'alerts')}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Section>
+      <div className="mt-6">
+        <ActivityStrip />
+      </div>
+
+      <div className="mt-6">
+        <LineMap stats={lineStats} />
+      </div>
+
+      {data && (
+        <div className="mt-6 grid items-start gap-6 lg:grid-cols-12">
+          <section className="panel p-5 lg:col-span-4" aria-labelledby="pending-heading">
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <h2 id="pending-heading" className="font-bold">
+                Waiting for a decision
+              </h2>
+              <MoreLink to="/approvals">Approvals</MoreLink>
             </div>
-          </div>
+            {pending.data && pending.data.length === 0 && (
+              <p className="text-[0.9375rem] text-ink-dim">
+                Nothing is waiting. Proposed blocks appear here until an analyst approves or rejects them.
+              </p>
+            )}
+            {pending.data && pending.data.length > 0 && (
+              <ul className="divide-y divide-line">
+                {pending.data.slice(0, 4).map((action) => (
+                  <li key={action.action_id} className="flex items-center justify-between gap-3 py-2">
+                    <span>
+                      Block <span className="data">{action.target}</span>
+                    </span>
+                    <Link
+                      to={`/alerts/${action.alert_id}`}
+                      viewTransition
+                      className="text-[0.8125rem] font-semibold text-accent underline decoration-accent/35 hover:decoration-accent"
+                    >
+                      Why?
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel p-5 lg:col-span-4" aria-labelledby="sources-heading">
+            <h2 id="sources-heading" className="mb-3 font-bold">
+              Addresses raising the most alerts
+            </h2>
+            {data.top_sources.length === 0 ? (
+              <p className="text-[0.9375rem] text-ink-dim">No source addresses yet.</p>
+            ) : (
+              <ol className="space-y-1">
+                {data.top_sources.map((source) => (
+                  <li key={source.address}>
+                    <button
+                      type="button"
+                      onClick={() => filterBy({ q: source.address })}
+                      className="group relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-md px-2.5 py-2 text-left transition-colors duration-150 hover:bg-sunk"
+                      title={`Open the ${source.alerts} alerts from ${source.address}`}
+                    >
+                      <span
+                        className="absolute inset-y-1 left-0 rounded-r bg-sunk transition-colors group-hover:bg-line"
+                        style={{ width: `${(source.alerts / data.top_sources[0].alerts) * 100}%` }}
+                        aria-hidden="true"
+                      />
+                      <span className="data relative">{source.address}</span>
+                      <span className="numeric relative text-sm text-ink-dim">
+                        {plural(source.alerts, 'alert', 'alerts')}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
           {models.data && models.data.length > 0 && (
-            <div className="mt-5">
-              <Section title="Detection models" action={<MoreLink to="/models">Model details</MoreLink>}>
-                <ul className="grid gap-4 sm:grid-cols-2">
-                  {models.data.map((model) => (
-                    <li key={model.model_id} className="text-sm">
-                      <p className="font-medium">
-                        {TIERS[model.tier]?.name ?? model.name}{' '}
-                        <span className="text-xs font-normal text-[var(--color-ink-faint)]">
-                          {model.mode === 'active' ? 'deciding' : model.mode === 'shadow' ? 'watching only' : 'retired'}
-                        </span>
-                      </p>
-                      <p className="mt-0.5 text-[var(--color-ink-dim)]">{TIERS[model.tier]?.does}</p>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            </div>
+            <section className="panel p-5 lg:col-span-4" aria-labelledby="models-heading">
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <h2 id="models-heading" className="font-bold">
+                  Detectors on duty
+                </h2>
+                <MoreLink to="/models">Models</MoreLink>
+              </div>
+              <ul className="divide-y divide-line">
+                {models.data.map((model) => (
+                  <li key={model.model_id} className="flex items-start justify-between gap-3 py-2">
+                    <span>
+                      <span className="block font-semibold">{TIERS[model.tier]?.name ?? model.name}</span>
+                      <span className="data block text-ink-faint">
+                        {model.name} {model.version}
+                      </span>
+                      <span className="block text-[0.8125rem] text-ink-dim">{TIERS[model.tier]?.does}</span>
+                    </span>
+                    <span
+                      className={`mt-0.5 shrink-0 text-[0.8125rem] font-semibold ${
+                        model.mode === 'active' ? 'text-sev-low' : 'text-ink-faint'
+                      }`}
+                    >
+                      {model.mode === 'active' ? 'deciding' : model.mode === 'shadow' ? 'watching only' : 'retired'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-
-          <section className="mt-10 border-t border-[var(--color-line)] pt-8">
-            <h2 className="mb-5 text-sm font-semibold">How NetSentinel works</h2>
-            <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {STEPS.map(({ icon: Icon, title, text }) => (
-                <li key={title}>
-                  <Icon size={22} className="mb-2 text-[var(--color-accent)]" aria-hidden="true" />
-                  <p className="text-sm font-medium">{title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-[var(--color-ink-dim)]">{text}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
-        </>
+        </div>
       )}
     </section>
   )

@@ -1,144 +1,668 @@
 @import 'tailwindcss';
-@import '@fontsource/ibm-plex-sans/400.css';
-@import '@fontsource/ibm-plex-sans/500.css';
-@import '@fontsource/ibm-plex-sans/600.css';
-@import '@fontsource/ibm-plex-mono/400.css';
-@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource-variable/overpass';
+@import '@fontsource/overpass-mono/400.css';
+@import '@fontsource/overpass-mono/600.css';
 
-/* A SOC dashboard is read for hours in a dim room, so dark is the default rather
-   than an option. Severity colours are the one place saturation is spent; everything
-   else stays low-contrast so that a critical row is the only thing that shouts. */
+/* The console is a station's information system. Day is the default: the hall is
+   cool signage white, signs are enamel panels, and the one saturated surface is the
+   blue departures board. Colour is spent only where something is live - severity, and
+   the station clock's red second hand. Night is the same station after dark.
+
+   Every colour below is a token, so both themes are one set of names. */
 @theme {
-  --color-surface: #0d1117;
-  --color-panel: #151b23;
-  --color-panel-raised: #1c232c;
-  --color-line: #2a3440;
-  --color-ink: #e6edf3;
-  --color-ink-dim: #9aa7b4;
-  --color-ink-faint: #6b7886;
+  --color-hall: #f2f4f7;
+  --color-panel: #ffffff;
+  --color-sunk: #e8ebf0;
+  --color-ink: #0f141a;
+  --color-ink-dim: #46505c;
+  --color-ink-faint: #616b77;
+  --color-line: #d5dae1;
+  --color-line-strong: #848e9c;
 
-  --color-sev-info: #58a6ff;
-  --color-sev-low: #3fb950;
-  --color-sev-medium: #d29922;
-  --color-sev-high: #f85149;
-  --color-sev-critical: #ff7b72;
+  --color-board: #0b3a8c;
+  --color-board-deep: #082d6d;
+  --color-board-ink: #ffffff;
+  --color-board-dim: #b9c7e6;
+  --color-board-line: #2a57a8;
 
-  /* Undecided is deliberately colourless. It must not read as "safe", and giving it
-     a green would say exactly that. */
-  --color-undecided: #8b949e;
+  --color-signal: #e30613;
+  --color-attention: #f2b705;
+  --color-flap: #151a21;
+  --color-accent: #0b3a8c;
+  --color-focus: #0b3a8c;
 
-  --color-accent: #388bfd;
-  --color-accent-soft: #388bfd26;
+  /* Severity as text on the hall and on panels (all AA on both), and as chip fills. */
+  --color-sev-critical: #c8102e;
+  --color-sev-high: #b93d0a;
+  --color-sev-medium: #875f00;
+  --color-sev-low: #1d7738;
+  --color-sev-info: #1f5fad;
+  --color-fill-critical: #e30613;
+  --color-fill-high: #f47a2a;
+  --color-fill-medium: #f2b705;
+  --color-fill-low: #4caf66;
+  --color-fill-info: #dce6f5;
 
-  /* Plex for the interface; its mono only for what an analyst compares character by
-     character - addresses, ports, identifiers, times. Not as a costume for prose. */
-  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+  /* Undecided is deliberately colourless. It must not read as "safe". */
+  --color-undecided: #616b77;
+
+  --font-sans: 'Overpass Variable', 'Overpass', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Overpass Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Night: the hall goes dark and the board is lit. Same names, so every component
+   follows the switch without knowing about it. */
+:root[data-theme='dark'] {
+  --color-hall: #0a0e15;
+  --color-panel: #121925;
+  --color-sunk: #0d131c;
+  --color-ink: #e8edf4;
+  --color-ink-dim: #a7b2c1;
+  --color-ink-faint: #8792a2;
+  --color-line: #232d3c;
+  --color-line-strong: #627089;
+
+  --color-board: #0c3582;
+  --color-board-deep: #092a68;
+  --color-board-ink: #ffffff;
+  --color-board-dim: #b3c3e6;
+  --color-board-line: #2c56a3;
+
+  --color-accent: #8db4ff;
+  --color-focus: #f2b705;
+  --color-flap: #1d2635;
+
+  --color-sev-critical: #ff6b6b;
+  --color-sev-high: #ff9150;
+  --color-sev-medium: #f2c230;
+  --color-sev-low: #5cc97b;
+  --color-sev-info: #7eb0ff;
+  --color-fill-info: #2a3a55;
+
+  --color-undecided: #8792a2;
+  color-scheme: dark;
+}
+
+:root {
+  color-scheme: light;
 }
 
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--color-surface);
+  margin: 0;
+  background: var(--color-hall);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-feature-settings: 'kern', 'liga';
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   caret-color: var(--color-accent);
   accent-color: var(--color-accent);
-  scrollbar-color: var(--color-line) var(--color-surface);
+  scrollbar-color: var(--color-line-strong) var(--color-hall);
+  transition:
+    background-color 240ms var(--ease-out-quart),
+    color 240ms var(--ease-out-quart);
 }
 
 ::selection {
-  background: var(--color-accent-soft);
-  color: var(--color-ink);
+  background: var(--color-attention);
+  color: #0f141a;
 }
 
-/* One focus ring for every control, drawn from the palette rather than the browser. */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 3px solid var(--color-focus);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-input,
-select,
-textarea {
-  transition: border-color 120ms ease-out;
-}
-
-input:hover,
-select:hover,
-textarea:hover {
-  border-color: var(--color-ink-faint);
+/* On the blue board the day focus colour would vanish, so it turns platform yellow. */
+.board :focus-visible {
+  outline-color: var(--color-attention);
 }
 
 a {
-  text-underline-offset: 3px;
+  color: inherit;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
 }
 
-/* Data an analyst reads across rows: addresses, ports, ids. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Data an analyst compares character by character: addresses, ports, ids, times. */
 .data {
   font-family: var(--font-mono);
-  font-size: 0.8125rem;
+  font-size: 0.875em;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 
-/* Tabular figures so a column of risk scores stays aligned while it updates. */
 .numeric {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
 }
 
-/* Every toolbar control shares one height, border and hover, so a row of them reads
-   as one instrument rather than four widgets. */
 @layer components {
-  .control {
-    height: 2rem;
-    border-radius: 0.375rem;
-    border: 1px solid var(--color-line);
+  /* An enamel sign: a flat white panel with a hairline edge and a small radius. */
+  .panel {
     background: var(--color-panel);
-    padding-inline: 0.625rem;
-    font-size: 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+  }
+
+  /* The departures board. The one saturated surface in the interface. */
+  .board {
+    background: var(--color-board);
+    color: var(--color-board-ink);
+    border-radius: 8px;
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.06) inset,
+      0 18px 40px -24px rgb(8 29 70 / 0.55);
+  }
+
+  /* Every control in a toolbar: one height, one edge, one hover. */
+  .control {
+    height: 2.25rem;
+    border-radius: 6px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-panel);
+    padding-inline: 0.75rem;
+    font-size: 0.875rem;
     color: var(--color-ink);
     transition:
-      border-color 120ms ease-out,
-      background-color 120ms ease-out;
+      border-color 140ms var(--ease-out-quart),
+      background-color 140ms var(--ease-out-quart),
+      transform 160ms var(--ease-out-expo);
   }
-  /* Press feedback: the interface heard the click. Fast, on a strong ease-out, and
-     only a hair smaller - a button that visibly shrinks reads as broken. */
-  .press,
-  button.control {
-    transition:
-      transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-color 120ms ease-out,
-      background-color 120ms ease-out;
-  }
-  .press:active:not(:disabled),
-  button.control:active:not(:disabled) {
-    transform: scale(0.97);
-  }
-  button.control:hover:not(:disabled) {
-    background: var(--color-panel-raised);
+  .control:hover:not(:disabled) {
     border-color: var(--color-ink-faint);
+    background: var(--color-sunk);
   }
   .control::placeholder {
     color: var(--color-ink-faint);
   }
+
+  /* Buttons press: fast, a hair smaller. A button that visibly shrinks reads broken. */
+  .press {
+    transition:
+      transform 160ms var(--ease-out-expo),
+      background-color 140ms var(--ease-out-quart),
+      border-color 140ms var(--ease-out-quart),
+      color 140ms var(--ease-out-quart),
+      box-shadow 200ms var(--ease-out-quart);
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .btn-primary {
+    background: var(--color-ink);
+    color: var(--color-hall);
+    border: 1px solid var(--color-ink);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-ink) 86%, var(--color-accent));
+  }
 }
 
-/* The live dot breathes; nothing else on the page moves on its own. */
-@keyframes live-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-sev-low) 55%, transparent); }
-  70% { box-shadow: 0 0 0 6px transparent; }
-  100% { box-shadow: 0 0 0 0 transparent; }
+@layer components {
+  /* Split-flap cells. The seam across the middle is where the leaves meet. */
+  .flap {
+    display: inline-flex;
+    gap: 0.09em;
+    vertical-align: -0.14em;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    line-height: 1;
+  }
+  .flap-md { font-size: 1em; }
+  .flap-lg { font-size: 1.35em; }
+  .flap-xl { font-size: 2.1em; }
+  .flap-ink {
+    --flap-bg: var(--color-flap);
+    --flap-fg: #ffffff;
+    --flap-seam: rgb(0 0 0 / 0.6);
+  }
+  .flap-board {
+    --flap-bg: var(--color-board-deep);
+    --flap-fg: #ffffff;
+    --flap-seam: rgb(0 0 0 / 0.45);
+  }
+  .flap-critical {
+    --flap-bg: var(--color-fill-critical);
+    --flap-seam: rgb(0 0 0 / 0.35);
+  }
+  .flap-cell {
+    position: relative;
+    display: inline-block;
+    width: 0.8em;
+    height: 1.2em;
+    perspective: 260px;
+    border-radius: 0.13em;
+    background: var(--flap-bg);
+    color: var(--flap-fg);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.08) inset, 0 1px 2px rgb(0 0 0 / 0.25);
+  }
+  :root[data-theme='dark'] .flap-ink .flap-cell {
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09), 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  .flap-cell::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--flap-seam);
+    z-index: 3;
+  }
+  .flap-half {
+    position: absolute;
+    inset-inline: 0;
+    height: 50%;
+    overflow: hidden;
+    background: var(--flap-bg);
+    backface-visibility: hidden;
+  }
+  .flap-half > span {
+    position: absolute;
+    inset-inline: 0;
+    height: 1.2em;
+    line-height: 1.28em;
+    text-align: center;
+  }
+  .flap-top { top: 0; border-radius: 0.13em 0.13em 0 0; transform-origin: bottom center; }
+  .flap-top > span { top: 0; }
+  .flap-bottom { bottom: 0; border-radius: 0 0 0.13em 0.13em; transform-origin: top center; }
+  .flap-bottom > span { bottom: 0; }
+  .flap-leaf-fall {
+    z-index: 2;
+    animation: flap-fall 170ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  }
+  .flap-leaf-land {
+    z-index: 2;
+    animation: flap-land 280ms var(--ease-out-expo) both;
+  }
+
+  /* A hover card rises from the side it is anchored to. */
+  .hover-card {
+    box-shadow:
+      0 14px 36px -14px rgb(15 20 26 / 0.34),
+      0 2px 6px -2px rgb(15 20 26 / 0.12);
+    transform-origin: top center;
+    animation: card-in 200ms var(--ease-out-expo) both;
+  }
+  .hover-card[data-side='top'] {
+    transform-origin: bottom center;
+  }
+  :root[data-theme='dark'] .hover-card {
+    box-shadow:
+      0 14px 36px -14px rgb(0 0 0 / 0.7),
+      0 2px 6px -2px rgb(0 0 0 / 0.4);
+  }
 }
-.live-dot {
-  animation: live-pulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@layer components {
+  /* A wayfinding sign: a square pictogram plate. Lit (enamel blue) marks where you are. */
+  .sign-square {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 5px;
+    border: 1.5px solid var(--color-line-strong);
+    background: var(--color-panel);
+    color: var(--color-ink-dim);
+    transition:
+      background-color 220ms var(--ease-out-quart),
+      border-color 220ms var(--ease-out-quart),
+      color 220ms var(--ease-out-quart),
+      transform 220ms var(--ease-out-expo);
+  }
+  .sign-square-lit {
+    background: var(--color-board);
+    border-color: var(--color-board);
+    color: #ffffff;
+  }
+
+  /* The tour. Shades close in around the spotlight as it moves between stops. */
+  .tour-shade {
+    position: fixed;
+    z-index: 60;
+    background: rgb(6 16 36 / 0.56);
+    transition:
+      top 420ms var(--ease-out-expo),
+      left 420ms var(--ease-out-expo),
+      width 420ms var(--ease-out-expo),
+      height 420ms var(--ease-out-expo);
+  }
+  .tour-ring {
+    position: fixed;
+    z-index: 60;
+    border-radius: 10px;
+    pointer-events: none;
+    box-shadow:
+      0 0 0 3px var(--color-attention),
+      0 0 0 7px rgb(242 183 5 / 0.25);
+    transition:
+      top 420ms var(--ease-out-expo),
+      left 420ms var(--ease-out-expo),
+      width 420ms var(--ease-out-expo),
+      height 420ms var(--ease-out-expo);
+  }
+  .tour-card,
+  .tour-invite {
+    box-shadow:
+      0 24px 48px -20px rgb(6 16 36 / 0.5),
+      0 2px 8px -2px rgb(6 16 36 / 0.18);
+    animation: rise-in 420ms var(--ease-out-expo) both;
+  }
+  .tour-card {
+    transition:
+      top 420ms var(--ease-out-expo),
+      left 420ms var(--ease-out-expo);
+  }
+  .tour-line {
+    position: relative;
+    flex: 1;
+    height: 14px;
+    margin-inline: 6px;
+  }
+  .tour-line-track,
+  .tour-line-done {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 3px;
+    border-radius: 2px;
+    transform: translateY(-50%);
+  }
+  .tour-line-track {
+    right: 0;
+    background: var(--color-line);
+  }
+  .tour-line-done {
+    right: 0;
+    background: var(--color-accent);
+    transform-origin: left center;
+    transition: scale 460ms var(--ease-out-expo);
+  }
+  .tour-stop {
+    position: absolute;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--color-line-strong);
+    background: var(--color-panel);
+    transform: translate(-50%, -50%);
+    transition:
+      border-color 300ms var(--ease-out-quart),
+      background-color 300ms var(--ease-out-quart);
+  }
+  .tour-stop-done {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+  }
+  .tour-train {
+    position: absolute;
+    top: 50%;
+    width: 20px;
+    height: 12px;
+    border-radius: 4px;
+    background: var(--color-signal);
+    box-shadow: 0 0 0 2px var(--color-panel);
+    transform: translate(-50%, -50%);
+    transition: left 460ms var(--ease-out-expo);
+  }
+}
+
+@layer components {
+  /* The current minute is still filling, so its bar is drawn hatched. */
+  .activity-current {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--color-accent) 0 3px,
+      color-mix(in srgb, var(--color-accent) 40%, transparent) 3px 6px
+    );
+  }
+
+  /* The line map: a thick line with interchange stops, like a transit diagram. On a
+     phone the line runs down the left edge instead of across. */
+  .line-map {
+    --stop: 3rem;
+  }
+  .line-seg {
+    position: absolute;
+    background: var(--color-board);
+    left: calc(var(--stop) / 2 - 3px);
+    top: calc(var(--stop) / 2);
+    width: 6px;
+    bottom: calc(-1.5rem - var(--stop) / 2);
+  }
+  /* Only the traveller's lane: it spans first stop to last on the wide layout. */
+  .line-track {
+    display: none;
+  }
+  .line-stop {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: var(--stop);
+    height: var(--stop);
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 5px solid var(--color-board);
+    background: var(--color-panel);
+    color: var(--color-board);
+    transition:
+      transform 260ms var(--ease-out-expo),
+      background-color 200ms var(--ease-out-quart),
+      color 200ms var(--ease-out-quart);
+  }
+  :root[data-theme='dark'] .line-stop {
+    color: var(--color-ink);
+  }
+  .group:hover .line-stop,
+  .group:focus-visible .line-stop {
+    transform: scale(1.08);
+    background: var(--color-board);
+    color: #ffffff;
+  }
+  @media (min-width: 768px) {
+    .line-seg {
+      left: calc(var(--stop) / 2);
+      right: calc(-1rem - var(--stop) / 2);
+      top: calc(var(--stop) / 2 - 3px);
+      bottom: auto;
+      width: auto;
+      height: 6px;
+    }
+    .line-track {
+      display: block;
+      position: absolute;
+      z-index: 2;
+      left: calc(var(--stop) / 2);
+      right: calc(25% - 0.75rem - var(--stop) / 2);
+      top: calc(var(--stop) / 2 - 3px);
+      height: 6px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+  }
+  /* One alert pushed by the live feed runs the line once. */
+  .line-traveller {
+    position: absolute;
+    top: 0;
+    width: 3.5rem;
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, transparent, var(--color-attention) 60%, #ffffff);
+    animation: travel 1800ms var(--ease-out-quart) both;
+  }
+  @keyframes travel {
+    from { left: -3.5rem; opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 100%; opacity: 0; }
+  }
+}
+
+@layer components {
+  /* An alert's journey: the same line grammar as the map, at the size of one alert. */
+  .journey-stop {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 3px solid var(--color-line-strong);
+    background: var(--color-panel);
+  }
+  .journey-stop-done {
+    border-color: var(--color-board);
+    background: var(--color-board);
+  }
+  :root[data-theme='dark'] .journey-stop-done {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+  }
+  .journey-seg {
+    position: absolute;
+    left: 8px;
+    top: 6px;
+    width: 100%;
+    height: 4px;
+    background: var(--color-line);
+  }
+  .journey-seg-done {
+    background: var(--color-board);
+  }
+  :root[data-theme='dark'] .journey-seg-done {
+    background: var(--color-accent);
+  }
+}
+
+/* --- motion ---------------------------------------------------------------- */
+
+/* Split-flap: a digit's upper leaf falls, the lower leaf lands. Runs only when a
+   value really changes; a number that did not change never moves. */
+@keyframes flap-fall {
+  from { transform: rotateX(0deg); }
+  to { transform: rotateX(-90deg); }
+}
+@keyframes flap-land {
+  from { transform: rotateX(90deg); }
+  to { transform: rotateX(0deg); }
+}
+
+/* A new row drops onto the board like a flap turning over from its top edge. */
+@keyframes row-arrive {
+  from { transform: perspective(600px) rotateX(-80deg); opacity: 0; }
+  to { transform: perspective(600px) rotateX(0deg); opacity: 1; }
+}
+.row-arrive {
+  transform-origin: top center;
+  animation: row-arrive 520ms var(--ease-out-expo) both;
+}
+
+/* The arrival highlight fades back into the board, so the eye can find what is new. */
+@keyframes arrival-glow {
+  from { background-color: rgb(242 183 5 / 0.28); }
+  to { background-color: transparent; }
+}
+.arrival-glow {
+  animation: arrival-glow 2400ms var(--ease-out-quart) both;
+}
+
+@keyframes rise-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.rise-in {
+  animation: rise-in 420ms var(--ease-out-expo) both;
+}
+
+/* The board's refresh line fills over one poll interval, linearly: it is a clock. */
+@keyframes poll-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.poll-line {
+  animation-name: poll-fill;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* Severity bars grow in once, from zero, when the page is first read; after that
+   they move only when a count changes. */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.severity-bar {
+  transform-origin: left center;
+  animation: bar-grow 900ms var(--ease-out-expo) both;
+  /* The value is carried by `scale`, the entrance by `transform`; the two compose. */
+  transition: scale 700ms var(--ease-out-expo);
+}
+
+/* The reasons grow out of the centre line once, strongest first. */
+@keyframes pull-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.pull-row {
+  animation: pull-grow 700ms var(--ease-out-expo) both;
+}
+
+/* Stale wears thin: data that has not refreshed loses ink rather than lying fresh. */
+.stale {
+  opacity: 0.55;
+  filter: saturate(0.4);
+  transition:
+    opacity 600ms var(--ease-out-quart),
+    filter 600ms var(--ease-out-quart);
+}
+
+/* Day and night: the new theme is revealed as a circle growing from the switch. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  animation: theme-reveal 560ms var(--ease-out-expo);
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--vt-x, 100%) var(--vt-y, 0)); }
+  to { clip-path: circle(150vmax at var(--vt-x, 100%) var(--vt-y, 0)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -146,6 +670,10 @@ a {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  ::view-transition-new(root) {
+    animation: none;
   }
 }

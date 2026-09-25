@@ -26,15 +26,22 @@ import { api } from '../api/client'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { Brain } from '../components/icons'
 import { PageHeader } from '../components/PageHeader'
 import { TIERS } from '../lib/glossary'
 
 const WINDOWS = ['24h', '7d', '14d', '30d']
 
-const MODE_CLASS = {
-  active: 'border-[var(--color-sev-low)] text-[var(--color-sev-low)]',
-  shadow: 'border-[var(--color-sev-info)] text-[var(--color-sev-info)]',
-  retired: 'border-[var(--color-line)] text-[var(--color-ink-faint)]',
+/** A lamp and a word: lit green while deciding, an open ring while watching. */
+const MODE_LAMP = {
+  active: 'bg-sev-low',
+  shadow: 'border-2 border-sev-info bg-transparent',
+  retired: 'bg-line-strong',
+}
+const MODE_TEXT = {
+  active: 'text-sev-low',
+  shadow: 'text-sev-info',
+  retired: 'text-ink-faint',
 }
 
 const MODE_TITLE = {
@@ -48,9 +55,10 @@ export function ModeBadge({ mode }) {
   return (
     <span
       title={MODE_TITLE[mode]}
-      className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${MODE_CLASS[mode]}`}
+      className={`inline-flex items-center gap-1.5 text-[0.75rem] font-bold tracking-[0.06em] uppercase ${MODE_TEXT[mode]}`}
       data-testid="mode-badge"
     >
+      <span className={`inline-block size-2.5 rounded-full ${MODE_LAMP[mode]}`} aria-hidden="true" />
       {mode}
     </span>
   )
@@ -80,15 +88,13 @@ function EvidenceRow({ model }) {
   const { evidence } = model
   return (
     <>
-      <td className="numeric py-2 pr-3">{evidence.labelled}</td>
-      <td className="numeric py-2 pr-3 text-[var(--color-ink-faint)]">{evidence.unlabelled}</td>
-      <td className="numeric py-2 pr-3">{metric(evidence.precision)}</td>
-      <td className="numeric py-2 pr-3">{metric(evidence.recall)}</td>
-      <td className="numeric py-2 pr-3">{metric(evidence.average_precision)}</td>
-      <td className="numeric py-2 pr-3">{metric(evidence.false_positives_per_day, 1)}</td>
-      <td className="numeric py-2 pr-3 text-[var(--color-ink-dim)]">
-        {metric(evidence.days, 1)}
-      </td>
+      <td className="numeric px-3 text-right">{evidence.labelled}</td>
+      <td className="numeric px-3 text-right text-ink-faint">{evidence.unlabelled}</td>
+      <td className="numeric px-3 text-right font-semibold">{metric(evidence.precision)}</td>
+      <td className="numeric px-3 text-right font-semibold">{metric(evidence.recall)}</td>
+      <td className="numeric px-3 text-right">{metric(evidence.average_precision)}</td>
+      <td className="numeric px-3 text-right">{metric(evidence.false_positives_per_day, 1)}</td>
+      <td className="numeric px-3 text-right text-ink-dim">{metric(evidence.days, 1)}</td>
     </>
   )
 }
@@ -102,38 +108,36 @@ export function ModelRow({ model, canDeploy, pending, onPromote }) {
 
   return (
     <tr
-      className="border-b border-[var(--color-line)]/50 transition-colors duration-100 last:border-b-0 hover:bg-[var(--color-panel-raised)] [&>td]:py-3 [&>td:first-child]:pl-3"
+      className="border-t border-line align-top transition-colors duration-150 hover:bg-sunk [&>td]:py-3.5"
       data-testid={`model-${model.model_id}`}
     >
-      <td className="py-2 pr-3">
-        <span className="font-medium">{model.name}</span>{' '}
-        <span className="data text-[var(--color-ink-dim)]">{model.version}</span>
+      <td className="pr-3 pl-4">
+        <span className="block font-bold">{model.name}</span>
+        <span className="data text-ink-dim">{model.version}</span>
       </td>
-      <td className="py-2 pr-3 text-[var(--color-ink-dim)]" title={TIERS[model.tier]?.does}>
-        {model.tier}
-        {TIERS[model.tier] && <span className="ml-1.5 text-xs">{TIERS[model.tier].name}</span>}
+      <td className="px-3" title={TIERS[model.tier]?.does}>
+        <span className="block font-semibold whitespace-nowrap">{TIERS[model.tier]?.name ?? `Tier ${model.tier}`}</span>
+        <span className="block text-[0.8125rem] text-ink-faint">Tier {model.tier}</span>
       </td>
-      <td className="py-2 pr-3">
+      <td className="px-3">
         <ModeBadge mode={model.mode} />
       </td>
-      <td className="numeric py-2 pr-3 text-[var(--color-ink-dim)]">
-        {threshold(model.threshold)}
-      </td>
+      <td className="numeric px-3 text-right text-ink-dim">{threshold(model.threshold)}</td>
       <EvidenceRow model={model} />
-      <td className="py-2">
+      <td className="pr-4 pl-3">
         {canDeploy && model.mode === 'shadow' ? (
           <button
             type="button"
             disabled={pending || !promotable}
             title={model.blocked_by ?? undefined}
             onClick={onPromote}
-            className="control disabled:opacity-40"
+            className="control press font-semibold disabled:opacity-40"
           >
             Promote
           </button>
         ) : null}
         {model.blocked_by && model.mode === 'shadow' && (
-          <p className="text-[11px] text-[var(--color-ink-faint)]" data-testid="blocked-reason">
+          <p className="mt-1.5 max-w-[14rem] text-[0.8125rem] leading-snug text-ink-faint" data-testid="blocked-reason">
             {model.blocked_by}
           </p>
         )}
@@ -166,6 +170,7 @@ export function ModelsPage() {
   return (
     <section>
       <PageHeader
+        icon={Brain}
         title="Models"
         description="The AI models that score traffic. A new model starts in shadow mode: it watches and is measured against analysts' verdicts, but decides nothing until an ML engineer promotes it."
       >
@@ -186,10 +191,10 @@ export function ModelsPage() {
       {error && <ErrorNotice error={error} />}
       {promote.error && <ErrorNotice error={promote.error} />}
 
-      {isLoading && <p className="text-sm text-[var(--color-ink-dim)]">Loading registry...</p>}
+      {isLoading && <p className="text-ink-dim">Loading registry...</p>}
 
       {data && data.length === 0 && (
-        <p className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-4 text-sm text-[var(--color-ink-dim)]">
+        <p className="panel p-6 text-[0.9375rem] text-ink-dim">
           No models are registered. Register one with netsentinel-register-model before the
           sensor can score anything.
         </p>
@@ -197,29 +202,29 @@ export function ModelsPage() {
 
       {data && data.length > 0 && (
         <>
-          <div className="overflow-x-auto rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)]/40">
-          <table className="w-full border-collapse text-sm">
+          <div className="panel overflow-x-auto" data-tour="models">
+          <table className="w-full border-collapse text-[0.9375rem]">
             <thead>
-              <tr className="border-b border-[var(--color-line)] bg-[var(--color-panel)] text-left text-[11px] uppercase tracking-wider text-[var(--color-ink-faint)] [&>th:first-child]:pl-3">
-                <th className="py-2 pr-3 font-medium">Model</th>
-                <th className="py-2 pr-3 font-medium">Tier</th>
-                <th className="py-2 pr-3 font-medium" title="Active models decide; shadow models only watch">Mode</th>
-                <th className="py-2 pr-3 font-medium" title="The score above which a flow becomes an alert">Threshold</th>
-                <th className="py-2 pr-3 font-medium" title="Alerts an analyst confirmed or dismissed">Reviewed</th>
-                <th className="py-2 pr-3 font-medium" title="Verdicts nobody has reviewed yet">
+              <tr className="bg-sunk text-left text-[0.6875rem] font-bold tracking-[0.08em] text-ink-dim uppercase [&>th]:px-3 [&>th]:py-2.5 [&>th:first-child]:pl-4 [&>th:nth-child(n+4)]:text-right">
+                <th className="font-bold">Model</th>
+                <th className="font-bold">Tier</th>
+                <th className="font-bold" title="Active models decide; shadow models only watch">Mode</th>
+                <th className="font-bold" title="The score above which a flow becomes an alert">Threshold</th>
+                <th className="font-bold" title="Alerts an analyst confirmed or dismissed">Reviewed</th>
+                <th className="font-bold" title="Verdicts nobody has reviewed yet">
                   Not reviewed
                 </th>
-                <th className="py-2 pr-3 font-medium" title="Of the alerts reviewed, the share that were real attacks">Precision</th>
-                <th className="py-2 pr-3 font-medium" title="Of the real attacks reviewed, the share this model caught">Recall</th>
+                <th className="font-bold" title="Of the alerts reviewed, the share that were real attacks">Precision</th>
+                <th className="font-bold" title="Of the real attacks reviewed, the share this model caught">Recall</th>
                 <th
-                  className="py-2 pr-3 font-medium"
+                  className="font-bold"
                   title="Average precision: threshold-free ranking quality, and how candidates are compared"
                 >
                   AP
                 </th>
-                <th className="py-2 pr-3 font-medium" title="False alarms per day">False alarms/day</th>
-                <th className="py-2 pr-3 font-medium" title="Days of evidence in the window">Days</th>
-                <th className="py-2 font-medium" />
+                <th className="font-bold" title="False alarms per day">False alarms/day</th>
+                <th className="font-bold" title="Days of evidence in the window">Days</th>
+                <th className="font-bold" />
               </tr>
             </thead>
             <tbody>
@@ -236,7 +241,7 @@ export function ModelsPage() {
           </table>
           </div>
 
-          <p className="mt-3 text-xs text-[var(--color-ink-faint)]">
+          <p className="mt-3 max-w-3xl text-[0.8125rem] text-ink-faint">
             These are not ground-truth metrics. They measure agreement with analyst verdicts
             on the flows that were triaged, which is a biased sample - nobody labels the
             traffic nothing fired on. Read precision next to the unlabelled count, and treat

@@ -1,10 +1,19 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>NetSentinel-AI</title>
+    <script>
+      // Before first paint, so a night viewer never sees the day theme flash.
+      try {
+        if (localStorage.getItem('netsentinel.theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

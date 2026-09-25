@@ -1,19 +1,29 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import { ApiError } from './api/client'
 import { PERMISSIONS } from './api/types'
-import { ApprovalQueue } from './actions/ApprovalQueue'
-import { AlertDetail } from './alerts/AlertDetail'
-import { AlertFeed } from './alerts/AlertFeed'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
+import { HoverCard } from './components/HoverCard'
 import { Brain, House, ListBullets, Scales, SignOut } from './components/icons'
 import { Mark } from './components/Mark'
+import { StationClock } from './components/StationClock'
 import { ROLES, roleName } from './lib/glossary'
-import { ModelsPage } from './models/ModelsPage'
+import { ago, useNow } from './lib/useNow'
 import { Overview } from './overview/Overview'
+import { STREAM_LABEL, StreamProvider, useStream } from './stream/StreamContext'
+import { ThemeProvider, ThemeToggle } from './theme/theme'
+import { TourButton, TourProvider } from './tour/Tour'
+
+// The overview is where everyone lands, so it ships in the first bundle; the other pages
+// load when first opened.
+const named = (loader, name) => lazy(() => loader().then((module) => ({ default: module[name] })))
+const AlertFeed = named(() => import('./alerts/AlertFeed'), 'AlertFeed')
+const AlertDetail = named(() => import('./alerts/AlertDetail'), 'AlertDetail')
+const ApprovalQueue = named(() => import('./actions/ApprovalQueue'), 'ApprovalQueue')
+const ModelsPage = named(() => import('./models/ModelsPage'), 'ModelsPage')
 
 export function createQueryClient() {
   return new QueryClient({
@@ -34,63 +44,124 @@ export function createQueryClient() {
   })
 }
 
-function NavLink({ to, icon: Icon, children }) {
+/** A page sign: a pictogram plate and a name. The plate lights for the page you are on. */
+function PageSign({ to, icon: Icon, children }) {
   const { pathname } = useLocation()
   const active = to === '/' ? pathname === '/' : pathname.startsWith(to)
   return (
     <Link
       to={to}
+      viewTransition
       aria-current={active ? 'page' : undefined}
-      title={typeof children === 'string' ? children : undefined}
-      className={`relative flex h-full shrink-0 items-center px-2.5 text-sm md:px-3 transition-colors duration-150 ${
-        active
-          ? 'text-[var(--color-ink)] after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-[var(--color-accent)]'
-          : 'text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]'
+      className={`group flex shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-[0.9375rem] transition-colors duration-200 md:pr-3 ${
+        active ? 'font-semibold text-ink' : 'text-ink-dim hover:text-ink'
       }`}
     >
-      <Icon size={18} className="md:mr-1.5 md:size-4" aria-hidden="true" />
-      {/* Icons alone on a phone; the name stays for screen readers either way. */}
+      <span
+        className={`sign-square ${active ? 'sign-square-lit' : 'group-hover:border-ink-faint group-hover:text-ink'}`}
+        aria-hidden="true"
+      >
+        <Icon size={17} weight={active ? 'fill' : 'bold'} />
+      </span>
       <span className="sr-only md:not-sr-only">{children}</span>
     </Link>
+  )
+}
+
+/** The live state beside the clock, and its detail on hover. */
+function LiveStatus() {
+  const stream = useStream()
+  const now = useNow(1000)
+  const live = stream.status === 'open'
+  const colour =
+    stream.status === 'open' ? 'text-sev-low' : stream.status === 'connecting' ? 'text-sev-medium' : 'text-sev-critical'
+
+  return (
+    <HoverCard
+      as="div"
+      width={300}
+      className="flex items-center gap-2.5 rounded-md py-1 pr-1 pl-1.5 outline-none focus-visible:outline-3"
+      content={() => (
+        <div className="space-y-2">
+          <p className="font-bold">
+            {live ? 'The live feed is connected' : stream.status === 'connecting' ? 'Connecting to the live feed' : 'The live feed has stopped'}
+          </p>
+          <p className="text-ink-dim">
+            {live
+              ? 'New alerts appear the moment they are raised, and the red hand keeps sweeping.'
+              : 'Alerts raised now will not appear until the feed reconnects. The page keeps retrying on its own, backing off to every 30 seconds.'}
+          </p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line pt-2 text-[0.8125rem]">
+            <dt className="text-ink-faint">Connected</dt>
+            <dd className="numeric">{stream.openedAt ? `for ${ago(stream.openedAt, now).replace(' ago', '')}` : 'no'}</dd>
+            <dt className="text-ink-faint">Last alert pushed</dt>
+            <dd className="numeric">{stream.lastMessageAt ? ago(stream.lastMessageAt, now) : 'none since connecting'}</dd>
+          </dl>
+        </div>
+      )}
+    >
+      <span tabIndex={0} className="flex items-center gap-2.5 outline-none" data-tour="clock" data-testid="stream-status">
+        <StationClock live={live} size={38} />
+        <span className="hidden flex-col leading-tight sm:flex">
+          <span className={`text-sm font-bold ${colour}`}>{STREAM_LABEL[stream.status]}</span>
+          <span className="numeric text-xs text-ink-faint">
+            {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })}
+          </span>
+        </span>
+      </span>
+    </HoverCard>
   )
 }
 
 function Shell({ children }) {
   const { user, signOut, can } = useAuth()
   return (
-    <div className="min-h-full">
-      <nav className="sticky top-0 z-10 flex h-12 items-stretch gap-1 border-b border-[var(--color-line)] bg-[var(--color-panel)]/95 px-3 backdrop-blur-sm md:px-4">
-        <span className="mr-2 flex shrink-0 items-center gap-2 text-sm font-semibold tracking-tight md:mr-4">
-          <Mark className="text-[var(--color-accent)]" />
-          <span className="hidden whitespace-nowrap sm:inline">NetSentinel-AI</span>
-        </span>
-        <NavLink to="/" icon={House}>Overview</NavLink>
-        <NavLink to="/alerts" icon={ListBullets}>Alerts</NavLink>
-        <NavLink to="/approvals" icon={Scales}>Approvals</NavLink>
-        {can(PERMISSIONS.modelsRead) && <NavLink to="/models" icon={Brain}>Models</NavLink>}
-        <div className="ml-auto flex items-center gap-3 text-xs text-[var(--color-ink-dim)]">
-          <span className="hidden items-center gap-2 lg:flex">
-            <span className="text-[var(--color-ink)]">{user?.username}</span>
-            {user?.role && (
-              <span
-                className="rounded-full border border-[var(--color-line)] px-2 py-0.5 text-[11px]"
-                title={ROLES[user.role]?.can}
-              >
-                {roleName(user.role)}
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-30 border-b border-line bg-panel/92 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-2 px-3 md:gap-4 md:px-6">
+          <Link to="/" viewTransition className="flex shrink-0 items-center gap-2.5" aria-label="NetSentinel-AI, overview">
+            <span className="sign-square sign-square-lit size-9" aria-hidden="true">
+              <Mark size={22} />
+            </span>
+            <span className="hidden text-[1.0625rem] font-extrabold tracking-tight lg:inline">NetSentinel-AI</span>
+          </Link>
+
+          <nav aria-label="Pages" className="flex min-w-0 items-center gap-0.5 overflow-x-auto md:gap-1 lg:ml-4">
+            <PageSign to="/" icon={House}>Overview</PageSign>
+            <PageSign to="/alerts" icon={ListBullets}>Alerts</PageSign>
+            <PageSign to="/approvals" icon={Scales}>Approvals</PageSign>
+            {can(PERMISSIONS.modelsRead) && <PageSign to="/models" icon={Brain}>Models</PageSign>}
+          </nav>
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+            <TourButton />
+            <ThemeToggle />
+            <LiveStatus />
+            <HoverCard
+              as="div"
+              width={260}
+              className="hidden lg:block"
+              content={() => (
+                <p className="text-ink-dim">{ROLES[user?.role]?.can ?? 'Signed in.'}</p>
+              )}
+            >
+              <span tabIndex={0} className="flex flex-col items-end leading-tight outline-none">
+                <span className="text-sm font-semibold">{user?.username}</span>
+                <span className="text-xs text-ink-faint">{roleName(user?.role)}</span>
               </span>
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={signOut}
-            className="press flex items-center gap-1.5 rounded px-2 py-1 transition-colors duration-150 hover:bg-[var(--color-panel-raised)] hover:text-[var(--color-ink)]"
-          >
-            <SignOut size={16} aria-hidden="true" />
-            <span className="sr-only md:not-sr-only">Sign out</span>
-          </button>
+            </HoverCard>
+            <button
+              type="button"
+              onClick={signOut}
+              className="press flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-ink-dim hover:bg-sunk hover:text-ink"
+            >
+              <SignOut size={17} weight="bold" aria-hidden="true" />
+              <span className="sr-only">Sign out</span>
+            </button>
+          </div>
         </div>
-      </nav>
-      <main className="mx-auto max-w-6xl px-4 pt-6 pb-10">{children}</main>
+      </header>
+      <main className="mx-auto max-w-[1440px] px-4 pt-7 pb-16 md:px-6">{children}</main>
     </div>
   )
 }
@@ -98,26 +169,32 @@ function Shell({ children }) {
 function Authenticated() {
   const [filters, setFilters] = useState({ status: '', severity: '', q: '' })
   return (
-    <Shell>
-      <Routes>
-        <Route path="/" element={<Overview onFilter={setFilters} />} />
-        <Route
-          path="/alerts"
-          element={
-            <AlertFeed
-              status={filters.status}
-              severity={filters.severity}
-              q={filters.q}
-              onFilterChange={setFilters}
+    <StreamProvider>
+      <TourProvider>
+        <Shell>
+          <Suspense fallback={<p className="text-ink-dim">Loading...</p>}>
+          <Routes>
+            <Route path="/" element={<Overview onFilter={setFilters} />} />
+            <Route
+              path="/alerts"
+              element={
+                <AlertFeed
+                  status={filters.status}
+                  severity={filters.severity}
+                  q={filters.q}
+                  onFilterChange={setFilters}
+                />
+              }
             />
-          }
-        />
-        <Route path="/alerts/:alertId" element={<AlertDetail />} />
-        <Route path="/approvals" element={<ApprovalQueue />} />
-        <Route path="/models" element={<ModelsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Shell>
+            <Route path="/alerts/:alertId" element={<AlertDetail />} />
+            <Route path="/approvals" element={<ApprovalQueue />} />
+            <Route path="/models" element={<ModelsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          </Suspense>
+        </Shell>
+      </TourProvider>
+    </StreamProvider>
   )
 }
 
@@ -128,8 +205,8 @@ function Gate() {
   // than flashing the dashboard for a session that has already expired.
   if (loading) {
     return (
-      <main className="flex min-h-full items-center justify-center">
-        <p className="text-sm text-[var(--color-ink-dim)]">Restoring session...</p>
+      <main className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-ink-dim">Restoring session...</p>
       </main>
     )
   }
@@ -140,11 +217,13 @@ function Gate() {
 export function App({ queryClient = createQueryClient() }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Gate />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Gate />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
