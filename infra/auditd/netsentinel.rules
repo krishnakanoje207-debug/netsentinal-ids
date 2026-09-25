@@ -1,0 +1,49 @@
+## auditd rules for the NetSentinel VM, read by the Wazuh agent on the VM.
+##
+## A small subset of Florian Roth's auditd baseline (github.com/Neo23x0/auditd,
+## Apache-2.0), cut to three things: what ran, who touched the account and privilege
+## files, and who changed the network configuration. That VM is full of attack
+## traffic by design; these rules watch the box itself, not the lab.
+##
+## Keys are Wazuh's own (etc/lists/audit-keys), so the stock audit rules (80700
+## range) name the event without a custom decoder:
+##   audit-wazuh-w write, audit-wazuh-a attribute change, audit-wazuh-c command.
+##
+## Install: sudo cp netsentinel.rules /etc/audit/rules.d/ && sudo augenrules --load
+
+## Start clean, give bursts room, and survive a bad line rather than stop loading.
+-D
+-b 8192
+-f 1
+-i
+
+## --- Execution --------------------------------------------------------------
+## Every exec in a session a real user opened (auid >= 1000), sudo included.
+## Daemons (auid unset) are excluded: Docker alone execs enough to bury the rest.
+-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=unset -k audit-wazuh-c
+-a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=unset -k audit-wazuh-c
+
+## --- Accounts, authentication and privilege ---------------------------------
+-w /etc/passwd -p wa -k audit-wazuh-w
+-w /etc/shadow -p wa -k audit-wazuh-w
+-w /etc/group -p wa -k audit-wazuh-w
+-w /etc/gshadow -p wa -k audit-wazuh-w
+-w /etc/sudoers -p wa -k audit-wazuh-w
+-w /etc/sudoers.d/ -p wa -k audit-wazuh-w
+-w /etc/pam.d/ -p wa -k audit-wazuh-w
+-w /etc/ssh/sshd_config -p wa -k audit-wazuh-w
+-w /etc/ssh/sshd_config.d/ -p wa -k audit-wazuh-w
+-w /root/.ssh/ -p wa -k audit-wazuh-w
+
+## --- Network configuration --------------------------------------------------
+-a always,exit -F arch=b64 -S sethostname,setdomainname -k audit-wazuh-a
+-a always,exit -F arch=b32 -S sethostname,setdomainname -k audit-wazuh-a
+-w /etc/hosts -p wa -k audit-wazuh-w
+-w /etc/resolv.conf -p wa -k audit-wazuh-w
+-w /etc/netplan/ -p wa -k audit-wazuh-w
+-w /etc/nftables.conf -p wa -k audit-wazuh-w
+## The bouncer config holds the LAPI key and decides what the firewall enforces.
+-w /etc/crowdsec/bouncers/ -p wa -k audit-wazuh-w
+-w /usr/sbin/nft -p x -k audit-wazuh-c
+-w /usr/sbin/iptables -p x -k audit-wazuh-c
+-w /usr/sbin/ip -p x -k audit-wazuh-c

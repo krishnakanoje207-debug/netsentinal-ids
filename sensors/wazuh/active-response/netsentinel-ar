@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""The Active Response scripts behind services/enforcement.py, for a Linux agent.
+
+One file installed under the three names the API calls with a "!" prefix
+(WAZUH_COMMANDS / UNDO_COMMANDS). A "!" command is not declared in the manager's
+ossec.conf: the agent runs active-response/bin/<name> directly, so the file name is
+the whole contract. It picks its behaviour from the name it was run as:
+
+    netsentinel-isolate          drop all traffic except to the Wazuh manager
+    netsentinel-unisolate        remove that
+    netsentinel-kill-process     SIGKILL the pid in arguments[0]
+    netsentinel-enable-account   unlock the account in arguments[0]
+
+Wazuh (4.2+) passes one JSON line on stdin; the API's "arguments" arrive as
+parameters.extra_args and our action/alert ids as parameters.alert.data. Install:
+
+    for name in netsentinel-isolate netsentinel-unisolate \
+                netsentinel-kill-process netsentinel-enable-account; do
+        sudo install -o root -g wazuh -m 750 netsentinel-ar \
+            /var/ossec/active-response/bin/$name
+    done
+"""
+
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+LOG = "/var/ossec/logs/active-responses.log"
+OSSEC_CONF = "/var/ossec/etc/ossec.conf"
+TABLE = "netsentinel_isolate"
+USERNAME = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
+
+
+def log(name, message):
+    stamp = datetime.now(timezone.utc).strftime("%Y/%m/%d %H:%M:%S")
+    with open(LOG, "a", encoding="utf-8") as handle:
+        handle.write(f"{stamp} {name}: {message}\n")
+
+
+def manager_address():
+    """The manager this agent reports to - the one address isolation keeps open,
+    so the unisolate command can still arrive."""
+    with open(OSSEC_CONF, encoding="utf-8") as handle:
+        match = re.search(r"<server>.*?<address>\s*([^<\s]+)\s*</address>",
+                          handle.read(), re.S)
+    if not match:
+        raise RuntimeError(f"no <server><address> in {OSSEC_CONF}")
+    return socket.gethostbyname(match.group(1))
+
+
+def isolate(_args):
+    manager = manager_address()
+    ruleset = f"""
+table inet {TABLE} {{
+    chain input {{
+        type filter hook input priority -200; policy drop;
+        iif lo accept
+        ip saddr {manager} accept
+    }}
+    chain output {{
+        type filter hook output priority -200; policy drop;
+        oif lo accept
+        ip daddr {manager} accept
+    }}
+}}
+"""
+    # Replace rather than add, so a second isolate is not an error.
+    subprocess.run(["nft", "delete", "table", "inet", TABLE],
+                   stderr=subprocess.DEVNULL, check=False)
+    subprocess.run(["nft", "-f", "-"], input=ruleset, text=True, check=True)
+    return f"isolated; only {manager} reachable"
+
+
+def unisolate(_args):
+    result = subprocess.run(["nft", "delete", "table", "inet", TABLE],
+                            capture_output=True, text=True, check=False)
+    # No table means not isolated, which is the state asked for.
+    return "unisolated" if result.returncode == 0 else "was not isolated"
+
+
+def kill_process(args):
+    pid = int(args[0])
+    if pid <= 1:
+        raise ValueError(f"refusing to kill pid {pid}")
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return f"pid {pid} had already exited"
+    return f"killed pid {pid}"
+
+
+def enable_account(args):
+    user = args[0]
+    if not USERNAME.match(user):
+        raise ValueError(f"not a username: {user!r}")
+    # The inverse of Wazuh's stock disable-account, which locks with passwd -l.
+    subprocess.run(["passwd", "-u", user], capture_output=True, check=True)
+    return f"unlocked {user}"
+
+
+ACTIONS = {
+    "netsentinel-isolate": isolate,
+    "netsentinel-unisolate": unisolate,
+    "netsentinel-kill-process": kill_process,
+    "netsentinel-enable-account": enable_account,
+}
+
+
+def main():
+    name = os.path.basename(sys.argv[0])
+    action = ACTIONS.get(name)
+    if action is None:
+        log(name, "installed under a name no action uses")
+        return 1
+
+    message = json.loads(sys.stdin.readline())
+    if message.get("command") != "add":
+        return 0  # these commands are stateless; there is nothing to "delete"
+    parameters = message.get("parameters") or {}
+    args = parameters.get("extra_args") or []
+    data = (parameters.get("alert") or {}).get("data") or {}
+    ids = (f"action={data.get('netsentinel_action_id')} "
+           f"alert={data.get('netsentinel_alert_id')}")
+
+    try:
+        outcome = action(args)
+    except (IndexError, ValueError, RuntimeError, OSError,
+            subprocess.CalledProcessError) as exc:
+        log(name, f"{ids} failed: {exc}")
+        return 1
+    log(name, f"{ids} {outcome}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

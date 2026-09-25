@@ -1,0 +1,9 @@
+<!--
+  Wazuh agent on the VM: read the audit log written by netsentinel.rules.
+  Paste inside <ossec_config> in /var/ossec/etc/ossec.conf, then
+  sudo systemctl restart wazuh-agent.
+-->
+<localfile>
+  <log_format>audit</log_format>
+  <location>/var/log/audit/audit.log</location>
+</localfile>

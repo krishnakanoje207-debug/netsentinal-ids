@@ -1,0 +1,148 @@
+<!--
+  Sysmon configuration for the NetSentinel endpoint (the Windows laptop, feature F3).
+
+  Derived from SwiftOnSecurity's sysmon-config
+  (https://github.com/SwiftOnSecurity/sysmon-config, sysmonconfig-export.xml),
+  licensed Creative Commons Attribution 4.0. The rules below are copied from it,
+  trimmed to the two event types this project correlates with network detections:
+  process creation (1) and network connections (3). Every other event type is
+  switched off, which is what keeps the volume down on an 8 GB laptop.
+
+  Install (elevated):  Sysmon64.exe -accepteula -i sysmonconfig.xml
+  Update in place:     Sysmon64.exe -c sysmonconfig.xml
+  Wazuh reads the Microsoft-Windows-Sysmon/Operational channel; see ossec-localfile.xml.
+-->
+<Sysmon schemaversion="4.50">
+	<HashAlgorithms>sha256</HashAlgorithms>
+	<CheckRevocation/>
+
+	<EventFiltering>
+
+	<!--EVENT 1: process creation. Everything, minus Windows' own background churn.-->
+	<RuleGroup name="" groupRelation="or">
+		<ProcessCreate onmatch="exclude">
+			<CommandLine condition="begin with"> "C:\Windows\system32\wermgr.exe" "-queuereporting_svc" </CommandLine>
+			<CommandLine condition="begin with">C:\Windows\system32\DllHost.exe /Processid</CommandLine>
+			<CommandLine condition="begin with">C:\Windows\system32\wbem\wmiprvse.exe -Embedding</CommandLine>
+			<CommandLine condition="begin with">C:\Windows\system32\wbem\wmiprvse.exe -secured -Embedding</CommandLine>
+			<CommandLine condition="is">C:\Windows\system32\wermgr.exe -upload</CommandLine>
+			<CommandLine condition="is">C:\Windows\system32\SearchIndexer.exe /Embedding</CommandLine>
+			<CommandLine condition="is">C:\windows\system32\wermgr.exe -queuereporting</CommandLine>
+			<CommandLine condition="is">\??\C:\Windows\system32\autochk.exe *</CommandLine>
+			<CommandLine condition="is">\SystemRoot\System32\smss.exe</CommandLine>
+			<CommandLine condition="is">C:\Windows\System32\RuntimeBroker.exe -Embedding</CommandLine>
+			<Image condition="is">C:\Windows\System32\TokenBrokerCookies.exe</Image>
+			<Image condition="is">C:\Windows\System32\plasrv.exe</Image>
+			<Image condition="is">C:\Windows\System32\wifitask.exe</Image>
+			<Image condition="is">C:\Windows\system32\CompatTelRunner.exe</Image>
+		</ProcessCreate>
+	</RuleGroup>
+
+	<!--EVENT 3: network connection. Only from the places and tools that matter:
+	    user-writable paths, living-off-the-land binaries, and suspicious ports.-->
+	<RuleGroup name="" groupRelation="or">
+		<NetworkConnect onmatch="include">
+			<!--Suspicious sources for network-connecting binaries-->
+			<Image name="Usermode" condition="begin with">C:\Users</Image>
+			<Image name="Caution" condition="begin with">C:\Recycle</Image>
+			<Image condition="begin with">C:\ProgramData</Image>
+			<Image condition="begin with">C:\Windows\Temp</Image>
+			<Image name="Caution" condition="begin with">C:\perflogs</Image>
+			<Image name="Caution" condition="begin with">C:\Windows\fonts</Image>
+			<!--Windows tools that should rarely talk to the network-->
+			<Image condition="image">bitsadmin.exe</Image>
+			<Image condition="image">certutil.exe</Image>
+			<Image condition="image">cmd.exe</Image>
+			<Image condition="image">cscript.exe</Image>
+			<Image condition="image">mshta.exe</Image>
+			<Image condition="image">msiexec.exe</Image>
+			<Image condition="image">net.exe</Image>
+			<Image condition="image">net1.exe</Image>
+			<Image condition="image">nslookup.exe</Image>
+			<Image condition="image">powershell.exe</Image>
+			<Image condition="image">powershell_ise.exe</Image>
+			<Image condition="image">reg.exe</Image>
+			<Image condition="image">regsvr32.exe</Image>
+			<Image condition="image">rundll32.exe</Image>
+			<Image condition="image">sc.exe</Image>
+			<Image condition="image">schtasks.exe</Image>
+			<Image condition="image">wmic.exe</Image>
+			<Image condition="image">wscript.exe</Image>
+			<!--Third-party tools an intruder brings-->
+			<Image condition="image">nc.exe</Image>
+			<Image condition="image">ncat.exe</Image>
+			<Image condition="image">nmap.exe</Image>
+			<Image condition="image">psexec.exe</Image>
+			<Image condition="image">psexesvc.exe</Image>
+			<Image condition="image">tor.exe</Image>
+			<!--Ports: remote admin, mail, proxies, Tor, Metasploit's default-->
+			<DestinationPort name="SSH" condition="is">22</DestinationPort>
+			<DestinationPort name="Telnet" condition="is">23</DestinationPort>
+			<DestinationPort name="SMTP" condition="is">25</DestinationPort>
+			<DestinationPort name="IMAP" condition="is">143</DestinationPort>
+			<DestinationPort name="RDP" condition="is">3389</DestinationPort>
+			<DestinationPort name="VNC" condition="is">5900</DestinationPort>
+			<DestinationPort name="Alert,Metasploit" condition="is">4444</DestinationPort>
+			<DestinationPort name="Proxy" condition="is">1080</DestinationPort>
+			<DestinationPort name="Proxy" condition="is">3128</DestinationPort>
+			<DestinationPort name="Proxy" condition="is">8080</DestinationPort>
+			<DestinationPort name="Tor" condition="is">9001</DestinationPort>
+			<DestinationPort name="Tor" condition="is">9030</DestinationPort>
+		</NetworkConnect>
+	</RuleGroup>
+
+	<RuleGroup name="" groupRelation="or">
+		<NetworkConnect onmatch="exclude">
+			<Image condition="begin with">C:\ProgramData\Microsoft\Windows Defender\Platform\</Image>
+			<DestinationHostname condition="end with">.microsoft.com</DestinationHostname>
+			<DestinationIp condition="is">127.0.0.1</DestinationIp>
+			<DestinationIp condition="begin with">fe80:0:0:0</DestinationIp>
+		</NetworkConnect>
+	</RuleGroup>
+
+	<!--Everything else off. An empty include matches nothing.-->
+	<RuleGroup name="" groupRelation="or">
+		<ProcessTerminate onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<DriverLoad onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<ImageLoad onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<CreateRemoteThread onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<RawAccessRead onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<ProcessAccess onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<FileCreate onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<FileCreateTime onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<RegistryEvent onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<FileCreateStreamHash onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<PipeEvent onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<WmiEvent onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<DnsQuery onmatch="include"/>
+	</RuleGroup>
+	<RuleGroup name="" groupRelation="or">
+		<FileDelete onmatch="include"/>
+	</RuleGroup>
+
+	</EventFiltering>
+</Sysmon>
