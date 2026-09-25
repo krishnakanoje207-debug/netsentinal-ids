@@ -215,7 +215,11 @@ def test_a_stream_on_another_contract_stops_the_scorer(write_tier_c):
 
 # --- the real artefact ----------------------------------------------------------
 
-@pytest.mark.skipif(not REAL_CARD.exists(), reason="no trained Tier C artefact in artefacts/")
+# Keyed on the ONNX, not the card: the card is committed but the graph is gitignored.
+@pytest.mark.skipif(
+    not REAL_CARD.with_name("tier_c.onnx").exists(),
+    reason="no trained Tier C artefact in artefacts/",
+)
 def test_the_trained_artefact_scores_a_window():
     model = load_window_model(REAL_CARD)
     assert model.window_flows == json.loads(REAL_CARD.read_text())["window_flows"]
