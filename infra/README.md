@@ -68,13 +68,15 @@ docker compose --profile sensors up -d --build  # --build: Zeek bakes in JA4+
 
 docker compose --profile storage --profile ingest up -d
 
-# the API migrates PostgreSQL on start; the writer and importer need that schema
+# the API migrates PostgreSQL on start; the writer and importer need that schema,
+# and the sensor reads which models are active from the API itself
 docker compose --profile app up -d --build
 docker compose --profile storage --profile bus --profile pipeline up -d --build
 ```
 
 The pipeline's one-time setup, its model registration and sensor row, is under
-[pipeline](#pipeline-the-detection-path) below.
+[pipeline](#pipeline-the-detection-path) below. Until the models are registered the
+sensor scores nothing.
 
 `ingest` is named together with `storage` because Vector depends on ClickHouse, and
 compose refuses a dependency on a service outside the selected profiles. Vector waits
@@ -104,16 +106,43 @@ they must be on the VM beside the checkout; they are gitignored, not in the imag
 | `tier-c-sink` | `netsentinel-tier-c-sink` | `netsentinel.flows.tier_c` | ClickHouse `tier_c_scores` |
 | `suricata-import` | `netsentinel-import-suricata`, every 300 s | `suricata-logs` volume | PostgreSQL `alerts` |
 
-The sensor scores Tiers A, D and B in process; each card's `mode` decides whether it
-raises anything. `TIER_D_MODEL` in `.env` picks the Tier D directory, `tier_d` (the
-Isolation Forest, the default) or `tier_d_ae` (the autoencoder), and a restart of
-`sensor` applies it.
+The sensor scores Tiers A, D and B in process, with both Tier D models loaded:
+`tier_d_ae` (the autoencoder) and `tier_d` (the Isolation Forest). The cards do not
+decide which of them counts; every card says `shadow`. The model registry does. At
+start the sensor reads `GET /api/v1/models/modes` from the API, on the port the `app`
+profile publishes (`API_PORT`, 8010 by default), and runs each model in the mode registered for
+its name and version:
+
+- **Registered active:** it decides. One active model per tier; with two, the sensor
+  refuses to start.
+- **Registered shadow, or retired:** it is scored and recorded, and raises nothing.
+- **Not registered:** it runs in shadow, with a warning in the sensor's log. An
+  unregistered model never decides.
+- **API unreachable, or the token refused:** the sensor retries for about fifteen
+  seconds, exits non-zero, and `restart: unless-stopped` starts it again. It never
+  falls back to the cards' modes, so the `app` profile has to be up.
+
+So nothing is scored until the models are registered and one per tier is active.
+The sensor reads the registry once, at start: a promotion on the dashboard takes
+effect when `sensor` restarts. Each model's resolved mode is logged as it loads
+(`loaded tier D tier_d_autoencoder:1.1.0 in active mode, per the model registry`).
+
+The sensor authenticates with `NETSENTINEL_SENSOR_TOKEN` from `.env`, which compose
+gives both `api` and `sensor`. It opens that one list and nothing else, and no user
+token opens the list in its place. Left blank, the API serves no list and the sensor
+does not start.
 
 The writer refuses to start until the Tier A card is registered and the sensor it
-writes for has a row. Both are one-time, after the `app` profile has migrated:
+writes for has a row. Both are one-time, after the `app` profile has migrated, and
+registration is also where each tier's active model is chosen: Tier A and the autoencoder
+decide, and the forest and Tier B observe in shadow, as in the demo
+(`lab/replay/build_demo.ps1`):
 
 ```bash
-docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_a/model_card.json
+docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_a/model_card.json --mode active
+docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_d_ae/model_card.json --mode active
+docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_d/model_card.json
+docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_b/model_card.json
 docker compose exec postgres psql -U netsentinel -d netsentinel -c "
   WITH a AS (INSERT INTO assets (hostname, ip_address, os, criticality)
              VALUES ('netsentinel-vm', '10.0.0.4', 'linux', 'high') RETURNING asset_id)
@@ -121,6 +150,15 @@ docker compose exec postgres psql -U netsentinel -d netsentinel -c "
   SELECT 'early_flow', asset_id, 'online' FROM a RETURNING sensor_id;"
 # put that sensor_id in .env as WRITER_SENSOR_ID (default 1), then
 docker compose --profile storage --profile bus --profile pipeline up -d
+```
+
+Registering without `--mode` puts a model in shadow. Registering it again updates its
+row rather than adding one, so the four commands can be repeated, and doing so resets
+each model to the mode they name. After a promotion, on the dashboard or with
+`netsentinel-shadow-report --promote`, restart the sensor to apply it:
+
+```bash
+docker compose --profile storage --profile bus --profile pipeline restart sensor
 ```
 
 Use the VM's own address for the asset. The Suricata importer re-reads the whole

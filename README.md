@@ -107,8 +107,8 @@ Each run writes a `model_card.json` whose fields map onto the `ml_models` table,
 every model is born in `shadow` mode.
 
 Tier C trains on the laptop CPU in windows of 20,000 flows, and so does the Tier D
-autoencoder (PR-AUC 0.933 against the forest's 0.639, p99 0.28 ms); its card is in
-shadow mode and the demo still serves the forest. Tier B (1D-CNN + BiLSTM) needs
+autoencoder (PR-AUC 0.933 against the forest's 0.639, p99 0.28 ms); the demo serves
+it active, with the forest in shadow beside it. Tier B (1D-CNN + BiLSTM) needs
 packet captures, which the NetFlow datasets do not have.
 
 ## From the wire to the dashboard
@@ -225,7 +225,10 @@ registered model with what it did over a window, and `POST /models/{id}/promote`
 makes one active; both go through the queries and the refusal rule the CLI uses, so
 the two cannot drift into disagreeing about what a model has earned. `models:read` is
 held by every seeded role, because which model is deciding is context for every alert
-on the page; `models:deploy` is held only by the ML engineer.
+on the page; `models:deploy` is held only by the ML engineer. The live sensor reads
+the outcome at start from `GET /models/modes`, with its own token
+(`NETSENTINEL_SENSOR_TOKEN`) that opens nothing else, so a promotion takes effect when
+the sensor restarts (`infra/README.md`, pipeline).
 
 Over HTTP the bars are deployment settings (`NETSENTINEL_PROMOTION_MIN_LABELLED`,
 `NETSENTINEL_PROMOTION_MIN_SHADOW_DAYS`) rather than request parameters, which is the

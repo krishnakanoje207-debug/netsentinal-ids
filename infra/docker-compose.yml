@@ -141,6 +141,9 @@ services:
       # required variable would stop "--profile storage" on a machine without it. The
       # API itself refuses to start without a signing key.
       NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+      # What the pipeline's sensor presents to read which models are active. Blank
+      # turns that endpoint off, and the sensor then refuses to start.
+      NETSENTINEL_SENSOR_TOKEN: ${NETSENTINEL_SENSOR_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -313,7 +316,8 @@ services:
   #   docker compose --profile storage --profile bus --profile pipeline up -d --build
   #
   # The writer and the Suricata importer write through the API's schema, so the app
-  # profile has to have run its migrations first; see README "pipeline".
+  # profile has to have run its migrations first, and the sensor reads which models
+  # are active from the running API; see README "pipeline".
 
   sensor:
     <<: &pipeline
@@ -325,22 +329,28 @@ services:
       restart: unless-stopped
     # Host networking, like Suricata: it captures the lab bridge. Redpanda advertises
     # itself as redpanda:9092, which the host cannot resolve, so the name is pointed
-    # at the port published on 127.0.0.1.
+    # at the port published on 127.0.0.1. The API is reached the same way, on the
+    # port the app profile publishes.
     network_mode: host
     extra_hosts: ["redpanda:127.0.0.1"]
     # For tcpdump, which holds matching file capabilities; the process is not root.
     cap_add: [NET_ADMIN, NET_RAW]
-    # Tiers A and D decide, Tier B scores in shadow (its card's mode governs each).
-    # TIER_D_MODEL picks the Tier D artefact directory: tier_d (Isolation Forest) or
-    # tier_d_ae (autoencoder).
+    # Both Tier D models are loaded, and the model registry decides at start which
+    # one scores active: a model it does not list runs in shadow, and an API that
+    # cannot be reached stops the sensor until the restart policy tries again. See
+    # README "pipeline".
     command:
       - netsentinel-sensor
       - --interface=netsentinel-lab
       - --brokers=redpanda:9092
+      - --registry-url=http://127.0.0.1:${API_PORT:-8010}
       - --models
       - /artefacts/tier_a/model_card.json
-      - /artefacts/${TIER_D_MODEL:-tier_d}/model_card.json
+      - /artefacts/tier_d_ae/model_card.json
+      - /artefacts/tier_d/model_card.json
       - /artefacts/tier_b/model_card.json
+    environment:
+      NETSENTINEL_SENSOR_TOKEN: ${NETSENTINEL_SENSOR_TOKEN:-}
     volumes:
       - ../artefacts:/artefacts:ro
     depends_on:
