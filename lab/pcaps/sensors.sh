@@ -2,9 +2,11 @@
 # Run Suricata and Zeek over the captures record.sh wrote, offline.
 #
 # Live sensing needs a Linux host (see record.sh); reading a capture exercises the
-# same rules and scripts on the same packets. Suricata runs the ET Open ruleset,
-# fetched once by suricata-update into $DATA/suricata. Zeek loads FoxIO's JA4+
-# package, installed once by zkg into $DATA/zeek.
+# same rules and scripts on the same packets, with the images and configuration the
+# compose sensors run (infra/docker-compose.yml): Suricata 8.0.7 with
+# infra/suricata/netsentinel.yaml, and Zeek built from infra/zeek with the JA4+
+# scripts and its local.zeek. Suricata runs the ET Open ruleset, fetched once by
+# suricata-update into $DATA/suricata.
 #
 #   OUT=D:/netsentinel-data/pcaps DATA=D:/netsentinel-data sh lab/pcaps/sensors.sh
 #
@@ -18,7 +20,7 @@ DATA="${DATA:-$OUT}"
 LOGS="$DATA/sensor-logs"
 CAPTURES="benign scan brute_force web_attack"
 
-mkdir -p "$DATA/suricata" "$DATA/zeek/zkg" "$DATA/zeek/packages"
+mkdir -p "$DATA/suricata"
 for name in $CAPTURES; do mkdir -p "$LOGS/suricata/$name" "$LOGS/zeek/$name"; done
 
 # Docker's veth leaves checksums to an offload that never happens, so every captured
@@ -35,32 +37,34 @@ EOF
 # licence. The download is cached, so only the first run needs the network.
 OFFLINE=""
 [ -s "$DATA/suricata/rules/suricata.rules" ] && OFFLINE="--offline"
-docker run --rm -v "$DATA/suricata:/var/lib/suricata" jasonish/suricata:7.0 \
+docker run --rm -v "$DATA/suricata:/var/lib/suricata" jasonish/suricata:8.0.7 \
     suricata-update $OFFLINE --no-test \
     --disable-conf /var/lib/suricata/disable.conf --modify-conf /var/lib/suricata/modify.conf
 
-# The attacker sits on the lab subnet too, so EXTERNAL_NET is "any": left at its
-# default of !$HOME_NET, every rule written $EXTERNAL_NET -> $HOME_NET would ignore
-# the lab's own attacks. victim-ssh listens on 2222, hence SSH_PORTS.
+# The live sensor's overrides, from infra/suricata/netsentinel.yaml: HOME_NET is the
+# lab subnet; EXTERNAL_NET is "any" because the attacker sits on the lab subnet too,
+# and left at !$HOME_NET every $EXTERNAL_NET -> $HOME_NET rule would ignore the lab's
+# own attacks; SSH_PORTS includes victim-ssh's 2222; JA4 for every client hello.
 docker run --rm -m 1500m -v "$OUT:/pcaps:ro" -v "$LOGS/suricata:/logs" \
-    -v "$DATA/suricata:/var/lib/suricata" --entrypoint sh jasonish/suricata:7.0 -c "
+    -v "$DATA/suricata:/var/lib/suricata" \
+    -v "$ROOT/infra/suricata/netsentinel.yaml:/etc/suricata/netsentinel.yaml:ro" \
+    --entrypoint sh jasonish/suricata:8.0.7 -c "
     for name in $CAPTURES; do
         suricata -r /pcaps/\$name.pcap -k none -l /logs/\$name \
-            --set 'vars.address-groups.HOME_NET=[172.30.0.0/24]' \
-            --set vars.address-groups.EXTERNAL_NET=any \
-            --set 'vars.port-groups.SSH_PORTS=[22,2222]'
+            --include /etc/suricata/netsentinel.yaml
     done"
 
-# JA4+ v0.18.8 is the last release that is plain Zeek script; later ones are a
-# compiled plugin that needs Zeek 7 and a toolchain the zeek/zeek:6.0 image lacks.
+# The compose sensor's image, built once from infra/zeek with the JA4+ scripts baked
+# in, so only the first run needs the network. Its local.zeek writes JSON logs and
+# loads the package.
+ZEEK_IMAGE=netsentinel/zeek:8.0.10-ja4
+docker image inspect "$ZEEK_IMAGE" >/dev/null 2>&1 ||
+    docker build -t "$ZEEK_IMAGE" "$ROOT/infra/zeek"
 docker run --rm -m 1g -v "$OUT:/pcaps:ro" -v "$LOGS/zeek:/logs" \
-    -v "$DATA/zeek/zkg:/usr/local/zeek/var/lib/zkg" \
-    -v "$DATA/zeek/packages:/usr/local/zeek/share/zeek/site/packages" \
-    zeek/zeek:6.0 sh -c "
-    [ -d /usr/local/zeek/share/zeek/site/packages/ja4 ] ||
-        zkg install --force --version v0.18.8 foxio/ja4
+    -v "$ROOT/infra/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek:ro" \
+    "$ZEEK_IMAGE" sh -c "
     for name in $CAPTURES; do
-        (cd /logs/\$name && zeek -C -r /pcaps/\$name.pcap local packages LogAscii::use_json=T)
+        (cd /logs/\$name && zeek -C -r /pcaps/\$name.pcap local)
     done"
 
 for name in $CAPTURES; do
