@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     # isolates hosts and disables accounts.
     wazuh_verify_tls: bool = True
 
+    # Flow counts for the dashboard's activity strip, read from ClickHouse
+    # network_flows. Optional like the rest: unset, the strip shows alerts and no
+    # flow counts, and nothing else in the API needs ClickHouse.
+    clickhouse_url: str | None = None
+    clickhouse_user: str | None = None
+    clickhouse_password: SecretStr | None = None
+
     @field_validator("sensor_token", mode="before")
     @classmethod
     def _blank_token_is_unset(cls, value):

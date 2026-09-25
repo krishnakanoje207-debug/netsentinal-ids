@@ -97,6 +97,32 @@ class AlertSummaryOut(BaseModel):
     top_sources: list[SourceCount]
 
 
+class ActivityBucketOut(BaseModel):
+    """One minute of the activity strip."""
+
+    start: datetime = Field(description="the start of the minute, UTC")
+    alerts: int
+    flows: int | None = Field(
+        description="flows scored in the minute; null when flow counts are unavailable"
+    )
+
+
+class ActivityOut(BaseModel):
+    """Alerts raised and flows scored per minute, over the last ``minutes`` minutes.
+
+    A flow count ClickHouse could not give is null rather than zero, as with
+    ``EvidenceOut``: the dashboard must be able to tell a quiet network from one it
+    cannot see.
+    """
+
+    minutes: int
+    until: datetime = Field(
+        description="the end of the newest bucket, which is the current, partial minute"
+    )
+    buckets: list[ActivityBucketOut] = Field(description="one per minute, oldest first")
+    flows_available: bool
+
+
 class AlertOut(BaseModel):
     """Feed row. Deliberately compact - the dashboard renders hundreds."""
 

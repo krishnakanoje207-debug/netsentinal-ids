@@ -190,6 +190,19 @@ class FakeAlertRepo:
             ],
         }
 
+    def per_minute(self, since: datetime) -> dict[datetime, int]:
+        """Truncated to the minute and counted, as date_trunc and GROUP BY do, and
+        only from ``since`` on, so a test can prove the window is applied."""
+        from collections import Counter
+
+        return dict(
+            Counter(
+                a.created_at.replace(second=0, microsecond=0)
+                for a in self.alerts
+                if a.created_at >= since
+            )
+        )
+
     def for_export(
         self, *, status=None, severity=None, search=None, limit=10_000
     ) -> list[dict]:

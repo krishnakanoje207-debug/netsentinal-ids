@@ -8,7 +8,16 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from netsentinel_api.routes import actions, alerts, assets, auth, models, stream, system
+from netsentinel_api.routes import (
+    actions,
+    activity,
+    alerts,
+    assets,
+    auth,
+    models,
+    stream,
+    system,
+)
 
 API_PREFIX = "/api/v1"
 
@@ -32,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(alerts.router, prefix=API_PREFIX)
+    app.include_router(activity.router, prefix=API_PREFIX)
     app.include_router(assets.router, prefix=API_PREFIX)
     app.include_router(actions.router, prefix=API_PREFIX)
     app.include_router(models.router, prefix=API_PREFIX)

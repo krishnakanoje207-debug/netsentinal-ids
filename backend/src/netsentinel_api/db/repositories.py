@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import cast, func, literal, or_, select
+from sqlalchemy import cast, func, literal, literal_column, or_, select
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql import Select
@@ -191,6 +191,25 @@ class AlertRepository:
             "by_status": {s.value: n for s, n in by_status.items()},
             "top_sources": [{"address": str(ip), "alerts": n} for ip, n in sources],
         }
+
+    def per_minute(self, since: datetime) -> dict[datetime, int]:
+        """Alerts raised in each minute from ``since`` on, keyed by the minute.
+
+        Minutes with none are absent; the caller knows which minutes it asked about.
+        The range is on ``created_at`` itself, so ix_alerts_created_at serves it.
+        """
+        # 'minute' as a literal rather than a bound parameter, so the SELECT and the
+        # GROUP BY are the same text however the driver numbers parameters. Two
+        # different placeholders would be two expressions, and PostgreSQL would
+        # refuse the query.
+        minute = func.date_trunc(literal_column("'minute'"), Alert.created_at)
+        return dict(
+            self._session.execute(
+                select(minute, func.count())
+                .where(Alert.created_at >= since)
+                .group_by(minute)
+            ).all()
+        )
 
     def get(self, alert_id: int) -> Alert | None:
         return self._session.scalar(
