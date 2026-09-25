@@ -24,8 +24,14 @@ from netsentinel_core.features.contract import (
 from netsentinel_scoring.engine import Verdict
 from netsentinel_sensor.agent import flow_payload
 from netsentinel_writer import flow_sink
-from netsentinel_writer.consumer import ReplayConsumer
-from netsentinel_writer.flow_sink import COLUMNS, FlowSink, flow_row
+from netsentinel_writer.consumer import RedpandaConsumer, ReplayConsumer
+from netsentinel_writer.flow_sink import (
+    COLUMNS,
+    DEAD_LETTER_TOPIC,
+    DeadLetterProducer,
+    FlowSink,
+    flow_row,
+)
 from netsentinel_writer.writer import ContractMismatch
 
 
@@ -139,6 +145,162 @@ def test_a_failed_insert_commits_nothing():
     assert consumer.commits == 0
 
 
+# --- poison messages ----------------------------------------------------------
+
+def _malformed() -> dict:
+    payload = _payload(9)
+    del payload["flow"]["splt_iat_3"]
+    return payload
+
+
+class DeadLetters:
+    def __init__(self) -> None:
+        self.sent: list[tuple[object, str]] = []
+
+    def __call__(self, value, error: str) -> None:
+        self.sent.append((value, error))
+
+
+def test_a_malformed_message_is_dead_lettered_and_ingestion_continues():
+    """One bad message must not stop every good one behind it."""
+    clickhouse = FakeClickHouse()
+    dead = DeadLetters()
+    consumer = RecordingConsumer([_payload(0), _malformed(), _payload(1)], clickhouse)
+    sink = FlowSink(clickhouse.insert, dead_letter=dead)
+    sink.run(consumer)
+
+    assert [row["src_port"] for row in clickhouse.batches[0]] == [40000, 40001]
+    assert len(dead.sent) == 1
+    assert dead.sent[0][0] == _malformed()
+    assert "splt_iat_3" in dead.sent[0][1]
+    assert sink.dead_lettered == 1
+    # The poison offset is covered by the commit after the good rows landed.
+    assert consumer.committed_after == [2]
+
+
+@pytest.mark.parametrize(
+    "poison",
+    [
+        "not an object",
+        {"contract": {"features": FEATURE_DIM}, "flow": "not a mapping"},
+        {"contract": {"features": FEATURE_DIM}},
+    ],
+)
+def test_other_shapes_of_poison_are_dead_lettered_too(poison):
+    clickhouse = FakeClickHouse()
+    dead = DeadLetters()
+    sink = FlowSink(clickhouse.insert, dead_letter=dead)
+    sink.run(ReplayConsumer([poison, _payload(0)]))
+    assert len(dead.sent) == 1
+    assert sum(len(b) for b in clickhouse.batches) == 1
+
+
+def test_a_poison_message_alone_is_committed_past():
+    """With nothing batched there is no later commit to carry its offset, so it is
+    committed straight after it is dead-lettered; a restart does not read it again."""
+    clickhouse = FakeClickHouse()
+    consumer = RecordingConsumer([_malformed()], clickhouse)
+    sink = FlowSink(clickhouse.insert, dead_letter=DeadLetters())
+    sink.run(consumer)
+    assert clickhouse.batches == []
+    assert consumer.committed_after == [0]
+
+
+def test_without_a_dead_letter_topic_the_poison_is_still_counted_and_skipped(caplog):
+    """Replay mode has no bus to publish to; the message is logged instead."""
+    clickhouse = FakeClickHouse()
+    sink = FlowSink(clickhouse.insert)
+    with caplog.at_level("ERROR", logger="netsentinel.flow_sink"):
+        sink.run(ReplayConsumer([_malformed(), _payload(0)]))
+    assert sink.dead_lettered == 1
+    assert sum(len(b) for b in clickhouse.batches) == 1
+    assert "dead-letter" in caplog.text
+
+
+def test_a_different_contract_still_stops_the_sink():
+    """Not a bad message but the wrong pipeline: every message after it is the same,
+    and dead-lettering the whole stream would hide that behind a green process."""
+    payload = _payload()
+    payload["contract"] = {"features": FEATURE_DIM + 1}
+    dead = DeadLetters()
+    with pytest.raises(ContractMismatch):
+        FlowSink(FakeClickHouse().insert, dead_letter=dead).run(ReplayConsumer([payload]))
+    assert dead.sent == []
+
+
+class FakeProducer:
+    def __init__(self, config, undelivered: int = 0) -> None:
+        self.config = config
+        self.produced: list[tuple[str, bytes]] = []
+        self._undelivered = undelivered
+
+    def produce(self, topic, value=None, **_kwargs) -> None:
+        self.produced.append((topic, value))
+
+    def flush(self, _timeout=None) -> int:
+        return self._undelivered
+
+
+def _producer(monkeypatch, undelivered: int = 0) -> list[FakeProducer]:
+    made: list[FakeProducer] = []
+
+    def factory(config):
+        made.append(FakeProducer(config, undelivered))
+        return made[-1]
+
+    monkeypatch.setitem(sys.modules, "confluent_kafka", types.SimpleNamespace(Producer=factory))
+    return made
+
+
+def test_the_dead_letter_producer_publishes_the_message_and_the_reason(monkeypatch):
+    made = _producer(monkeypatch)
+    dead = DeadLetterProducer("broker:9092")
+    dead({"flow": {}}, "KeyError: 'ts'")
+    dead(b"\xff not json", "not valid JSON")
+
+    (topic, first), (_, second) = made[0].produced
+    assert topic == DEAD_LETTER_TOPIC
+    assert json.loads(first) == {"error": "KeyError: 'ts'", "payload": {"flow": {}}}
+    assert json.loads(second)["payload"] == "� not json"
+
+
+def test_an_undelivered_dead_letter_raises_before_the_offset_moves(monkeypatch):
+    """Committing past a message the dead-letter topic never received loses it."""
+    _producer(monkeypatch, undelivered=1)
+    with pytest.raises(RuntimeError, match="dead-letter"):
+        DeadLetterProducer("broker:9092")({"flow": {}}, "bad")
+
+
+class BadBytesKafka:
+    def __init__(self, _config, consumer_ref) -> None:
+        self._consumer_ref = consumer_ref
+
+    def subscribe(self, _topics) -> None:
+        pass
+
+    def poll(self, _timeout):
+        self._consumer_ref[0].stop()
+        return types.SimpleNamespace(error=lambda: None, value=lambda: b"{truncated")
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_message_that_is_not_json_goes_to_the_dead_letter_topic(monkeypatch):
+    ref: list = []
+    monkeypatch.setitem(
+        sys.modules,
+        "confluent_kafka",
+        types.SimpleNamespace(Consumer=lambda config: BadBytesKafka(config, ref)),
+    )
+    dead = DeadLetters()
+    consumer = RedpandaConsumer("broker:9092", dead_letter=dead)
+    ref.append(consumer)
+    assert list(consumer.messages()) == []
+    assert dead.sent[0][0] == b"{truncated"
+    assert consumer.undecodable == 1
+
+
 class ScriptedConsumer(ReplayConsumer):
     """Yields a fixed script, None standing for an idle poll, advancing a fake clock
     three seconds per step."""
@@ -224,7 +386,8 @@ def test_sigterm_commits_the_partial_batch_before_closing(monkeypatch):
         sys.modules,
         "confluent_kafka",
         types.SimpleNamespace(
-            Consumer=lambda config: FakeKafka(config, payload, handlers, events)
+            Consumer=lambda config: FakeKafka(config, payload, handlers, events),
+            Producer=lambda config: FakeProducer(config),
         ),
     )
     monkeypatch.setattr(

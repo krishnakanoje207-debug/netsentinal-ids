@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 from netsentinel_core.bus import FLOW_TOPIC
 
@@ -65,6 +65,7 @@ class RedpandaConsumer:
         poll_timeout: float = 1.0,
         from_beginning: bool = False,
         yield_idle: bool = False,
+        dead_letter: Callable[[bytes, str], None] | None = None,
     ) -> None:
         try:
             from confluent_kafka import Consumer as KafkaConsumer
@@ -77,6 +78,9 @@ class RedpandaConsumer:
         # The flow sink batches, and needs to hear about a quiet poll to flush a partial
         # batch; the writer handles one message at a time and does not.
         self._yield_idle = yield_idle
+        # Where a message that is not JSON goes, rather than only into the log.
+        self._dead_letter = dead_letter
+        self.undecodable = 0
         self._consumer = KafkaConsumer(
             {
                 "bootstrap.servers": brokers,
@@ -112,6 +116,9 @@ class RedpandaConsumer:
                 # A message that is not JSON will never become JSON. Skipping it and
                 # moving on beats blocking the partition forever.
                 logger.error("skipping a message that is not valid JSON: %s", exc)
+                self.undecodable += 1
+                if self._dead_letter is not None:
+                    self._dead_letter(message.value(), f"not valid JSON: {exc}")
 
     def commit(self) -> None:
         self._consumer.commit(asynchronous=False)

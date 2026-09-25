@@ -15,6 +15,12 @@ flow, and the offset is committed only after an insert succeeds. A failed insert
 raises, and the uncommitted batch is read again on restart: at-least-once, like the
 writer. A flow stored twice is a duplicate row; a flow never stored is a verdict
 nobody can explain.
+
+A message that cannot become a row - not JSON, missing a column, the wrong shape -
+fails the same way on every read, so raising on it would stop ingestion for good.
+It is published with the reason to the dead-letter topic, logged and counted, and
+its offset is committed like any other. A different feature contract is not a bad
+message but the wrong pipeline, and still stops the sink; see ``ContractMismatch``.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable, Mapping
 
+from netsentinel_core.bus import FLOW_TOPIC
 from netsentinel_core.features.clickhouse import network_flows_columns
 from netsentinel_core.features.contract import FEATURE_DIM
 
@@ -39,6 +46,12 @@ from netsentinel_writer.writer import ContractMismatch
 logger = logging.getLogger("netsentinel.flow_sink")
 
 COLUMNS: tuple[str, ...] = tuple(name for name, _ in network_flows_columns())
+
+#: Messages the sink could not store, each with the reason, for an operator to read.
+DEAD_LETTER_TOPIC = f"{FLOW_TOPIC}.deadletter"
+
+#: What ``flow_row`` raises on a malformed message, as opposed to a contract mismatch.
+_POISON = (KeyError, TypeError, ValueError, AttributeError)
 
 
 def flow_row(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -78,6 +91,33 @@ class ClickHouseInserter:
             pass
 
 
+class DeadLetterProducer:
+    """Publishes a message the sink cannot store, with the reason, to the dead-letter
+    topic. ``confluent_kafka`` is imported lazily, as in the consumer."""
+
+    def __init__(self, brokers: str, topic: str = DEAD_LETTER_TOPIC) -> None:
+        try:
+            from confluent_kafka import Producer
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise RuntimeError(
+                "confluent-kafka is not installed; install netsentinel-writer[bus]"
+            ) from exc
+        self._topic = topic
+        self._producer = Producer({"bootstrap.servers": brokers})
+
+    def __call__(self, value: Any, error: str) -> None:
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        record = json.dumps({"error": error, "payload": value}, separators=(",", ":"))
+        self._producer.produce(self._topic, value=record.encode("utf-8"))
+        # Waited for, because the offset is committed after this returns: a message
+        # the topic never received would then be lost rather than parked.
+        if self._producer.flush(10):
+            raise RuntimeError(
+                f"a message could not be written to the dead-letter topic {self._topic}"
+            )
+
+
 class FlowSink:
     """Batches rows and commits the bus offset after each successful insert."""
 
@@ -87,13 +127,16 @@ class FlowSink:
         batch_size: int = 1000,
         max_wait: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
+        dead_letter: Callable[[Any, str], None] | None = None,
     ) -> None:
         self._insert = insert
+        self._dead_letter = dead_letter
         self._batch_size = batch_size
         self._max_wait = max_wait
         self._clock = clock
         self.rows = 0
         self.inserts = 0
+        self.dead_lettered = 0
 
     def run(self, consumer: Consumer) -> None:
         batch: list[dict[str, Any]] = []
@@ -101,9 +144,18 @@ class FlowSink:
         for payload in consumer.messages():
             # None is an idle poll: nothing arrived, but a partial batch may be due.
             if payload is not None:
-                if not batch:
-                    started = self._clock()
-                batch.append(flow_row(payload))
+                try:
+                    row = flow_row(payload)
+                except _POISON as exc:
+                    self._reject(payload, f"{type(exc).__name__}: {exc}")
+                    if not batch:
+                        # No batch will carry this offset, so it is committed now,
+                        # or a restart reads the same poison again.
+                        consumer.commit()
+                else:
+                    if not batch:
+                        started = self._clock()
+                    batch.append(row)
             if batch and (
                 len(batch) >= self._batch_size or self._clock() - started >= self._max_wait
             ):
@@ -111,6 +163,12 @@ class FlowSink:
                 batch = []
         if batch:
             self._flush(batch, consumer)
+
+    def _reject(self, payload: Any, error: str) -> None:
+        logger.error("dead-lettering a flow message that cannot be stored: %s", error)
+        if self._dead_letter is not None:
+            self._dead_letter(payload, error)
+        self.dead_lettered += 1
 
     def _flush(self, batch: list[dict[str, Any]], consumer: Consumer) -> None:
         self._insert(batch)
@@ -151,12 +209,15 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.replay, encoding="utf-8") as handle:
             payloads = [json.loads(line) for line in handle if line.strip()]
         consumer: Consumer = ReplayConsumer(payloads)
+        dead_letter = None
     else:
+        dead_letter = DeadLetterProducer(args.brokers)
         consumer = RedpandaConsumer(
             args.brokers,
             group_id=args.group_id,
             from_beginning=args.from_beginning,
             yield_idle=True,
+            dead_letter=dead_letter,
         )
         # Stopped rather than closed: the partial batch is inserted and its offset
         # committed after the loop ends, and a closed consumer cannot commit.
@@ -164,12 +225,18 @@ def main(argv: list[str] | None = None) -> int:
             if hasattr(signal, signal_name):
                 signal.signal(getattr(signal, signal_name), lambda *_: consumer.stop())
 
-    sink = FlowSink(inserter.insert)
+    sink = FlowSink(inserter.insert, dead_letter=dead_letter)
     try:
         sink.run(consumer)
     finally:
         consumer.close()
-    logger.info("finished: %s rows in %s inserts", sink.rows, sink.inserts)
+    logger.info(
+        "finished: %s rows in %s inserts, %s dead-lettered, %s not JSON",
+        sink.rows,
+        sink.inserts,
+        sink.dead_lettered,
+        getattr(consumer, "undecodable", 0),
+    )
     return 0
 
 
