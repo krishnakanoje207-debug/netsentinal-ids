@@ -117,6 +117,12 @@ def test_a_different_contract_is_refused():
         flow_row(payload)
 
 
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://clickhouse:8123", "clickhouse:8123"])
+def test_the_inserter_refuses_a_url_that_is_not_http(url):
+    with pytest.raises(ValueError, match="http or https"):
+        flow_sink.ClickHouseInserter(url, "user", "password")
+
+
 def test_rows_are_batched_and_committed_after_each_insert():
     clickhouse = FakeClickHouse()
     consumer = RecordingConsumer([_payload(i) for i in range(5)], clickhouse)

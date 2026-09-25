@@ -77,6 +77,9 @@ class ClickHouseInserter:
     def __init__(
         self, url: str, user: str, password: str, table: str = "netsentinel.network_flows"
     ) -> None:
+        # urlopen also follows file:// and other schemes; only HTTP reaches ClickHouse.
+        if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+            raise ValueError(f"ClickHouse URL must be http or https: {url!r}")
         query = urllib.parse.urlencode({"query": f"INSERT INTO {table} FORMAT JSONEachRow"})
         self._url = f"{url.rstrip('/')}/?{query}"
         self._headers = {"X-ClickHouse-User": user, "X-ClickHouse-Key": password}
@@ -86,8 +89,9 @@ class ClickHouseInserter:
         request = urllib.request.Request(
             self._url, data=body.encode("utf-8"), headers=self._headers, method="POST"
         )
-        # Raises on any non-2xx, which is what keeps the offset uncommitted.
-        with urllib.request.urlopen(request, timeout=30):
+        # Raises on any non-2xx, which is what keeps the offset uncommitted. B310: the
+        # scheme is checked in __init__.
+        with urllib.request.urlopen(request, timeout=30):  # nosec B310
             pass
 
 
