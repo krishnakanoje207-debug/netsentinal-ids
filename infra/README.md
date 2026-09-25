@@ -83,6 +83,11 @@ compose refuses a dependency on a service outside the selected profiles. Vector 
 on ClickHouse being healthy, and the schema is applied by ClickHouse's init directory on
 first start of an empty volume.
 
+The API reads ClickHouse too, for one thing: flows per minute from `network_flows` for
+the dashboard's activity strip, with the same `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`.
+It has no dependency on `clickhouse`, which is in `storage`, so `app` still starts
+without it; the strip then shows alerts, and flow counts as unavailable rather than zero.
+
 `redpanda-init` creates `netsentinel.flows` (sensor to writer),
 `netsentinel.flows.tier_c` (Tier C's per-flow scores, a window behind the flow),
 `netsentinel.flows.deadletter` (the writer's malformed flows),

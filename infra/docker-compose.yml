@@ -144,6 +144,12 @@ services:
       # What the pipeline's sensor presents to read which models are active. Blank
       # turns that endpoint off, and the sensor then refuses to start.
       NETSENTINEL_SENSOR_TOKEN: ${NETSENTINEL_SENSOR_TOKEN:-}
+      # Flow counts for the dashboard's activity strip. Optional, and not ":?" for
+      # the reason above: blank, or with storage down, the strip shows alerts and
+      # no flow counts. No depends_on, because clickhouse is in another profile.
+      NETSENTINEL_CLICKHOUSE_URL: http://clickhouse:8123
+      NETSENTINEL_CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
+      NETSENTINEL_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
