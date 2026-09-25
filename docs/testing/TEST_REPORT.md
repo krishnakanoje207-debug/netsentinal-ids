@@ -51,7 +51,7 @@ and no shell. All five are accepted.
 
 | Requirement | Measured | Verdict |
 |---|---|---|
-| NFR-01: ML inference <= 5 ms per flow | Tier A 0.07 ms p50, 0.19 ms p99; Tier D 8.2 ms p50, 17.1 ms p99 (ONNX, one flow per call; `docs/evaluation/REPORT.md` §6) | Tier A met; Tier D over budget |
+| NFR-01: ML inference <= 5 ms per flow | Tier A 0.07 ms p50, 0.19 ms p99; Tier D 0.06 ms p50, 0.13 ms p99 (ONNX, one flow per call; `docs/evaluation/REPORT.md` §6) | Met |
 | NFR-02: dashboard pages < 2 s | Locust, 25 concurrent analysts for 60 s, 683 requests, **0 failures**: feed median 20 ms (p95 47 ms), alert detail median 19 ms (p95 45 ms) | Met |
 | Login under the same load | median 780 ms (bcrypt, deliberately slow against guessing; once per session) | By design |
 
@@ -99,7 +99,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | O1 | Telemetry visible within 10 s | Deferred | needs Suricata/Zeek/Wazuh on the VM |
 | O2 | Signature detection of scan, brute force, web attack | Deferred | Suricata configured, not running |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, C 0.994, D 0.64; macro-F1 0.52; cross-dataset 0.74 / 0.05 reported |
-| O4 | Early-flow scoring, < 5 ms per flow | Partial | Tier A 0.07 ms, Tier D 8.2 ms; early-packet extractor built and parity-tested, served models use flow aggregates |
+| O4 | Early-flow scoring, < 5 ms per flow | Partial | Tier A 0.07 ms, Tier D 0.06 ms; early-packet extractor built and parity-tested, served models use flow aggregates |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
 | O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
@@ -125,7 +125,7 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | FR-21 | Audit of logins, approvals, changes, actions | Met | every login outcome, triage, decision, export, promotion |
 | FR-22 | Model registry with SHA-256 | Met | registry refuses a mismatched file |
 | FR-23 | Scripted attacks + replay | Met (replay) / Partial (scripts need the lab VM) | `lab/` |
-| NFR-01 | Latency | Partial | Tier A within budget; the served Tier D Isolation Forest is not (section 3) |
+| NFR-01 | Latency | Met | Tier A and the served Tier D Isolation Forest within budget (section 3) |
 | NFR-02 | Page load | Met | section 3 |
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
 | NFR-04 | HTTPS, bcrypt, JWT expiry, RBAC, secrets out of git | Met | nginx terminates TLS 1.2/1.3 for the dashboard, `/api` and the alert WebSocket (wss) on 127.0.0.1:5180, and redirects plain HTTP to HTTPS; the self-signed certificate is made at image build, so no key is in the repository (`frontend/nginx.conf`, `frontend/Dockerfile`); verified live: health 200 and analyst login 200 over HTTPS, wss stream connects, bad token refused |

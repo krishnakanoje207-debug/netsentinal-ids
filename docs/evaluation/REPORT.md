@@ -95,4 +95,4 @@ Two different failures. Trained on UNSW and moved elsewhere, the model ranks wor
 ## 6. Serving latency (NFR-01: ≤ 5 ms per flow)
 
 Exported ONNX graph, one flow per call over 2,000 test flows: p50 **0.074 ms**, p99 **0.194 ms** (Tier A).
-Tier D, the same way: p50 **8.159 ms**, p99 **17.138 ms**.
+Tier D, the same way: p50 **0.059 ms**, p99 **0.126 ms**, within the 5 ms budget because the 200-tree forest is exported as a single ONNX tree-ensemble node (8 nodes in the graph in all).
