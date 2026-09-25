@@ -5,6 +5,14 @@
 
     python -m netsentinel_sensor.agent --pcap capture.pcap --dry-run
 
+    NETSENTINEL_SENSOR_TOKEN=... python -m netsentinel_sensor.agent \
+        --interface netsentinel-lab --models ... --registry-url http://127.0.0.1:8010
+
+With ``--registry-url`` each model runs in the mode the API's model registry gives it,
+read once at start, instead of the mode on its card: a promotion on the dashboard takes
+effect on the next restart. A model the registry does not list runs in shadow, and a
+registry that cannot be read stops the sensor rather than letting it guess.
+
 This is the component the whole feature-contract argument was for. It runs the same
 ``FlowTracker`` the training data was built with, and refuses to start if a model's card
 declares a different contract than this build produces.
@@ -19,13 +27,17 @@ second time.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import signal
 import sys
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Callable, Iterable, Iterator, Sequence
 
 from netsentinel_core.features.contract import FEATURE_ORDER, FlowFeatures
 from netsentinel_core.features.extractor import FlowTracker
@@ -43,6 +55,21 @@ logger = logging.getLogger("netsentinel.sensor")
 
 #: How often to log throughput. Silence for minutes is indistinguishable from a hang.
 REPORT_EVERY_SECONDS = 30.0
+
+#: Where the API serves each registered model's mode (backend ``routes/models.py``).
+REGISTRY_PATH = "/api/v1/models/modes"
+
+#: The token that endpoint takes. An environment variable rather than a flag, so it
+#: stays out of the process list.
+REGISTRY_TOKEN_ENV = "NETSENTINEL_SENSOR_TOKEN"
+
+#: Pauses between attempts to read the registry: five attempts in about fifteen
+#: seconds, then the sensor exits and its supervisor decides when to try again.
+REGISTRY_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0)
+
+
+class RegistryUnavailable(RuntimeError):
+    """The model registry could not be read, so no model's mode is known."""
 
 
 @dataclass(slots=True)
@@ -173,12 +200,95 @@ class SensorAgent:
         return self.stats
 
 
-def build_scorer(card_paths: list[str]) -> FusionScorer:
-    """Load every model, letting the registry refuse mismatched ones."""
+def registry_fetcher(
+    url: str, token: str, timeout: float = 5.0
+) -> Callable[[], list[dict]]:
+    """A callable that reads every registered model's mode from the API at ``url``."""
+    # urlopen also follows file:// and other schemes; only HTTP reaches the API.
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        raise ValueError(f"registry URL must be http or https: {url!r}")
+    request = urllib.request.Request(
+        f"{url.rstrip('/')}{REGISTRY_PATH}",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+
+    def fetch() -> list[dict]:
+        # Raises on any non-2xx. B310: the scheme is checked above.
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+            return json.loads(response.read())
+
+    return fetch
+
+
+def read_registry(
+    fetch: Callable[[], list[dict]],
+    delays: Sequence[float] = REGISTRY_RETRY_DELAYS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[tuple[str, str], str]:
+    """Each registered model's mode, keyed by (name, version).
+
+    Retried a few times, because at start the API may simply not be up yet. After that
+    it raises: falling back to the cards' modes, or to everything in shadow, would run
+    the sensor in a posture nobody chose, and look healthy while doing it.
+    """
+    for attempt in range(len(delays) + 1):
+        try:
+            return {
+                (str(row["name"]), str(row["version"])): str(row["mode"]) for row in fetch()
+            }
+        # OSError covers a refused connection, a timeout and an HTTP error status;
+        # the rest are a reply that is not the list of models this expects.
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            reason = exc
+            if attempt < len(delays):
+                logger.warning(
+                    "model registry not read (%s); retrying in %.0fs", exc, delays[attempt]
+                )
+                sleep(delays[attempt])
+    raise RegistryUnavailable(
+        f"could not read the model registry after {len(delays) + 1} attempts: {reason}. "
+        f"Check that the API is up at --registry-url and that {REGISTRY_TOKEN_ENV} holds "
+        "the same token as the API's."
+    )
+
+
+def registry_mode(model, modes: dict[tuple[str, str], str]) -> str:
+    """The mode the registry gives this model, which is shadow unless it says active."""
+    mode = modes.get((model.name, model.version))
+    if mode is None:
+        logger.warning(
+            "tier %s %s:%s is not in the model registry, so it runs in shadow: an "
+            "unregistered model never decides. Register it with "
+            "netsentinel-register-model.",
+            model.tier, model.name, model.version,
+        )
+        return "shadow"
+    if mode not in ("active", "shadow"):
+        # Retired: loaded by mistake after a promotion replaced it.
+        logger.warning(
+            "the model registry lists tier %s %s:%s as %s, so it runs in shadow",
+            model.tier, model.name, model.version, mode,
+        )
+        return "shadow"
+    return mode
+
+
+def build_scorer(
+    card_paths: list[str], modes: dict[tuple[str, str], str] | None = None
+) -> FusionScorer:
+    """Load every model, letting the registry refuse mismatched ones.
+
+    With ``modes`` (see ``read_registry``) each model runs in the mode the model
+    registry gives it; without, in the mode its card declares.
+    """
     models = [load_model(Path(path)) for path in card_paths]
     for model in models:
+        if modes is not None:
+            model.mode = registry_mode(model, modes)
         logger.info(
-            "loaded tier %s %s:%s in %s mode", model.tier, model.name, model.version, model.mode
+            "loaded tier %s %s:%s in %s mode, per %s",
+            model.tier, model.name, model.version, model.mode,
+            "its card" if modes is None else "the model registry",
         )
     if not any(model.is_active for model in models):
         # Not an error: shadow-only is the intended starting posture. It is worth saying
@@ -202,6 +312,14 @@ def main(argv: list[str] | None = None) -> int:
         help="one or more model_card.json paths",
     )
     parser.add_argument("--brokers", default="localhost:9092")
+    parser.add_argument(
+        "--registry-url",
+        help=(
+            "the API, e.g. http://127.0.0.1:8010: run each model in the mode its model "
+            f"registry gives it rather than its card's; the token is read from "
+            f"{REGISTRY_TOKEN_ENV}"
+        ),
+    )
     parser.add_argument("--sensor-name", default="early_flow")
     parser.add_argument(
         "--dry-run",
@@ -216,7 +334,24 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)-5s %(name)s %(message)s",
     )
 
-    scorer = build_scorer(args.models)
+    modes = None
+    if args.registry_url:
+        token = os.environ.get(REGISTRY_TOKEN_ENV, "")
+        if not token:
+            parser.error(f"--registry-url needs the API's sensor token in {REGISTRY_TOKEN_ENV}")
+        try:
+            fetch = registry_fetcher(args.registry_url, token)
+        except ValueError as exc:
+            parser.error(str(exc))
+        try:
+            modes = read_registry(fetch, REGISTRY_RETRY_DELAYS)
+        except RegistryUnavailable as exc:
+            # Not a fallback: a sensor that cannot learn which models may decide does
+            # not start. Its supervisor (compose: restart unless-stopped) tries again.
+            logger.error("%s", exc)
+            return 1
+
+    scorer = build_scorer(args.models, modes)
     publisher: Publisher = (
         CollectingPublisher() if args.dry_run else RedpandaPublisher(args.brokers)
     )
