@@ -31,7 +31,8 @@ distribution is stored as quantiles and a flow's score becomes the fraction of b
 traffic that looks more normal than it. That reading is directly meaningful to an
 analyst, and it makes the decision threshold analytic: benign scores map to a uniform
 distribution, so flagging at ``1 - target_fpr`` yields exactly that false-positive
-rate by construction rather than by search.
+rate by construction rather than by search - except where identical benign flows tie on
+the threshold, which ``decision_threshold`` steps above on validation.
 """
 
 from __future__ import annotations
@@ -133,6 +134,25 @@ def anomaly_probability(
     """
     ecdf = np.interp(raw_scores, quantiles, levels)
     return 1.0 - ecdf
+
+
+def decision_threshold(benign_probabilities: np.ndarray,
+                       max_fpr: float = TARGET_MAX_FPR) -> float:
+    """``1 - max_fpr``, unless tied benign flows put validation over budget there.
+
+    The analytic threshold assumes benign scores are distinct. Identical benign flows
+    share one score, and when that score is the quantile the threshold sits on, all of
+    them are flagged at once: on NF-UNSW-NB15-v3 that doubled the forest's false-positive
+    rate. The threshold then moves to the lowest validation value that keeps the
+    budget, which lies strictly above the tied score.
+    """
+    ordered = np.sort(np.asarray(benign_probabilities, dtype=np.float64))
+    threshold = 1.0 - max_fpr
+    if (ordered >= threshold).mean() <= max_fpr:
+        return threshold
+    values = np.unique(ordered)
+    at_or_above = 1.0 - np.searchsorted(ordered, values, side="left") / len(ordered)
+    return float(values[at_or_above <= max_fpr].min())
 
 
 def evaluate(probabilities: np.ndarray, y: np.ndarray, threshold: float) -> dict[str, float]:
@@ -260,9 +280,10 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
 
     # Calibrated on validation, never on the data the forest was fitted to: training
     # scores are optimistic and would put the threshold in the wrong place.
-    levels, quantiles = fit_quantiles(model.decision_function(log_scale(x_val_benign)))
+    val_scores = model.decision_function(log_scale(x_val_benign))
+    levels, quantiles = fit_quantiles(val_scores)
 
-    threshold = 1.0 - TARGET_MAX_FPR
+    threshold = decision_threshold(anomaly_probability(val_scores, levels, quantiles))
     probabilities = anomaly_probability(
         model.decision_function(log_scale(x_test)), levels, quantiles
     )
@@ -304,7 +325,7 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0") -> 
     }
     (out_dir / "model_card.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
 
-    print(f"threshold {threshold:.4f} (analytic, from a {TARGET_MAX_FPR:.1%} budget)")
+    print(f"threshold {threshold:.7f} (from a {TARGET_MAX_FPR:.1%} budget on validation)")
     print(f"on test: FPR {metrics['false_positive_rate']:.4f}  recall {metrics['recall']:.4f}")
     if "pr_auc" in metrics:
         print(f"PR-AUC {metrics['pr_auc']:.4f}  ROC-AUC {metrics['roc_auc']:.4f}")

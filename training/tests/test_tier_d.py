@@ -17,6 +17,7 @@ from netsentinel_training.models.tier_d import (
     QUANTILE_COUNT,
     TARGET_MAX_FPR,
     anomaly_probability,
+    decision_threshold,
     fit_quantiles,
     load_benign,
     train,
@@ -94,6 +95,28 @@ def test_benign_probabilities_are_uniform_so_the_threshold_is_analytic():
     assert realised == pytest.approx(TARGET_MAX_FPR, abs=0.005)
 
 
+def test_a_tie_on_the_threshold_moves_it_above_the_tied_score():
+    """Identical benign flows share a score; flagging all of them would blow the budget."""
+    rng = np.random.default_rng(0)
+    common = rng.normal(0, 1, 9850)
+    # 1.5% of flows share one score, which becomes the quantile the threshold sits on.
+    scores = np.concatenate([common, np.full(150, np.quantile(common, 0.003))])
+    levels, quantiles = fit_quantiles(scores)
+    probabilities = anomaly_probability(scores, levels, quantiles)
+    assert float((probabilities >= 1.0 - TARGET_MAX_FPR).mean()) > TARGET_MAX_FPR
+
+    threshold = decision_threshold(probabilities)
+    assert threshold > 1.0 - TARGET_MAX_FPR
+    assert float((probabilities >= threshold).mean()) <= TARGET_MAX_FPR
+    assert not (probabilities[-150:] >= threshold).any()
+
+
+def test_without_ties_the_threshold_stays_analytic():
+    scores = np.random.default_rng(1).normal(0, 1, 10000)
+    levels, quantiles = fit_quantiles(scores)
+    assert decision_threshold(anomaly_probability(scores, levels, quantiles)) == 1.0 - TARGET_MAX_FPR
+
+
 # --- data loading ---------------------------------------------------------
 
 def test_only_benign_rows_are_used_for_training(data_dir):
@@ -124,8 +147,9 @@ def test_onnx_matches_scikit_learn(card):
     assert card["onnx_max_abs_drift"] <= ONNX_TOLERANCE
 
 
-def test_threshold_is_the_analytic_value(card):
-    assert card["threshold"] == pytest.approx(1.0 - TARGET_MAX_FPR)
+def test_threshold_is_the_analytic_value_or_just_above_it(card):
+    # A few hundred validation flows are coarse enough to tie on the quantile.
+    assert 1.0 - TARGET_MAX_FPR <= card["threshold"] < 1.0
 
 
 def test_false_positive_budget_is_respected_on_unseen_data(card):
