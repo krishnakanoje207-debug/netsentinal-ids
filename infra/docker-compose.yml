@@ -11,6 +11,8 @@
 #   docker compose --profile ingest up -d      # Vector
 #   docker compose --profile lab up -d         # the victim/attacker lab
 #   docker compose --profile sensors up -d     # Suricata + Zeek on the lab bridge
+#   docker compose --profile storage --profile bus --profile pipeline up -d --build
+#                                              # sensor, Tier C, writer, sinks
 #   docker compose --profile dashboards up -d  # Grafana
 #   docker compose --profile intel up -d       # MISP + Keep
 #   docker compose --profile response up -d    # CrowdSec Local API
@@ -20,13 +22,15 @@
 #   docker compose --profile scan up -d        # Greenbone, for a scan window
 #
 # Budget, as the sum of the memory caps below: storage 2.5 GB, bus 1.2 GB, ingest
-# 0.25 GB, sensors 2 GB, lab 0.4 GB, dashboards 0.25 GB, response 0.25 GB, app
-# 0.6 GB beyond storage. About 7.4 GB; with hids (3 GB) that is the always-on core,
-# 10.4 GB.
+# 0.25 GB, sensors 2 GB, pipeline 1.7 GB, lab 0.4 GB, dashboards 0.25 GB, response
+# 0.25 GB, app 0.6 GB beyond storage. About 9.1 GB; with hids (3 GB) that is the
+# always-on core, 12.1 GB.
 #
 # intel (2.9 GB), case (1.6 GB) and scan (4.3 GB once its one-shot containers exit)
-# each fit on top of the core, but not together, so they are separate profiles and take
-# turns. Core + intel, 13.3 GB, is the demo configuration. None of the three produces
+# are separate profiles and take turns. Core + case is 13.7 GB. Core + intel is
+# 15.0 GB, which leaves about 1 GB for the OS: too tight to leave running, so for the
+# demo stop hids or dashboards alongside it. Core + scan (16.4 GB) does not fit;
+# scan needs hids stopped. None of the three produces
 # detections: threat intelligence enriches alerts, IRIS holds the cases, Greenbone
 # runs in a window. The detection path runs with all three stopped.
 
@@ -299,6 +303,146 @@ services:
       - ./zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek:ro
     mem_limit: 1g
     restart: unless-stopped
+
+  # --- pipeline: the detection path -------------------------------------------
+  #
+  # One image (pipeline/Dockerfile), one process per service. Artefacts are mounted
+  # read-only from the repository's artefacts/, never baked in. Needs storage and bus
+  # named with it, because compose refuses a dependency on an unselected service:
+  #
+  #   docker compose --profile storage --profile bus --profile pipeline up -d --build
+  #
+  # The writer and the Suricata importer write through the API's schema, so the app
+  # profile has to have run its migrations first; see README "pipeline".
+
+  sensor:
+    <<: &pipeline
+      build:
+        context: ..
+        dockerfile: infra/pipeline/Dockerfile
+      image: netsentinel/pipeline:0.1.0
+      profiles: [pipeline]
+      restart: unless-stopped
+    # Host networking, like Suricata: it captures the lab bridge. Redpanda advertises
+    # itself as redpanda:9092, which the host cannot resolve, so the name is pointed
+    # at the port published on 127.0.0.1.
+    network_mode: host
+    extra_hosts: ["redpanda:127.0.0.1"]
+    # For tcpdump, which holds matching file capabilities; the process is not root.
+    cap_add: [NET_ADMIN, NET_RAW]
+    # Tiers A and D decide, Tier B scores in shadow (its card's mode governs each).
+    # TIER_D_MODEL picks the Tier D artefact directory: tier_d (Isolation Forest) or
+    # tier_d_ae (autoencoder).
+    command:
+      - netsentinel-sensor
+      - --interface=netsentinel-lab
+      - --brokers=redpanda:9092
+      - --models
+      - /artefacts/tier_a/model_card.json
+      - /artefacts/${TIER_D_MODEL:-tier_d}/model_card.json
+      - /artefacts/tier_b/model_card.json
+    volumes:
+      - ../artefacts:/artefacts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    mem_limit: 384m
+
+  # Tier C: windows of flows off netsentinel.flows, per-flow scores onto
+  # netsentinel.flows.tier_c. Always shadow.
+  tier-c-scorer:
+    <<: *pipeline
+    command:
+      - python
+      - -m
+      - netsentinel_scoring.window
+      - --card=/artefacts/tier_c/model_card.json
+      - --brokers=redpanda:9092
+    volumes:
+      - ../artefacts:/artefacts:ro
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    mem_limit: 384m
+    networks: [backplane]
+
+  # Scored flows to explained detections in PostgreSQL. Refuses to start until the
+  # Tier A card is registered and WRITER_SENSOR_ID names a sensors row (README).
+  detection-writer:
+    <<: *pipeline
+    command:
+      - netsentinel-writer
+      - --card=/artefacts/tier_a/model_card.json
+      - --family-card=/artefacts/family/model_card.json
+      - --sensor-id=${WRITER_SENSOR_ID:-1}
+      - --brokers=redpanda:9092
+    environment: &pipeline-db
+      NETSENTINEL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD}@postgres:5432/${NETSENTINEL_DB:-netsentinel}
+      # Required by the API settings these processes load, though they sign nothing.
+      NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+    volumes:
+      - ../artefacts:/artefacts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    mem_limit: 384m
+    networks: [backplane]
+
+  # Every scored flow into ClickHouse network_flows.
+  flow-sink:
+    <<: *pipeline
+    command:
+      - netsentinel-flow-sink
+      - --brokers=redpanda:9092
+      - --clickhouse=http://clickhouse:8123
+    environment: &pipeline-clickhouse
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+    depends_on: &pipeline-sink-deps
+      clickhouse:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    mem_limit: 192m
+    networks: [backplane]
+
+  # Tier C's window scores into ClickHouse tier_c_scores.
+  tier-c-sink:
+    <<: *pipeline
+    command:
+      - netsentinel-tier-c-sink
+      - --brokers=redpanda:9092
+      - --clickhouse=http://clickhouse:8123
+    environment: *pipeline-clickhouse
+    depends_on: *pipeline-sink-deps
+    mem_limit: 192m
+    networks: [backplane]
+
+  # Suricata's alerts into PostgreSQL alerts, every SURICATA_IMPORT_SECONDS. The
+  # importer re-reads the whole eve.json and skips alerts it already holds, so a
+  # repeat is harmless; a missing file (Suricata not up yet) fails that pass only.
+  suricata-import:
+    <<: *pipeline
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          netsentinel-import-suricata --eve /var/log/suricata/eve.json
+          sleep "$${SURICATA_IMPORT_SECONDS:-300}"
+        done
+    environment:
+      <<: *pipeline-db
+      SURICATA_IMPORT_SECONDS: ${SURICATA_IMPORT_SECONDS:-300}
+    volumes:
+      - suricata-logs:/var/log/suricata:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 192m
+    networks: [backplane]
 
   # --- the lab --------------------------------------------------------------
 

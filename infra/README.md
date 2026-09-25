@@ -17,21 +17,28 @@ Budget, as the sum of each profile's memory caps:
 | `bus` | Redpanda (+ a one-shot topic creator) | 1.2 GB |
 | `ingest` | Vector | 0.25 GB |
 | `sensors` | Suricata 8, Zeek 8 (both with JA4) | 2 GB |
+| `pipeline` | sensor, Tier C scorer, detection writer, flow and Tier C sinks, Suricata importer | 1.7 GB |
 | `lab` | victims, benign traffic, attacker | 0.4 GB |
 | `dashboards` | Grafana | 0.25 GB |
 | `response` | CrowdSec Local API | 0.25 GB |
 | `app` | API, dashboard (PostgreSQL shared with `storage`) | 0.6 GB |
 | `hids` | Wazuh manager, indexer, dashboard | 3 GB |
-| **core** | everything above | **10.4 GB** |
+| **core** | everything above | **12.1 GB** |
 | `intel` | MISP, MariaDB, Redis, Keep | 2.9 GB |
 | `case` | DFIR-IRIS app, worker, PostgreSQL, RabbitMQ, nginx | 1.6 GB |
 | `scan` | Greenbone gvmd, ospd-openvas, openvasd, Redis, PostgreSQL, feeds | 4.3 GB |
 
-Core plus `intel` is 13.3 GB and is the demo configuration. `case` (12 GB with the
-core) and `scan` (14.7 GB, leaving about 1.3 GB for the OS) each fit in place of
-`intel`, not alongside it, so the three take turns. None of them produces detections,
-so the detection path never waits on the rotation. `scan`'s 4.3 GB excludes three
+The `pipeline` profile moved the core from 10.4 GB to 12.1 GB, and the rotation with
+it. Core plus `case` is 13.7 GB and fits. Core plus `intel` is 15.0 GB, which leaves
+about 1 GB for the OS: too little to run unattended, so for the demo stop `dashboards`
+or `hids` while `intel` is up. Core plus `scan` is 16.4 GB and does not fit at all;
+stop `hids` for the scan window. None of the three rotating profiles produces
+detections, so the detection path never waits on them. `scan`'s 4.3 GB excludes three
 one-shot containers that exit once their setup is done.
+
+The pipeline's caps (384 MB for the sensor, the Tier C scorer and the writer, 192 MB
+for each sink and the importer) are estimates from the libraries each process loads,
+not measurements. Check `docker stats` on the first day, as for the indexer.
 
 Two figures are above the plan (M1 §7.4): IRIS is capped at 1.6 GB against the plan's
 ~1.0 GB, because its app and worker are separate Python processes that each need
@@ -60,7 +67,14 @@ docker compose --profile sensors run --rm --entrypoint suricata-update suricata
 docker compose --profile sensors up -d --build  # --build: Zeek bakes in JA4+
 
 docker compose --profile storage --profile ingest up -d
+
+# the API migrates PostgreSQL on start; the writer and importer need that schema
+docker compose --profile app up -d --build
+docker compose --profile storage --profile bus --profile pipeline up -d --build
 ```
+
+The pipeline's one-time setup, its model registration and sensor row, is under
+[pipeline](#pipeline-the-detection-path) below.
 
 `ingest` is named together with `storage` because Vector depends on ClickHouse, and
 compose refuses a dependency on a service outside the selected profiles. Vector waits
@@ -73,6 +87,45 @@ first start of an empty volume.
 `netsentinel.flows.tier_c.deadletter` (the Tier C sink's) and exits; it leaves an
 existing topic alone, so it is safe on every `up`. Check with
 `docker compose exec redpanda rpk topic list`.
+
+## pipeline: the detection path
+
+The `pipeline` profile runs the Python processes that turn packets into detections, all
+from one image (`pipeline/Dockerfile`: core, scoring, sensors, writer and, for the ORM,
+backend; no torch). The model artefacts are mounted read-only from `../artefacts`, so
+they must be on the VM beside the checkout; they are gitignored, not in the image.
+
+| Service | Process | From | To |
+|---|---|---|---|
+| `sensor` | `netsentinel-sensor` on `netsentinel-lab` (host network) | packets | `netsentinel.flows` |
+| `tier-c-scorer` | `python -m netsentinel_scoring.window` | `netsentinel.flows` | `netsentinel.flows.tier_c` |
+| `detection-writer` | `netsentinel-writer` (Tier A explainer, family labeller) | `netsentinel.flows` | PostgreSQL `detections`, `alerts` |
+| `flow-sink` | `netsentinel-flow-sink` | `netsentinel.flows` | ClickHouse `network_flows` |
+| `tier-c-sink` | `netsentinel-tier-c-sink` | `netsentinel.flows.tier_c` | ClickHouse `tier_c_scores` |
+| `suricata-import` | `netsentinel-import-suricata`, every 300 s | `suricata-logs` volume | PostgreSQL `alerts` |
+
+The sensor scores Tiers A, D and B in process; each card's `mode` decides whether it
+raises anything. `TIER_D_MODEL` in `.env` picks the Tier D directory, `tier_d` (the
+Isolation Forest, the default) or `tier_d_ae` (the autoencoder), and a restart of
+`sensor` applies it.
+
+The writer refuses to start until the Tier A card is registered and the sensor it
+writes for has a row. Both are one-time, after the `app` profile has migrated:
+
+```bash
+docker compose --profile storage --profile bus --profile pipeline run --rm   detection-writer netsentinel-register-model /artefacts/tier_a/model_card.json
+docker compose exec postgres psql -U netsentinel -d netsentinel -c "
+  WITH a AS (INSERT INTO assets (hostname, ip_address, os, criticality)
+             VALUES ('netsentinel-vm', '10.0.0.4', 'linux', 'high') RETURNING asset_id)
+  INSERT INTO sensors (type, host_asset_id, status)
+  SELECT 'early_flow', asset_id, 'online' FROM a RETURNING sensor_id;"
+# put that sensor_id in .env as WRITER_SENSOR_ID (default 1), then
+docker compose --profile storage --profile bus --profile pipeline up -d
+```
+
+Use the VM's own address for the asset. The Suricata importer re-reads the whole
+`eve.json` on each pass and skips alerts it already holds, so the interval
+(`SURICATA_IMPORT_SECONDS`) trades freshness against re-reading a growing file.
 
 ## Verifying each step
 
