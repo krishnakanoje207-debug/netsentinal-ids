@@ -14,3 +14,9 @@ from __future__ import annotations
 #: partition. Retained rather than acked and forgotten, so the stream can be
 #: replayed when a model is retrained.
 FLOW_TOPIC = "netsentinel.flows"
+
+#: Tier C's per-flow scores, one message per flow of each scored window, keyed by flow
+#: id like FLOW_TOPIC. Its own topic, because a flow's Tier C score arrives a window
+#: after the flow itself, and the consumers of FLOW_TOPIC expect every message to carry
+#: the full feature vector.
+TIER_C_TOPIC = "netsentinel.flows.tier_c"
