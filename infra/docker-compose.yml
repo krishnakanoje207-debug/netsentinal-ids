@@ -225,7 +225,8 @@ services:
   # also make them, but with whatever defaults the broker has at that moment, and the
   # dead-letter topic would not exist until the first malformed flow - which is when
   # the writer needs it to already be there. Names from netsentinel_core.bus
-  # (FLOW_TOPIC, TIER_C_TOPIC) and netsentinel_writer.flow_sink.DEAD_LETTER_TOPIC.
+  # (FLOW_TOPIC, TIER_C_TOPIC) and the DEAD_LETTER_TOPIC of netsentinel_writer.flow_sink
+  # and netsentinel_writer.tier_c_sink.
   # Idempotent: an existing topic is left alone.
   redpanda-init:
     image: redpandadata/redpanda:v24.2.7
@@ -236,7 +237,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        for topic in netsentinel.flows netsentinel.flows.tier_c netsentinel.flows.deadletter; do
+        for topic in netsentinel.flows netsentinel.flows.tier_c netsentinel.flows.deadletter \
+                     netsentinel.flows.tier_c.deadletter; do
           rpk topic describe "$$topic" -X brokers=redpanda:9092 >/dev/null 2>&1 ||
             rpk topic create "$$topic" --replicas 1 -X brokers=redpanda:9092 || exit 1
         done

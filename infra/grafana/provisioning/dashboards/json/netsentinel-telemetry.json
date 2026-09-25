@@ -246,6 +246,42 @@
         "overrides": []
       },
       "options": {}
+    },
+    {
+      "id": 8,
+      "title": "Tier C alert rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(ts) AS time, countIf(probability >= threshold) / count() AS alert_rate\nFROM netsentinel.tier_c_scores\nWHERE $__timeFilter(ts)\nGROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "description": "Share of flows the graph tier (Tier C, shadow) scored at or above its threshold, by flow time. Scores arrive a window after the flow, so the latest interval fills in late."
     }
   ]
 }

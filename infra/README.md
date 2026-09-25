@@ -68,8 +68,9 @@ on ClickHouse being healthy, and the schema is applied by ClickHouse's init dire
 first start of an empty volume.
 
 `redpanda-init` creates `netsentinel.flows` (sensor to writer),
-`netsentinel.flows.tier_c` (Tier C's per-flow scores, a window behind the flow) and
-`netsentinel.flows.deadletter` (the writer's malformed flows) and exits; it leaves an
+`netsentinel.flows.tier_c` (Tier C's per-flow scores, a window behind the flow),
+`netsentinel.flows.deadletter` (the writer's malformed flows),
+`netsentinel.flows.tier_c.deadletter` (the Tier C sink's) and exits; it leaves an
 existing topic alone, so it is safe on every `up`. Check with
 `docker compose exec redpanda rpk topic list`.
 

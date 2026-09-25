@@ -119,7 +119,10 @@ class DeadLetterProducer:
 
 
 class FlowSink:
-    """Batches rows and commits the bus offset after each successful insert."""
+    """Batches rows and commits the bus offset after each successful insert.
+
+    ``row`` turns one message into one row; the Tier C sink passes its own.
+    """
 
     def __init__(
         self,
@@ -128,8 +131,10 @@ class FlowSink:
         max_wait: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
         dead_letter: Callable[[Any, str], None] | None = None,
+        row: Callable[[Mapping[str, Any]], dict[str, Any]] = flow_row,
     ) -> None:
         self._insert = insert
+        self._row = row
         self._dead_letter = dead_letter
         self._batch_size = batch_size
         self._max_wait = max_wait
@@ -145,7 +150,7 @@ class FlowSink:
             # None is an idle poll: nothing arrived, but a partial batch may be due.
             if payload is not None:
                 try:
-                    row = flow_row(payload)
+                    row = self._row(payload)
                 except _POISON as exc:
                     self._reject(payload, f"{type(exc).__name__}: {exc}")
                     if not batch:
@@ -178,10 +183,20 @@ class FlowSink:
         self.inserts += 1
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Write every scored flow to ClickHouse")
+def main(
+    argv: list[str] | None = None,
+    *,
+    description: str = "Write every scored flow to ClickHouse",
+    group_id: str = "netsentinel-flow-sink",
+    topic: str = FLOW_TOPIC,
+    table: str = "netsentinel.network_flows",
+    row: Callable[[Mapping[str, Any]], dict[str, Any]] = flow_row,
+    dead_letter_topic: str = DEAD_LETTER_TOPIC,
+) -> int:
+    """Run the sink. The keywords are what the Tier C sink changes; see tier_c_sink."""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--brokers", default="localhost:9092")
-    parser.add_argument("--group-id", default="netsentinel-flow-sink")
+    parser.add_argument("--group-id", default=group_id)
     parser.add_argument("--clickhouse", default="http://localhost:8123")
     parser.add_argument(
         "--from-beginning",
@@ -202,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         print("refused: set CLICKHOUSE_PASSWORD", file=sys.stderr)
         return 2
     inserter = ClickHouseInserter(
-        args.clickhouse, os.environ.get("CLICKHOUSE_USER", "netsentinel"), password
+        args.clickhouse, os.environ.get("CLICKHOUSE_USER", "netsentinel"), password, table
     )
 
     if args.replay:
@@ -211,10 +226,11 @@ def main(argv: list[str] | None = None) -> int:
         consumer: Consumer = ReplayConsumer(payloads)
         dead_letter = None
     else:
-        dead_letter = DeadLetterProducer(args.brokers)
+        dead_letter = DeadLetterProducer(args.brokers, dead_letter_topic)
         consumer = RedpandaConsumer(
             args.brokers,
             group_id=args.group_id,
+            topic=topic,
             from_beginning=args.from_beginning,
             yield_idle=True,
             dead_letter=dead_letter,
@@ -225,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             if hasattr(signal, signal_name):
                 signal.signal(getattr(signal, signal_name), lambda *_: consumer.stop())
 
-    sink = FlowSink(inserter.insert, dead_letter=dead_letter)
+    sink = FlowSink(inserter.insert, dead_letter=dead_letter, row=row)
     try:
         sink.run(consumer)
     finally:

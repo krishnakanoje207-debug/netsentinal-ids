@@ -97,6 +97,26 @@ ORDER BY (ts, src_ip)
 TTL toDateTime(ts) + INTERVAL 30 DAY
 SETTINGS index_granularity = 8192;
 
+CREATE TABLE IF NOT EXISTS netsentinel.tier_c_scores
+(
+    ts DateTime64(3),
+    flow_id String,
+    sensor LowCardinality(String),
+    src_ip IPv4,
+    dst_ip IPv4,
+    model_name LowCardinality(String),
+    model_version LowCardinality(String),
+    probability Float64,
+    threshold Float64,
+    window_flows UInt32,
+    window_hosts UInt32,
+    ingested_at DateTime64(3) DEFAULT now64(3)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(ts)
+ORDER BY (ts, src_ip)
+TTL toDateTime(ts) + INTERVAL 30 DAY;
+
 CREATE TABLE IF NOT EXISTS netsentinel.suricata_events
 (
     ts DateTime64(3),

@@ -16,6 +16,7 @@ from netsentinel_core.features.clickhouse import (
     FLOW_TTL_DAYS,
     full_schema,
     network_flows_ddl,
+    tier_c_scores_ddl,
 )
 from netsentinel_core.features.contract import (
     FEATURE_ORDER,
@@ -87,9 +88,24 @@ def test_as_row_matches_the_table_columns():
         assert f"    {column} " in ddl, f"as_row writes {column}, which the table lacks"
 
 
-def test_all_three_tables_are_created():
+def test_tier_c_scores_are_kept_as_long_as_the_flows():
+    ddl = tier_c_scores_ddl()
+    assert f"INTERVAL {FLOW_TTL_DAYS} DAY" in ddl
+    assert "ORDER BY (ts, src_ip)" in ddl
+    assert "PARTITION BY toYYYYMMDD(ts)" in ddl
+
+
+def test_tier_c_scores_record_the_model_and_its_window():
+    ddl = tier_c_scores_ddl()
+    for column in ("model_name", "model_version", "probability Float64",
+                   "threshold Float64", "window_flows", "window_hosts",
+                   "ingested_at DateTime64(3) DEFAULT now64(3)"):
+        assert f"    {column}" in ddl
+
+
+def test_all_tables_are_created():
     schema = full_schema()
-    for table in ("network_flows", "suricata_events", "zeek_logs"):
+    for table in ("network_flows", "tier_c_scores", "suricata_events", "zeek_logs"):
         assert f"netsentinel.{table}" in schema
     assert "CREATE DATABASE IF NOT EXISTS netsentinel" in schema
 

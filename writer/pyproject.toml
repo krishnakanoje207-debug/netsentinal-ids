@@ -25,6 +25,7 @@ bus = ["confluent-kafka>=2.5"]
 [project.scripts]
 netsentinel-writer = "netsentinel_writer.main:main"
 netsentinel-flow-sink = "netsentinel_writer.flow_sink:main"
+netsentinel-tier-c-sink = "netsentinel_writer.tier_c_sink:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -76,6 +76,47 @@ def network_flows_ddl(database: str = "netsentinel") -> str:
     )
 
 
+def tier_c_scores_columns() -> list[tuple[str, str]]:
+    """(name, type) for every tier_c_scores column, in table order.
+
+    Shared by the DDL and the Tier C sink, like ``network_flows_columns``.
+    """
+    return [
+        ("ts", "DateTime64(3)"),
+        ("flow_id", "String"),
+        ("sensor", "LowCardinality(String)"),
+        ("src_ip", "IPv4"),
+        ("dst_ip", "IPv4"),
+        ("model_name", "LowCardinality(String)"),
+        ("model_version", "LowCardinality(String)"),
+        # Calibrated, as the scorer publishes it; an alert is probability >= threshold.
+        ("probability", "Float64"),
+        ("threshold", "Float64"),
+        # The window the score came from: how many flows, and how many hosts they
+        # joined. A score from a window of three flows means less than one of a thousand.
+        ("window_flows", "UInt32"),
+        ("window_hosts", "UInt32"),
+        # Set by ClickHouse, not the sink: how far behind the flow the score landed.
+        ("ingested_at", "DateTime64(3) DEFAULT now64(3)"),
+    ]
+
+
+def tier_c_scores_ddl(database: str = "netsentinel") -> str:
+    """CREATE TABLE for Tier C's per-flow window scores (TIER_C_TOPIC)."""
+    columns = [f"{name} {type_}" for name, type_ in tier_c_scores_columns()]
+    body = ",\n    ".join(columns)
+    return (
+        f"CREATE TABLE IF NOT EXISTS {database}.tier_c_scores\n"
+        f"(\n    {body}\n)\n"
+        "ENGINE = MergeTree\n"
+        "PARTITION BY toYYYYMMDD(ts)\n"
+        # The same order as network_flows, so a flow and its Tier C score are found
+        # by the same time-window and host queries.
+        "ORDER BY (ts, src_ip)\n"
+        f"TTL toDateTime(ts) + INTERVAL {FLOW_TTL_DAYS} DAY;"
+    )
+
+
 def suricata_events_ddl(database: str = "netsentinel") -> str:
     return (
         f"CREATE TABLE IF NOT EXISTS {database}.suricata_events\n"
@@ -130,6 +171,8 @@ def full_schema(database: str = "netsentinel") -> str:
             f"CREATE DATABASE IF NOT EXISTS {database};",
             "",
             network_flows_ddl(database),
+            "",
+            tier_c_scores_ddl(database),
             "",
             suricata_events_ddl(database),
             "",
