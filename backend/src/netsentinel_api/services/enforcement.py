@@ -46,9 +46,11 @@ DEFAULT_BAN_DURATION = "4h"
 ORIGIN = "netsentinel"
 
 #: The Active Response commands this system invokes, per action type. The ``!``
-#: prefix is Wazuh's marker for "a command declared in the manager's configuration".
+#: prefix tells the agent to run ``active-response/bin/<name>`` directly, with no
+#: command declared in the manager's configuration, so the file name is the contract.
 #: ``disable-account`` ships with Wazuh; the other two are scripts deployed with the
-#: agent, because Wazuh has no stock command for either.
+#: agent (``sensors/wazuh/active-response/netsentinel-ar``), because Wazuh has no
+#: stock command for either.
 WAZUH_COMMANDS: dict[ActionType, str] = {
     ActionType.isolate_host: "!netsentinel-isolate",
     ActionType.kill_process: "!netsentinel-kill-process",
@@ -168,17 +170,21 @@ def split_target(action: ResponseAction) -> tuple[str, str | None]:
 def active_response_body(action: ResponseAction, command: str,
                          argument: str | None) -> dict:
     """The body of a PUT /active-response call."""
+    # The AR script reads its context from the alert object. Carrying our two
+    # ids means the script's own log line leads back to the approval.
+    data = {
+        "netsentinel_action_id": str(action.action_id),
+        "netsentinel_alert_id": str(action.alert_id),
+    }
+    # Wazuh's stock disable-account ignores arguments and takes the user from
+    # alert.data.dstuser, as if the alert had named it. Our enable-account reads
+    # arguments, so the name goes in both.
+    if action.action_type is ActionType.disable_account and argument:
+        data["dstuser"] = argument
     return {
         "command": command,
         "arguments": [argument] if argument else [],
-        # The AR script reads its context from the alert object. Carrying our two
-        # ids means the script's own log line leads back to the approval.
-        "alert": {
-            "data": {
-                "netsentinel_action_id": str(action.action_id),
-                "netsentinel_alert_id": str(action.alert_id),
-            }
-        },
+        "alert": {"data": data},
     }
 
 

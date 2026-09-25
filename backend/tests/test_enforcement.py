@@ -132,6 +132,26 @@ def test_the_command_body_carries_the_argument_and_the_ids():
     assert body["alert"]["data"]["netsentinel_action_id"] == "500"
 
 
+def test_disabling_an_account_names_it_where_the_stock_script_reads_it():
+    """Wazuh's disable-account takes the user from alert.data.dstuser, not arguments."""
+    body = active_response_body(
+        _action(action_type=ActionType.disable_account, target="003:svc-backup"),
+        WAZUH_COMMANDS[ActionType.disable_account],
+        "svc-backup",
+    )
+    assert body["alert"]["data"]["dstuser"] == "svc-backup"
+    assert body["arguments"] == ["svc-backup"]
+
+
+def test_only_account_actions_carry_a_dstuser():
+    body = active_response_body(
+        _action(action_type=ActionType.kill_process, target="001:4172"),
+        WAZUH_COMMANDS[ActionType.kill_process],
+        "4172",
+    )
+    assert "dstuser" not in body["alert"]["data"]
+
+
 def test_isolation_sends_no_arguments():
     body = active_response_body(
         _action(action_type=ActionType.isolate_host, target="001"),
