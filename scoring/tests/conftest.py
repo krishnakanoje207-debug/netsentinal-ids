@@ -162,3 +162,134 @@ def _train_tier_d(directory: Path, mode: str) -> Path:
 def tier_d_shadow_card(tmp_path_factory) -> Path:
     pytest.importorskip("skl2onnx", reason="Tier D export needs the training extras")
     return _train_tier_d(tmp_path_factory.mktemp("tier_d_shadow"), mode="shadow")
+
+
+def _write_tier_b(directory: Path, mode: str) -> Path:
+    """A stand-in Tier B artefact: the real input and output, none of the weight.
+
+    Built as a bare ONNX graph rather than by training the CNN, because torch costs
+    more memory than this test machine can spare, and what is under test here is how
+    the fusion scorer feeds and gates a sequence tier, not what the network learned.
+    It reads the signed lengths only, so a flow's score follows its packets.
+    """
+    from onnx import TensorProto, helper, numpy_helper
+
+    from netsentinel_core.features.contract import SPLT_N, TIER_B_FEATURES
+    from netsentinel_scoring.registry import sha256_of
+
+    weights = np.zeros((len(TIER_B_FEATURES), 1), dtype=np.float32)
+    weights[:SPLT_N] = 0.01
+    graph = helper.make_graph(
+        [
+            helper.make_node("MatMul", ["input", "weights"], ["margin"]),
+            helper.make_node("Sigmoid", ["margin"], ["probability"]),
+        ],
+        "tier_b_stand_in",
+        [helper.make_tensor_value_info("input", TensorProto.FLOAT, [None, len(TIER_B_FEATURES)])],
+        [helper.make_tensor_value_info("probability", TensorProto.FLOAT, [None, 1])],
+        [numpy_helper.from_array(weights, "weights")],
+    )
+    # IR version pinned: the onnx package writes a newer one than onnxruntime reads.
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=8)
+    onnx_path = directory / "tier_b.onnx"
+    onnx_path.write_bytes(model.SerializeToString())
+
+    card_path = directory / "model_card.json"
+    card_path.write_text(
+        json.dumps(
+            {
+                "name": "tier_b_cnn_bilstm",
+                "tier": "B",
+                "version": "0.1.0-test",
+                "onnx_sha256": sha256_of(onnx_path),
+                "threshold": 0.5,
+                "mode": mode,
+                "feature_order": list(TIER_B_FEATURES),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return card_path
+
+
+@pytest.fixture(scope="session")
+def tier_b_shadow_card(tmp_path_factory) -> Path:
+    pytest.importorskip("onnx", reason="building the Tier B stand-in needs the onnx package")
+    return _write_tier_b(tmp_path_factory.mktemp("tier_b_shadow"), mode="shadow")
+
+
+#: Flows per window in the Tier C stand-in's card, so a test can fill one.
+TIER_C_TEST_WINDOW = 4
+
+
+def _write_tier_c(directory: Path, mode: str = "shadow", **card_overrides) -> Path:
+    """A stand-in Tier C artefact with the real graph signature.
+
+    The three inputs the exported E-GraphSAGE takes, and one probability per edge. It
+    reads the edge features only; the real model's parity with its training graph is
+    checked against the real artefact, in test_window.
+    """
+    from onnx import TensorProto, helper, numpy_helper
+
+    from netsentinel_scoring.registry import sha256_of
+
+    weights = np.full((len(TIER_A_FEATURES), 1), 0.01, dtype=np.float32)
+    graph = helper.make_graph(
+        [
+            helper.make_node("MatMul", ["edge_features", "weights"], ["margin"]),
+            helper.make_node("Sigmoid", ["margin"], ["column"]),
+            helper.make_node("Squeeze", ["column", "axis"], ["probability"]),
+        ],
+        "tier_c_stand_in",
+        [
+            helper.make_tensor_value_info("edge_index", TensorProto.INT64, [2, None]),
+            helper.make_tensor_value_info(
+                "edge_features", TensorProto.FLOAT, [None, len(TIER_A_FEATURES)]
+            ),
+            helper.make_tensor_value_info("node_count", TensorProto.INT64, []),
+        ],
+        [helper.make_tensor_value_info("probability", TensorProto.FLOAT, [None])],
+        [
+            numpy_helper.from_array(weights, "weights"),
+            numpy_helper.from_array(np.array([1], dtype=np.int64), "axis"),
+        ],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=8)
+    onnx_path = directory / "tier_c.onnx"
+    onnx_path.write_bytes(model.SerializeToString())
+
+    card = {
+        "name": "tier_c_egraphsage",
+        "tier": "C",
+        "version": "0.1.0-test",
+        "onnx_sha256": sha256_of(onnx_path),
+        "threshold": 0.5,
+        "mode": mode,
+        "feature_order": list(TIER_A_FEATURES),
+        "calibration": {"method": "platt", "a": 1.0, "b": 0.0},
+        "window_flows": TIER_C_TEST_WINDOW,
+        "scoring_unit": "window",
+    }
+    card.update(card_overrides)
+    card_path = directory / "model_card.json"
+    card_path.write_text(json.dumps(card, indent=2), encoding="utf-8")
+    return card_path
+
+
+@pytest.fixture
+def write_tier_c(tmp_path):
+    """Writes a Tier C stand-in, with any card field overridden."""
+    pytest.importorskip("onnx", reason="building the Tier C stand-in needs the onnx package")
+
+    def write(**card_overrides) -> Path:
+        directory = tmp_path / f"tier_c_{len(list(tmp_path.iterdir()))}"
+        directory.mkdir()
+        return _write_tier_c(directory, **card_overrides)
+
+    return write
+
+
+@pytest.fixture
+def tier_c_window() -> int:
+    return TIER_C_TEST_WINDOW

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from netsentinel_core.features.contract import FEATURE_ORDER, SCALAR_FIELDS
+from netsentinel_core.features.contract import FEATURE_ORDER, SCALAR_FIELDS, TIER_B_FEATURES
 from netsentinel_sensor.agent import SensorAgent, flow_payload
 from netsentinel_sensor.capture import from_pcap_file
 from netsentinel_sensor.publisher import CollectingPublisher
@@ -66,6 +66,20 @@ def test_payload_carries_the_whole_feature_vector(scorer, publisher, pcap_path):
     for feature in FEATURE_ORDER:
         assert feature in payload["flow"], f"{feature} missing from the published flow"
     assert payload["contract"]["features"] == len(FEATURE_ORDER)
+
+
+def test_payload_carries_the_packet_sequence_under_tier_b_names(scorer, publisher, pcap_path):
+    """Tier B reads the first packets, so the message must carry them as extracted, under
+    the names its card declares - not just columns that happen to exist."""
+    agent = SensorAgent(scorer, publisher)
+    run(agent, pcap_path)
+
+    by_id = {str(features.key): features for features in scorer.scored}
+    for _key, payload in publisher.published:
+        features = by_id[payload["flow"]["flow_id"]]
+        assert [payload["flow"][name] for name in TIER_B_FEATURES] == (
+            features.splt_len + features.splt_iat
+        )
 
 
 def test_payload_names_every_model_that_scored(shadow_scorer, publisher, pcap_path):

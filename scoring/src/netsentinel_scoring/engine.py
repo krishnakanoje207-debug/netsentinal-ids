@@ -30,6 +30,14 @@ from netsentinel_scoring.registry import LoadedModel
 #: not an accuser, since on its own it flags anything unusual including benign change.
 DEFAULT_TIER_WEIGHTS: dict[str, float] = {"A": 0.5, "B": 0.3, "C": 0.1, "D": 0.1}
 
+#: Fewest real packets a sequence tier needs to see before it scores; below it the tier
+#: abstains - no score at all, which is not the same as a low one. Tier B on its test
+#: split (card 1.2.0): 1-3 packet flows run at 1.6-2.4% false positives against the 1%
+#: the threshold was chosen for, with Bot and DDoS recall at most 0.15, while 4+ packet
+#: flows run at 0.26% with recall 0.99. It also covers NetFlow replays, whose sequence
+#: is all padding: the model scores that 0.88, over its threshold, for every flow.
+MIN_SEQUENCE_PACKETS: dict[str, int] = {"B": 4}
+
 
 class ScoringError(RuntimeError):
     """Scoring could not be completed."""
@@ -133,6 +141,8 @@ class FusionScorer:
         weighted_total = 0.0
         weight_sum = 0.0
         for model, key in zip(self._models, self._keys):
+            if _packets_in_sequence(features) < MIN_SEQUENCE_PACKETS.get(model.tier, 0):
+                continue
             probability = float(model.score(self._vector_for(model, features))[0])
             verdict.model_scores[key] = probability
 
@@ -173,6 +183,12 @@ class FusionScorer:
         if unknown:
             raise ScoringError(f"explanation names features outside the contract: {unknown}")
         return dict(contributions)
+
+
+def _packets_in_sequence(features: FlowFeatures) -> int:
+    """Real packets in the SPLT, counted as Tier B's own mask counts them: a padded slot
+    has length exactly zero, and a real IPv4 packet never does."""
+    return sum(1 for length in features.splt_len if length != 0)
 
 
 def _flatten(features: FlowFeatures) -> dict[str, float]:

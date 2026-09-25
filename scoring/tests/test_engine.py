@@ -7,7 +7,12 @@ import dataclasses
 import pytest
 
 from netsentinel_core.features.contract import TIER_A_FEATURES
-from netsentinel_scoring.engine import FusionScorer, ScoringError, Verdict
+from netsentinel_scoring.engine import (
+    MIN_SEQUENCE_PACKETS,
+    FusionScorer,
+    ScoringError,
+    Verdict,
+)
 from netsentinel_scoring.registry import load_model
 
 
@@ -180,3 +185,76 @@ def test_the_same_model_loaded_twice_is_refused(shadow_card):
     model = load_model(shadow_card)
     with pytest.raises(ScoringError, match="more than once"):
         FusionScorer([model, model])
+
+
+# --- a sequence tier, and flows too short for it ---------------------------
+
+def _with_packets(flow, packets: int):
+    """The flow with ``packets`` real SPLT slots and the rest padding."""
+    from netsentinel_core.features.contract import SPLT_N
+
+    padding = SPLT_N - packets
+    flow.splt_len = [60 if i % 2 == 0 else -60 for i in range(packets)] + [0] * padding
+    flow.splt_iat = [0.0 if i == 0 else 5.0 for i in range(packets)] + [0.0] * padding
+    return flow
+
+
+def test_a_sequence_tier_scores_a_flow_with_enough_packets(
+    active_card, tier_b_shadow_card, malicious_flow
+):
+    scorer = FusionScorer([load_model(active_card), load_model(tier_b_shadow_card)])
+    verdict = scorer.score(_with_packets(malicious_flow, MIN_SEQUENCE_PACKETS["B"]))
+
+    assert 0.0 <= verdict.model_scores["tier_b"] <= 1.0
+
+
+def test_a_sequence_tier_abstains_on_a_flow_with_no_packet_sequence(
+    active_card, tier_b_shadow_card, malicious_flow
+):
+    """A NetFlow replay carries zeros where the sequence would be. Scoring that is
+    scoring padding, so the tier says nothing - no score, and no error."""
+    tier_a = load_model(active_card)
+    alone = FusionScorer([tier_a]).score(_with_packets(malicious_flow, 0))
+    verdict = FusionScorer([tier_a, load_model(tier_b_shadow_card)]).score(
+        _with_packets(malicious_flow, 0)
+    )
+
+    assert "tier_b" not in verdict.model_scores
+    assert verdict.model_scores["tier_a"] == alone.model_scores["tier_a"]
+    assert verdict.risk_score == alone.risk_score
+
+
+def test_a_sequence_tier_abstains_below_its_minimum_packet_count(
+    tier_b_shadow_card, malicious_flow
+):
+    scorer = FusionScorer([load_model(tier_b_shadow_card)])
+    minimum = MIN_SEQUENCE_PACKETS["B"]
+
+    assert "tier_b" not in scorer.score(_with_packets(malicious_flow, minimum - 1)).model_scores
+    assert "tier_b" in scorer.score(_with_packets(malicious_flow, minimum)).model_scores
+
+
+def test_an_active_sequence_tier_that_abstains_leaves_the_verdict_undecided(
+    tier_b_shadow_card, malicious_flow
+):
+    """Abstaining is not voting benign: with nothing else active, nobody decided."""
+    tier_b = dataclasses.replace(load_model(tier_b_shadow_card), mode="active")
+    verdict = FusionScorer([tier_b]).score(_with_packets(malicious_flow, 1))
+
+    assert verdict.is_undecided
+    assert verdict.decided_by == []
+
+
+def test_the_sequence_tier_reads_the_columns_training_read(tier_b_shadow_card, malicious_flow):
+    """Train/serve parity for Tier B. Training selects TIER_B_FEATURES from rows built
+    by ``as_row``; serving builds the input from the flow's SPLT arrays. Same flow, same
+    numbers, same order."""
+    from netsentinel_core.features.contract import SCALAR_FIELDS, TIER_B_FEATURES
+
+    tier_b = load_model(tier_b_shadow_card)
+    flow = _with_packets(malicious_flow, 7)
+    flow.scalars = {name: 0.0 for name in SCALAR_FIELDS} | flow.scalars
+    served = FusionScorer([tier_b])._vector_for(tier_b, flow)[0].tolist()
+    row = flow.as_row()
+
+    assert served == [float(row[name]) for name in TIER_B_FEATURES]

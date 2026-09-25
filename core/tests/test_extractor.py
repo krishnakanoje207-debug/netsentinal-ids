@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from synthetic import EXPECTED_FLOWS, TCP_DPORT, TCP_SPORT, UDP_DPORT
 
-from netsentinel_core.features.contract import FEATURE_DIM, SPLT_N
+from netsentinel_core.features.contract import FEATURE_DIM, SPLT_N, TIER_B_FEATURES
 from netsentinel_core.features.extractor import FlowTracker, extract_from_pcap
 
 
@@ -118,3 +118,20 @@ def test_offline_and_live_paths_agree(frames, pcap_path):
     assert set(offline) == set(live), "the two paths disagree on which flows exist"
     for flow_id, vector in offline.items():
         assert vector == live[flow_id], f"feature drift on flow {flow_id}"
+
+
+def test_offline_training_rows_and_live_sequences_agree(frames, pcap_path):
+    """The same parity for Tier B's inputs, as each side actually reads them.
+
+    Training selects TIER_B_FEATURES from the rows ``as_row`` builds offline; the live
+    scorer reads the SPLT arrays of the flow the sensor tracked. The vector check above
+    compares arrays with arrays, so it would not notice ``as_row`` naming a slot wrongly.
+    """
+    offline = {str(f.key): f.as_row() for f in extract_from_pcap(pcap_path)}
+    live = {str(f.key): f for f in _run_live(frames)}
+
+    assert set(offline) == set(live)
+    for flow_id, row in offline.items():
+        trained_on = [float(row[name]) for name in TIER_B_FEATURES]
+        served = [float(v) for v in live[flow_id].splt_len + live[flow_id].splt_iat]
+        assert trained_on == served, f"sequence drift on flow {flow_id}"
