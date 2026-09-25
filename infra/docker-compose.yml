@@ -1,9 +1,10 @@
 # NetSentinel-AI infrastructure.
 #
-# Profiles exist because of the 16 GB VM, not for elegance. Wazuh alone wants 4-5 GB,
-# so the rest of the stack has to be brought up in groups and the memory caps here are
-# deliberate: without them one runaway container takes the whole box down, and on a
-# single-VM deployment that means losing the sensors too.
+# Profiles exist because of the 16 GB VM, not for elegance. Wazuh alone wants 3 GB
+# even with its heap tuned down, so the rest of the stack has to be brought up in
+# groups and the memory caps here are deliberate: without them one runaway container
+# takes the whole box down, and on a single-VM deployment that means losing the
+# sensors too.
 #
 #   docker compose --profile storage up -d     # PostgreSQL + ClickHouse
 #   docker compose --profile bus up -d         # Redpanda
@@ -14,13 +15,20 @@
 #   docker compose --profile intel up -d       # MISP + Keep
 #   docker compose --profile response up -d    # CrowdSec Local API
 #   docker compose --profile app up -d --build # PostgreSQL + API + dashboard
+#   docker compose --profile hids up -d        # Wazuh manager, indexer, dashboard
+#   docker compose --profile case up -d        # DFIR-IRIS
+#   docker compose --profile scan up -d        # Greenbone, for a scan window
 #
-# Rough budget: storage 2.5 GB, bus 1 GB, ingest 0.25 GB, sensors 2 GB, lab 0.5 GB,
-# dashboards 0.25 GB. About 6.5 GB, leaving room for Wazuh and the OS.
+# Budget, as the sum of the memory caps below: storage 2.5 GB, bus 1.2 GB, ingest
+# 0.25 GB, sensors 2 GB, lab 0.4 GB, dashboards 0.25 GB, response 0.25 GB, app
+# 0.6 GB beyond storage. About 7.4 GB; with hids (3 GB) that is the always-on core,
+# 10.4 GB.
 #
-# intel adds about 2.5 GB and does not fit alongside Wazuh. It is its own profile for
-# that reason: threat intelligence enriches alerts, it does not produce them, so the
-# detection path runs without it and the two can take turns on a single VM.
+# intel (2.9 GB), case (1.6 GB) and scan (4.3 GB once its one-shot containers exit)
+# each fit on top of the core, but not together, so they are separate profiles and take
+# turns. Core + intel, 13.3 GB, is the demo configuration. None of the three produces
+# detections: threat intelligence enriches alerts, IRIS holds the cases, Greenbone
+# runs in a window. The detection path runs with all three stopped.
 
 name: netsentinel
 
@@ -50,6 +58,41 @@ volumes:
   keep-data:
   crowdsec-config:
   crowdsec-data:
+  # hids (Wazuh), named as upstream
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:
+  wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
+  # case (DFIR-IRIS)
+  iris-db-data:
+  iris-downloads:
+  iris-user-templates:
+  iris-server-data:
+  # scan (Greenbone)
+  gvm-gpg-data:
+  gvm-scap-data:
+  gvm-cert-data:
+  gvm-data-objects:
+  gvm-gvmd-data:
+  gvm-psql-data:
+  gvm-vt-data:
+  gvm-notus-data:
+  gvm-psql-socket:
+  gvm-gvmd-socket:
+  gvm-ospd-socket:
+  gvm-redis-socket:
+  gvm-openvas-data:
+  gvm-openvas-log:
 
 services:
   # --- storage --------------------------------------------------------------
@@ -178,6 +221,29 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # One-shot: create the topics before anything produces to them. Auto-creation would
+  # also make them, but with whatever defaults the broker has at that moment, and the
+  # dead-letter topic would not exist until the first malformed flow - which is when
+  # the writer needs it to already be there. Names from netsentinel_core.bus
+  # (FLOW_TOPIC, TIER_C_TOPIC) and netsentinel_writer.flow_sink.DEAD_LETTER_TOPIC.
+  # Idempotent: an existing topic is left alone.
+  redpanda-init:
+    image: redpandadata/redpanda:v24.2.7
+    profiles: [bus]
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for topic in netsentinel.flows netsentinel.flows.tier_c netsentinel.flows.deadletter; do
+          rpk topic describe "$$topic" -X brokers=redpanda:9092 >/dev/null 2>&1 ||
+            rpk topic create "$$topic" --replicas 1 -X brokers=redpanda:9092 || exit 1
+        done
+    mem_limit: 128m
+    networks: [backplane]
+    restart: "no"
+
   # --- ingest ---------------------------------------------------------------
 
   vector:
@@ -200,28 +266,35 @@ services:
   # --- sensors --------------------------------------------------------------
 
   suricata:
-    image: jasonish/suricata:7.0
+    image: jasonish/suricata:8.0.7
     profiles: [sensors]
     # Host networking so it can see the lab bridge. A container on the lab network
     # would only see traffic addressed to itself.
     network_mode: host
     cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
-    command: ["-i", "netsentinel-lab", "--set", "vars.address-groups.HOME_NET=[172.30.0.0/24]"]
+    # The stock suricata.yaml plus our overrides: lab address groups and JA4.
+    command: ["-i", "netsentinel-lab", "--include", "/etc/suricata/netsentinel.yaml"]
     volumes:
       - suricata-logs:/var/log/suricata
+      # ET Open, fetched once by suricata-update (see README); not committed.
       - ./suricata/rules:/var/lib/suricata/rules
+      - ./suricata/netsentinel.yaml:/etc/suricata/netsentinel.yaml:ro
     mem_limit: 1g
     restart: unless-stopped
 
   zeek:
-    image: zeek/zeek:6.0
+    # zeek/zeek:8.0.10 with the JA4+ scripts installed; see zeek/Dockerfile.
+    build: ./zeek
+    image: netsentinel/zeek:8.0.10-ja4
     profiles: [sensors]
     network_mode: host
     cap_add: [NET_ADMIN, NET_RAW]
-    command: ["zeek", "-i", "netsentinel-lab", "-C", "LogAscii::use_json=T"]
+    # "local" loads site/local.zeek: JSON logs and the JA4+ package.
+    command: ["zeek", "-i", "netsentinel-lab", "-C", "local"]
     working_dir: /var/log/zeek
     volumes:
       - zeek-logs:/var/log/zeek
+      - ./zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek:ro
     mem_limit: 1g
     restart: unless-stopped
 
@@ -289,9 +362,14 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      # 4.14.0 is the last release that supports Grafana 11.2; 4.15 needs 11.6.
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource 4.14.0
+      # Read by provisioning/datasources/clickhouse.yaml.
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "127.0.0.1:3000:3000"
     mem_limit: 256m
@@ -403,3 +481,495 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+
+  # --- hids: Wazuh single node ---------------------------------------------
+  #
+  # The wazuh/wazuh-docker v4.14.8 single-node layout: service names, mounts and
+  # config files as upstream ships them (config under wazuh/config), because the
+  # certificates are issued to these hostnames. What differs is deliberate: every
+  # port on 127.0.0.1, memory caps, and the indexer's user file kept out of git.
+  #
+  # Certificates first, once: docker compose --profile hids-certs run --rm wazuh-certs
+  # Nothing here starts without them; see README "hids: Wazuh and Sysmon".
+
+  wazuh-certs:
+    image: wazuh/wazuh-certs-generator:0.0.4
+    profiles: [hids-certs]
+    environment:
+      CERT_TOOL_VERSION: "4.14"
+    volumes:
+      - ./wazuh/config/wazuh_indexer_ssl_certs/:/certificates/
+      - ./wazuh/config/certs.yml:/config/certs.yml:ro
+    # Downloads Wazuh's certs tool for CERT_TOOL_VERSION, so it needs the network.
+    mem_limit: 256m
+    restart: "no"
+
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.14.8
+    profiles: [hids]
+    hostname: wazuh.manager
+    environment:
+      INDEXER_URL: https://wazuh.indexer:9200
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:-}
+      FILEBEAT_SSL_VERIFICATION_MODE: full
+      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem
+      SSL_CERTIFICATE: /etc/ssl/filebeat.pem
+      SSL_KEY: /etc/ssl/filebeat.key
+      # The API account the dashboard uses, and the one the responder authenticates
+      # as (NETSENTINEL_WAZUH_USER / NETSENTINEL_WAZUH_PASSWORD). Wazuh enforces a
+      # policy on it: 8-64 characters with upper, lower, digit and symbol.
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: ${WAZUH_API_PASSWORD:-}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 655360
+        hard: 655360
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - ./wazuh/config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
+    ports:
+      # 1514 agent events, 1515 enrolment, 55000 the API the responder calls. An
+      # agent off the VM (the laptop's Sysmon) reaches 1514/1515 through the SSH
+      # tunnel like everything else.
+      - "127.0.0.1:1514:1514"
+      - "127.0.0.1:1515:1515"
+      - "127.0.0.1:55000:55000"
+    mem_limit: 1g
+    networks: [backplane]
+    restart: unless-stopped
+
+  wazuh.indexer:
+    image: wazuh/wazuh-indexer:4.14.8
+    profiles: [hids]
+    hostname: wazuh.indexer
+    environment:
+      # The plan's tuning (M1 §7.4): a 1 GB heap, Xms = Xmx so it never resizes.
+      OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/config/certs/root-ca.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/config/certs/admin.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/config/certs/admin-key.pem:ro
+      - ./wazuh/config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/config/opensearch.yml:ro
+      # Created from internal_users.example.yml during setup; gitignored.
+      - ./wazuh/config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml:ro
+    # Not published: only the manager and the dashboard talk to it.
+    # 1 GB heap plus Lucene's off-heap buffers.
+    mem_limit: 1536m
+    networks: [backplane]
+    restart: unless-stopped
+
+  wazuh.dashboard:
+    image: wazuh/wazuh-dashboard:4.14.8
+    profiles: [hids]
+    hostname: wazuh.dashboard
+    environment:
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:-}
+      WAZUH_API_URL: https://wazuh.manager
+      DASHBOARD_USERNAME: kibanaserver
+      DASHBOARD_PASSWORD: ${WAZUH_DASHBOARD_PASSWORD:-}
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: ${WAZUH_API_PASSWORD:-}
+    volumes:
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
+      - ./wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
+      - ./wazuh/config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      # wazuh.yml is generated into this volume from API_USERNAME/API_PASSWORD on
+      # first start, rather than mounted with a password written in it.
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+    depends_on:
+      - wazuh.indexer
+      - wazuh.manager
+    ports:
+      - "127.0.0.1:5601:5601"
+    mem_limit: 512m
+    networks: [backplane]
+    restart: unless-stopped
+
+  # --- case: DFIR-IRIS ------------------------------------------------------
+  #
+  # iris-web v2.4.29's own compose (app, worker, db, rabbitmq, nginx), flattened: the
+  # upstream file `extends` a base file and reads a .env of its own. v2.4.29 is the
+  # release services/cases.py was verified against. Service names carry an iris-
+  # prefix, so the hostnames upstream hard-codes (db, app, rabbitmq) are set here.
+  # The web certificate is generated once; see README "case: DFIR-IRIS".
+
+  iris-rabbitmq:
+    # Upstream says 3-management-alpine; 3.13.7 is the last 3.x release it resolves to.
+    image: rabbitmq:3.13.7-management-alpine
+    profiles: [case]
+    mem_limit: 256m
+    networks: [backplane]
+    restart: unless-stopped
+
+  iris-db:
+    image: ghcr.io/dfir-iris/iriswebapp_db:v2.4.29
+    profiles: [case]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD:-}
+      POSTGRES_ADMIN_USER: raptor
+      POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_ADMIN_PASSWORD:-}
+      POSTGRES_DB: iris_db
+    volumes:
+      - iris-db-data:/var/lib/postgresql/data
+    mem_limit: 256m
+    networks: [backplane]
+    restart: unless-stopped
+
+  iris-app:
+    image: ghcr.io/dfir-iris/iriswebapp_app:v2.4.29
+    profiles: [case]
+    command: ["nohup", "./iris-entrypoint.sh", "iriswebapp"]
+    environment: &iris-env
+      DOCKERIZED: "1"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${IRIS_DB_PASSWORD:-}
+      POSTGRES_ADMIN_USER: raptor
+      POSTGRES_ADMIN_PASSWORD: ${IRIS_DB_ADMIN_PASSWORD:-}
+      POSTGRES_SERVER: iris-db
+      POSTGRES_PORT: "5432"
+      IRIS_SECRET_KEY: ${IRIS_SECRET_KEY:-}
+      IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT:-}
+      CELERY_BROKER: amqp://iris-rabbitmq
+      IRIS_AUTHENTICATION_TYPE: local
+      # Seeded on first start only. Setting the API key here, rather than reading
+      # the one IRIS generates, is what lets NETSENTINEL_IRIS_API_KEY be written
+      # down before the case profile has ever run.
+      IRIS_ADM_USERNAME: administrator
+      IRIS_ADM_EMAIL: admin@netsentinel.local
+      IRIS_ADM_PASSWORD: ${IRIS_ADM_PASSWORD:-}
+      IRIS_ADM_API_KEY: ${IRIS_ADM_API_KEY:-}
+    volumes:
+      - iris-downloads:/home/iris/downloads
+      - iris-user-templates:/home/iris/user_templates
+      - iris-server-data:/home/iris/server_data
+    depends_on:
+      - iris-rabbitmq
+      - iris-db
+    mem_limit: 640m
+    networks: [backplane]
+    restart: unless-stopped
+
+  iris-worker:
+    image: ghcr.io/dfir-iris/iriswebapp_app:v2.4.29
+    profiles: [case]
+    command: ["./wait-for-iriswebapp.sh", "iris-app:8000", "./iris-entrypoint.sh", "iris-worker"]
+    environment: *iris-env
+    volumes:
+      - iris-downloads:/home/iris/downloads
+      - iris-user-templates:/home/iris/user_templates
+      - iris-server-data:/home/iris/server_data
+    depends_on:
+      - iris-rabbitmq
+      - iris-db
+      - iris-app
+    mem_limit: 384m
+    networks: [backplane]
+    restart: unless-stopped
+
+  iris-nginx:
+    image: ghcr.io/dfir-iris/iriswebapp_nginx:v2.4.29
+    profiles: [case]
+    environment:
+      IRIS_UPSTREAM_SERVER: iris-app
+      IRIS_UPSTREAM_PORT: "8000"
+      INTERFACE_HTTPS_PORT: "443"
+      SERVER_NAME: localhost
+      CERT_FILENAME: iris.pem
+      KEY_FILENAME: iris.key
+      IRIS_AUTHENTICATION_TYPE: local
+    volumes:
+      - ./iris/certificates:/www/certs:ro
+    depends_on:
+      - iris-app
+    # The API reaches this as https://iris-nginx on the backplane, or
+    # https://127.0.0.1:8443 from the host. The certificate is self-signed; the API
+    # trusts it rather than turning verification off (see README).
+    ports:
+      - "127.0.0.1:8443:443"
+    mem_limit: 64m
+    networks: [backplane]
+    restart: unless-stopped
+
+  # --- scan: Greenbone Community Edition --------------------------------------
+  #
+  # Greenbone's community compose (greenbone.github.io/docs, 22.4 containers), cut to
+  # what services/vulns.py needs: a report from gvm-cli over the gvmd socket. The web
+  # UI chain (gsa, gsad, gvm-config, nginx) and the log-tail container are dropped;
+  # everything below is upstream's services, volumes and dependencies, with memory
+  # caps added and volume names prefixed gvm-.
+  #
+  # Greenbone publishes only moving tags (stable, latest), so every image is pinned by
+  # digest as resolved on 2026-09-25. The feed images carry the NVTs and SCAP data
+  # themselves: a newer feed means newer digests here, deliberately.
+  #
+  # ospd-openvas is the one that sends packets, so it alone also joins the lab bridge;
+  # Docker keeps bridges apart, and a scanner on its own network would find nothing.
+
+  vulnerability-tests:
+    image: registry.community.greenbone.net/community/vulnerability-tests:latest@sha256:335eb5c772bbdcddc1c03e542b1af57bc03cfe7cdac2e48cad99ea2bfbc76396
+    profiles: [scan]
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-vt-data:/mnt
+    mem_limit: 64m
+
+  notus-data:
+    image: registry.community.greenbone.net/community/notus-data:latest@sha256:f695b5431fe653ac03ee1f74c7649ed3852315415730ef8471a2d24da19559c2
+    profiles: [scan]
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-notus-data:/mnt
+    mem_limit: 64m
+
+  scap-data:
+    image: registry.community.greenbone.net/community/scap-data:latest@sha256:335cc54d885003ad450520dab1a0b07a20b720a2e208c73111920b8cd3be5464
+    profiles: [scan]
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-scap-data:/mnt
+    mem_limit: 64m
+
+  cert-bund-data:
+    image: registry.community.greenbone.net/community/cert-bund-data:latest@sha256:697918e8d36969de50eec47a72374ce43efa611900dc42baa3af62286f814a07
+    profiles: [scan]
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-cert-data:/mnt
+    mem_limit: 64m
+
+  dfn-cert-data:
+    image: registry.community.greenbone.net/community/dfn-cert-data:latest@sha256:7c72365581cacc3fb3b32aa8bab35d3e353f4f47f9df5b42769886888c7b4f5e
+    profiles: [scan]
+    environment:
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-cert-data:/mnt
+    depends_on:
+      cert-bund-data:
+        condition: service_healthy
+    mem_limit: 64m
+
+  data-objects:
+    image: registry.community.greenbone.net/community/data-objects:latest@sha256:2db1970ae9178c2b410989a2ac14f377c9b99fd286e44251a1cb0ee6fdf426cf
+    profiles: [scan]
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-data-objects:/mnt
+    mem_limit: 64m
+
+  report-formats:
+    image: registry.community.greenbone.net/community/report-formats:latest@sha256:32a4e29bcfff060214a0876e1dbd9db14ffe55452efb0b3da755d0e3f100cc3b
+    profiles: [scan]
+    environment:
+      FEED_RELEASE: "24.10"
+      KEEP_ALIVE: 1
+    volumes:
+      - gvm-data-objects:/mnt
+    depends_on:
+      data-objects:
+        condition: service_healthy
+    mem_limit: 64m
+
+  gpg-data:
+    image: registry.community.greenbone.net/community/gpg-data:latest@sha256:3d82a9d944295ed06381ca6bccd112025f8e2be4f9f3f8b8ea4c2275b6758b2a
+    profiles: [scan]
+    volumes:
+      - gvm-gpg-data:/mnt
+    mem_limit: 64m
+
+  redis-server:
+    image: registry.community.greenbone.net/community/redis-server:latest@sha256:6da6a7c7221aa3ab231961fd6ca001d552b6a2c7727ac6201c6d8a360baa963a
+    profiles: [scan]
+    volumes:
+      - gvm-redis-socket:/run/redis/
+    # Holds the NVT metadata the scanner reads; the largest cache in the stack.
+    mem_limit: 512m
+    restart: unless-stopped
+
+  pg-gvm:
+    image: registry.community.greenbone.net/community/pg-gvm:stable@sha256:b81bc5d7a750203ea25c6e4dd086751ecee8e388d1cb2501c60b3805e0056204
+    profiles: [scan]
+    volumes:
+      - gvm-psql-data:/var/lib/postgresql
+      - gvm-psql-socket:/var/run/postgresql
+    depends_on:
+      pg-gvm-migrator:
+        condition: service_completed_successfully
+    mem_limit: 512m
+    restart: unless-stopped
+
+  pg-gvm-migrator:
+    image: registry.community.greenbone.net/community/pg-gvm-migrator:stable@sha256:201da953f12dd26c84db8aa0117465de0aac9916f4e1d2d60b4fcb6f86176d4e
+    profiles: [scan]
+    volumes:
+      - gvm-psql-data:/var/lib/postgresql
+      - gvm-psql-socket:/var/run/postgresql
+    mem_limit: 256m
+    restart: "no"
+
+  gvmd:
+    image: registry.community.greenbone.net/community/gvmd:stable@sha256:a39b46668b55b8bf41d8ecf91430947482a6ed78c1bf37747a330e5b886c0eba
+    profiles: [scan]
+    volumes:
+      - gvm-gvmd-data:/var/lib/gvm
+      - gvm-scap-data:/var/lib/gvm/scap-data/
+      - gvm-cert-data:/var/lib/gvm/cert-data
+      - gvm-data-objects:/var/lib/gvm/data-objects/gvmd
+      - gvm-vt-data:/var/lib/openvas/plugins
+      - gvm-psql-data:/var/lib/postgresql
+      - gvm-gvmd-socket:/run/gvmd
+      - gvm-ospd-socket:/run/ospd
+      - gvm-psql-socket:/var/run/postgresql
+    depends_on:
+      pg-gvm:
+        condition: service_started
+      scap-data:
+        condition: service_healthy
+      cert-bund-data:
+        condition: service_healthy
+      dfn-cert-data:
+        condition: service_healthy
+      data-objects:
+        condition: service_healthy
+      report-formats:
+        condition: service_healthy
+    mem_limit: 1g
+    restart: unless-stopped
+
+  # Writes openvas.conf and the log config into the shared volume, then exits.
+  configure-openvas:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable@sha256:5b950bc273d1d5d123f15dfb7f373b0b3a3b7fb75f67286dfa28e88350a6eb33
+    profiles: [scan]
+    volumes:
+      - gvm-openvas-data:/mnt
+      - gvm-openvas-log:/var/log/openvas
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+        sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+        chmod 644 /mnt/openvas.conf
+        chmod 644 /mnt/openvas_log.conf
+        touch /var/log/openvas/openvas.log
+        chmod 666 /var/log/openvas/openvas.log
+    mem_limit: 64m
+    restart: "no"
+
+  openvasd:
+    image: registry.community.greenbone.net/community/openvas-scanner:stable@sha256:5b950bc273d1d5d123f15dfb7f373b0b3a3b7fb75f67286dfa28e88350a6eb33
+    profiles: [scan]
+    environment:
+      # Notus (local security checks) only, as upstream ships it.
+      OPENVASD_MODE: service_notus
+      GNUPGHOME: /etc/openvas/gnupg
+      LISTENING: 0.0.0.0:80
+    volumes:
+      - gvm-openvas-data:/etc/openvas
+      - gvm-openvas-log:/var/log/openvas
+      - gvm-gpg-data:/etc/openvas/gnupg
+      - gvm-notus-data:/var/lib/notus
+    depends_on:
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+      configure-openvas:
+        condition: service_completed_successfully
+      gpg-data:
+        condition: service_completed_successfully
+    mem_limit: 256m
+    restart: unless-stopped
+
+  ospd-openvas:
+    image: registry.community.greenbone.net/community/ospd-openvas:stable@sha256:db44c0dbdc63b4f57b3a0a92d8af6882dfe4559bd4409a7dd0ce49d732230c82
+    profiles: [scan]
+    hostname: ospd-openvas.local
+    cap_add:
+      - NET_ADMIN # for capturing packages in promiscuous mode
+      - NET_RAW # for raw sockets e.g. used for the boreas alive detection
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    command:
+      [
+        "ospd-openvas",
+        "-f",
+        "--config",
+        "/etc/gvm/ospd-openvas.conf",
+        "--notus-feed-dir",
+        "/var/lib/notus/advisories",
+        "-m",
+        "666",
+      ]
+    volumes:
+      - gvm-gpg-data:/etc/openvas/gnupg
+      - gvm-vt-data:/var/lib/openvas/plugins
+      - gvm-notus-data:/var/lib/notus
+      - gvm-ospd-socket:/run/ospd
+      - gvm-redis-socket:/run/redis/
+      - gvm-openvas-data:/etc/openvas/
+      - gvm-openvas-log:/var/log/openvas
+    depends_on:
+      redis-server:
+        condition: service_started
+      gpg-data:
+        condition: service_completed_successfully
+      configure-openvas:
+        condition: service_completed_successfully
+      vulnerability-tests:
+        condition: service_healthy
+      notus-data:
+        condition: service_healthy
+    networks: [default, lab]
+    mem_limit: 1536m
+    restart: unless-stopped
+
+  # The GMP client, run on demand; see README "scan: Greenbone".
+  gvm-tools:
+    image: registry.community.greenbone.net/community/gvm-tools:latest@sha256:a3ec2b8d2281e1a0bea147f1a6fbe00d22eab26db1c114bebf7bb2beed0a5619
+    profiles: [scan]
+    volumes:
+      - gvm-gvmd-socket:/run/gvmd
+      - gvm-ospd-socket:/run/ospd
+    depends_on:
+      - gvmd
+      - ospd-openvas
+    mem_limit: 128m
