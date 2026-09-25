@@ -1,0 +1,52 @@
+# The host's nftables bouncer, for the response profile's CrowdSec Local API.
+# Installed to /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml on the VM by the
+# steps in infra/README.md; the package is crowdsec-firewall-bouncer-nftables.
+#
+# Trimmed from the upstream default (crowdsecurity/cs-firewall-bouncer,
+# config/crowdsec-firewall-bouncer.yaml; latest release v0.0.36) to
+# the nftables mode this deployment uses.
+
+mode: nftables
+update_frequency: 10s
+log_mode: file
+log_dir: /var/log/
+log_level: info
+
+# The response profile publishes the LAPI on 127.0.0.1:8080 (docker-compose.yml).
+api_url: http://127.0.0.1:8080/
+# From `cscli bouncers add nftables-bouncer`. Replace on the VM; never commit it.
+api_key: <paste the key printed by cscli bouncers add>
+insecure_skip_verify: false
+
+# services/enforcement.py posts decisions of type "ban" only, scope Ip.
+supported_decisions_types:
+  - ban
+deny_action: DROP
+deny_log: false
+
+blacklists_ipv4: crowdsec-blacklists
+blacklists_ipv6: crowdsec6-blacklists
+
+# Not set-only: the bouncer owns its tables, chains and rules as well as the sets.
+# Sets are per decision origin, so a ban from this system lands in
+# crowdsec-blacklists-netsentinel (enforcement.ORIGIN) - visibly apart from anything
+# CrowdSec decided on its own.
+nftables:
+  ipv4:
+    enabled: true
+    set-only: false
+    table: crowdsec
+    chain: crowdsec-chain
+    priority: -10
+  ipv6:
+    enabled: true
+    set-only: false
+    table: crowdsec6
+    chain: crowdsec6-chain
+    priority: -10
+
+# forward as well as input: traffic to the lab containers is routed through the
+# host, not delivered to it, so an input-only bouncer would never see it.
+nftables_hooks:
+  - input
+  - forward

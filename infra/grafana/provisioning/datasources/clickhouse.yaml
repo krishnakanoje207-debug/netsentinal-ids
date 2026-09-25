@@ -1,0 +1,20 @@
+# The one datasource: ClickHouse, over the native protocol on the backplane.
+# Credentials come from the container's environment (see docker-compose.yml), so no
+# password is written here.
+apiVersion: 1
+
+datasources:
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    # Fixed so the provisioned dashboard can reference it by uid.
+    uid: netsentinel-clickhouse
+    isDefault: true
+    editable: false
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      username: $CLICKHOUSE_USER
+      defaultDatabase: netsentinel
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD

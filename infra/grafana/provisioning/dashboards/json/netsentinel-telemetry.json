@@ -1,0 +1,251 @@
+{
+  "uid": "netsentinel-telemetry",
+  "title": "NetSentinel telemetry",
+  "tags": [
+    "netsentinel"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Flows",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(ts) AS time, count() AS flows, countIf(risk_score IS NOT NULL) AS scored\nFROM netsentinel.network_flows\nWHERE $__timeFilter(ts)\nGROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Every flow the extractor wrote, and how many of them the scorer has decided. A gap between the two lines is a scorer falling behind."
+    },
+    {
+      "id": 2,
+      "title": "Risk score",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(ts) AS time, avg(risk_score) AS mean, quantile(0.95)(risk_score) AS p95\nFROM netsentinel.network_flows\nWHERE $__timeFilter(ts) AND risk_score IS NOT NULL\nGROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "description": "Fused risk score of scored flows. Undecided flows (NULL) are excluded, not counted as 0."
+    },
+    {
+      "id": 3,
+      "title": "Riskiest sources",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT IPv4NumToString(src_ip) AS source, max(risk_score) AS max_risk, count() AS flows\nFROM netsentinel.network_flows\nWHERE $__timeFilter(ts) AND risk_score IS NOT NULL\nGROUP BY src_ip ORDER BY max_risk DESC LIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Suricata alerts by severity",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(ts) AS time, countIf(severity = 1) AS high, countIf(severity = 2) AS medium, countIf(severity >= 3) AS low\nFROM netsentinel.suricata_events\nWHERE $__timeFilter(ts)\nGROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "Top Suricata signatures",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT signature_id, signature, count() AS alerts\nFROM netsentinel.suricata_events\nWHERE $__timeFilter(ts)\nGROUP BY signature_id, signature ORDER BY alerts DESC LIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "title": "Top JA4 client fingerprints (Zeek ssl.log)",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT fields['ja4'] AS ja4, count() AS connections, uniqExact(id_orig_h) AS clients\nFROM netsentinel.zeek_logs\nWHERE $__timeFilter(ts) AND log_type = 'ssl' AND fields['ja4'] != ''\nGROUP BY ja4 ORDER BY connections DESC LIMIT 10"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Zeek records by log",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "netsentinel-clickhouse"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "netsentinel-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "queryType": "timeseries",
+          "rawSql": "SELECT $__timeInterval(ts) AS time, log_type, count() AS records\nFROM netsentinel.zeek_logs\nWHERE $__timeFilter(ts)\nGROUP BY time, log_type ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

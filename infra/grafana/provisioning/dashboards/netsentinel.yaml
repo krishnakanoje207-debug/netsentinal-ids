@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: netsentinel
+    folder: NetSentinel
+    type: file
+    # Edited in the repository, not the UI: a change made in Grafana would be lost
+    # the next time the container starts.
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
