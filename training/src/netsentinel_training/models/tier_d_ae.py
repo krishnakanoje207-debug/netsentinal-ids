@@ -20,7 +20,8 @@ case:
   more normal, which is the convention of the forest's ``decision_function`` and what
   the ``empirical_quantiles`` calibration in the registry assumes.
 * **Calibration and threshold are the forest's**: benign validation scores stored as
-  quantiles, flagged at ``1 - TARGET_MAX_FPR``.
+  quantiles, flagged at ``1 - TARGET_MAX_FPR`` (or just above a tied benign score, by
+  ``tier_d.decision_threshold``).
 
 Validation benign flows are kept for calibration alone. Early stopping watches a
 holdout carved from the training sample instead, so the flows that set the threshold
@@ -43,14 +44,15 @@ from netsentinel_training.models.tier_a import LABEL_COLUMN, sha256
 from netsentinel_training.models.tier_d import (
     TARGET_MAX_FPR,
     anomaly_probability,
+    decision_threshold,
     evaluate,
     fit_quantiles,
     load_benign,
     log_scale,
 )
 
-HIDDEN = 32
-BOTTLENECK = 6
+HIDDEN = 64
+BOTTLENECK = 8
 
 EPOCHS = 20
 BATCH_SIZE = 1024
@@ -241,8 +243,9 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
     model, fit_rows = fit_autoencoder(x_train, epochs)
 
     # Calibrated on validation benign flows, which neither fitted nor early-stopped it.
-    levels, quantiles = fit_quantiles(_predict(model, x_val_benign))
-    threshold = 1.0 - TARGET_MAX_FPR
+    val_scores = _predict(model, x_val_benign)
+    levels, quantiles = fit_quantiles(val_scores)
+    threshold = decision_threshold(anomaly_probability(val_scores, levels, quantiles))
     probabilities = anomaly_probability(_predict(model, x_test), levels, quantiles)
     metrics = evaluate(probabilities, y_test, threshold)
     family_recall = (
@@ -291,7 +294,7 @@ def train(data_dir: str | Path, out_dir: str | Path, version: str = "0.1.0",
     }
     (out_dir / "model_card.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
 
-    print(f"threshold {threshold:.4f} (analytic, from a {TARGET_MAX_FPR:.1%} budget)")
+    print(f"threshold {threshold:.7f} (from a {TARGET_MAX_FPR:.1%} budget on validation)")
     print(f"on test: FPR {metrics['false_positive_rate']:.4f}  recall {metrics['recall']:.4f}")
     if "pr_auc" in metrics:
         print(f"PR-AUC {metrics['pr_auc']:.4f}  ROC-AUC {metrics['roc_auc']:.4f}")
