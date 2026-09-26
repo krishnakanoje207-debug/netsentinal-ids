@@ -133,6 +133,7 @@ function feedQuery(params, limit) {
   if (params.severity) query.set('severity', params.severity)
   if (params.q) query.set('q', params.q)
   if (limit !== undefined) query.set('limit', String(limit))
+  if (params.offset) query.set('offset', String(params.offset))
   return query.toString()
 }
 

@@ -8,7 +8,7 @@
  * shell, so its state is the header clock's.
  */
 
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
 import { api } from '../api/client'
@@ -22,6 +22,8 @@ import { useStream } from '../stream/StreamContext'
 import { ExportButton } from './ExportButton'
 
 const POLL_MS = 5000
+/** Rows per request; "Show older alerts" asks for the next page. */
+export const PAGE_SIZE = 50
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info']
 const STATUSES = [
@@ -110,6 +112,12 @@ function ActiveFilters({ status, severity, q, onFilterChange }) {
   )
 }
 
+/** @param {import('../api/types').Alert[]} rows */
+function uniqueById(rows) {
+  const seen = new Set()
+  return rows.filter((row) => !seen.has(row.alert_id) && seen.add(row.alert_id))
+}
+
 /**
  * @param {{status: string, severity: string, q: string,
  *   onFilterChange: (next: {status: string, severity: string, q: string}) => void}} props
@@ -118,17 +126,26 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
   const { token } = useAuth()
   const stream = useStream()
 
-  const { data, error, isLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['alerts', status, severity, q],
-    queryFn: () =>
-      api.alerts(token, {
-        status: status || undefined,
-        severity: severity || undefined,
-        q: q || undefined,
-      }),
-    enabled: token !== null,
-    refetchInterval: POLL_MS,
-  })
+  // Pages by offset. A refetch reloads every page shown, and an alert that arrives
+  // between pages shifts the next one down a row, so rows are de-duplicated by id.
+  const { data, error, isLoading, dataUpdatedAt, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery({
+      queryKey: ['alerts', 'feed', status, severity, q],
+      queryFn: ({ pageParam }) =>
+        api.alerts(token, {
+          status: status || undefined,
+          severity: severity || undefined,
+          q: q || undefined,
+          limit: PAGE_SIZE,
+          offset: pageParam,
+        }),
+      initialPageParam: 0,
+      getNextPageParam: (lastPage, pages) =>
+        lastPage.length === PAGE_SIZE ? pages.length * PAGE_SIZE : undefined,
+      enabled: token !== null,
+      refetchInterval: POLL_MS,
+    })
+  const alerts = data ? uniqueById(data.pages.flat()) : undefined
 
   const filtered = Boolean(status || severity || q)
   const emptyText = filtered
@@ -183,13 +200,25 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
       {error && <ErrorNotice error={error} />}
 
       <Board
-        title={data ? `${data.length} ${data.length === 1 ? 'alert' : 'alerts'} shown` : 'Alerts'}
-        alerts={data}
+        title={alerts ? `${alerts.length} ${alerts.length === 1 ? 'alert' : 'alerts'} shown` : 'Alerts'}
+        alerts={alerts}
         loading={isLoading}
         updatedAt={dataUpdatedAt}
         intervalMs={POLL_MS}
         emptyText={emptyText}
       />
+      {hasNextPage && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            className="control font-semibold"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? 'Loading older alerts...' : 'Show older alerts'}
+          </button>
+        </div>
+      )}
     </section>
   )
 }
