@@ -46,7 +46,7 @@ from netsentinel_core.features.extractor import FlowTracker
 from netsentinel_scoring.engine import FusionScorer
 from netsentinel_scoring.registry import load_model
 
-from netsentinel_sensor.capture import from_interface, from_pcap_file
+from netsentinel_sensor.capture import drop_repeats, from_interface, from_pcap_file
 from netsentinel_sensor.publisher import (
     CollectingPublisher,
     FilePublisher,
@@ -324,6 +324,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--sensor-name", default="early_flow")
+    parser.add_argument(
+        "--drop-repeats",
+        action="store_true",
+        help="drop a frame identical to one a few milliseconds earlier; for a Windows "
+        "pktmon capture, which logs each packet once per stack component",
+    )
     destination = parser.add_mutually_exclusive_group()
     destination.add_argument(
         "--dry-run",
@@ -376,6 +382,8 @@ def main(argv: list[str] | None = None) -> int:
             signal.signal(getattr(signal, signal_name), lambda *_: agent.stop())
 
     packets = from_pcap_file(args.pcap) if args.pcap else from_interface(args.interface)
+    if args.drop_repeats:
+        packets = drop_repeats(packets)
     stats = agent.run(packets)
     publisher.close()
 

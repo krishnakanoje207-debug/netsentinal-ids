@@ -107,3 +107,18 @@ def test_flows_extracted_from_a_file_match_the_expected_count(pcap_path, expecte
         flows.extend(tracker.update(timestamp, frame))
     flows.extend(tracker.flush())
     assert len(flows) == expected_flows
+
+
+def test_a_packet_logged_twice_is_read_once():
+    """pktmon logs one packet at each stack component it passes."""
+    from netsentinel_sensor.capture import drop_repeats
+
+    packets = [(1.0, b"a"), (1.001, b"a"), (1.002, b"b"), (1.0021, b"b"), (1.003, b"a")]
+    assert list(drop_repeats(iter(packets))) == [(1.0, b"a"), (1.002, b"b")]
+
+
+def test_the_same_bytes_later_are_a_new_packet():
+    from netsentinel_sensor.capture import drop_repeats
+
+    packets = [(1.0, b"a"), (1.5, b"a"), (3.0, b"a")]
+    assert list(drop_repeats(iter(packets))) == packets

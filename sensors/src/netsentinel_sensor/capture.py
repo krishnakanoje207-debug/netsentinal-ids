@@ -97,3 +97,34 @@ def from_interface(
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:  # pragma: no cover - defensive
             process.kill()
+
+
+#: How close together two identical frames must be to count as one packet logged twice.
+REPEAT_WINDOW_SECONDS = 0.005
+
+
+def drop_repeats(
+    packets: Iterator[tuple[float, bytes]],
+    window: float = REPEAT_WINDOW_SECONDS,
+) -> Iterator[tuple[float, bytes]]:
+    """Drop a frame identical to one seen within ``window`` seconds before it.
+
+    Windows' pktmon logs a packet at every network-stack component it passes, so one
+    packet can appear two or three times in its capture. Counted as it stands, that
+    doubles packet and byte counts and every rate the models read. A real retransmission
+    is not dropped: Windows gives each IP packet a new identification field, so a resent
+    segment is not byte-identical to the original.
+    """
+    recent: dict[int, float] = {}
+    oldest = 0.0
+    for timestamp, frame in packets:
+        digest = hash(frame)
+        seen = recent.get(digest)
+        if seen is not None and timestamp - seen <= window:
+            continue
+        recent[digest] = timestamp
+        # Forget old frames now and then, so a long capture does not grow the table.
+        if timestamp - oldest > 1.0:
+            recent = {key: ts for key, ts in recent.items() if timestamp - ts <= window}
+            oldest = timestamp
+        yield timestamp, frame
