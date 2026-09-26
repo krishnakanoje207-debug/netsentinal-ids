@@ -54,15 +54,26 @@ from netsentinel_writer.technique import Labeller
 
 logger = logging.getLogger("netsentinel.writer")
 
-#: Severity from the calibrated probability. Absolute bands are only meaningful
-#: because the score is calibrated - an uncalibrated margin of 0.9 would mean
-#: something different in every model. Read floor-first: the first band the score
-#: reaches wins.
-SEVERITY_BANDS: tuple[tuple[float, Severity], ...] = (
-    (0.95, Severity.critical),
-    (0.85, Severity.high),
-    (0.70, Severity.medium),
-    (0.0, Severity.low),
+#: Severity answers two questions: how sure the models are, and how much harm the
+#: attack could do. Confidence alone made 134 of 135 replayed attacks critical, because
+#: Tier A is almost always sure, and a port scan then outranked nothing.
+#:
+#: How sure: bands of the calibrated probability, read floor-first. Absolute bands are
+#: only meaningful because the score is calibrated.
+CONFIDENCE_BANDS: tuple[tuple[float, int], ...] = ((0.95, 3), (0.85, 2), (0.70, 1), (0.0, 0))
+
+#: How much harm, claimed only where the technique is claimed: the family model is
+#: confident and that family's confident labels were precise on validation (see
+#: technique.py). Exploitation and denial of service do damage; a scan is a precursor.
+#: An attack whose kind is not known counts as medium, never low - an unidentified
+#: attack must not be ranked below an identified scan.
+TECHNIQUE_IMPACT: dict[str, int] = {"T1190": 1, "T1499": 1, "T1046": -1}
+
+SEVERITY_LADDER: tuple[Severity, ...] = (
+    Severity.low,
+    Severity.medium,
+    Severity.high,
+    Severity.critical,
 )
 
 
@@ -80,11 +91,17 @@ class ContractMismatch(WriterError):
     """
 
 
-def severity_for(risk_score: float) -> Severity:
-    for floor, severity in SEVERITY_BANDS:
-        if risk_score >= floor:
-            return severity
-    return Severity.low
+def severity_for(risk_score: float, technique: str | None = None) -> Severity:
+    """Critical needs both: the models sure (>= 0.95) and an attack that does harm.
+
+    |            | harmful  | not known | scan   |
+    | >= 0.95    | critical | high      | medium |
+    | >= 0.85    | high     | medium    | low    |
+    | >= 0.70    | medium   | low       | low    |
+    """
+    confidence = next(level for floor, level in CONFIDENCE_BANDS if risk_score >= floor)
+    impact = TECHNIQUE_IMPACT.get(technique or "", 0)
+    return SEVERITY_LADDER[max(0, min(len(SEVERITY_LADDER) - 1, confidence + impact - 1))]
 
 
 @dataclass(slots=True)
@@ -197,16 +214,15 @@ class DetectionWriter:
         if verdict.get("is_alert") and not shadow:
             # Identities the alert needs, so it is flushed before the alert is built.
             session.flush()
+            technique = self._labeller.label(flow).technique if self._labeller is not None else None
             alert = Alert(
                 detection_id=detection.detection_id,
                 source=str(flow.get("sensor") or "early_flow"),
-                severity=severity_for(risk_score),
+                severity=severity_for(risk_score, technique),
                 status=AlertStatus.new,
                 src_ip=flow.get("src_ip"),
                 dst_ip=flow.get("dst_ip"),
-                mitre_technique=(
-                    self._labeller.label(flow).technique if self._labeller is not None else None
-                ),
+                mitre_technique=technique,
             )
             session.add(alert)
             session.flush()

@@ -13,7 +13,7 @@ import json
 import numpy as np
 import pytest
 
-from netsentinel_api.db.models import Alert
+from netsentinel_api.db.models import Alert, Severity
 from netsentinel_core.features.contract import TIER_A_FEATURES
 from netsentinel_writer.technique import LabellerError, load_labeller
 from netsentinel_writer.writer import DetectionWriter
@@ -122,3 +122,13 @@ def test_without_a_family_model_the_alert_carries_none(explainer, session, make_
     writer.handle(session, make_payload(flow=make_flow(duration_ms=5000.0)))
     alert, = [row for row in session.added if isinstance(row, Alert)]
     assert alert.mitre_technique is None
+
+
+def test_the_technique_sets_the_severity_with_the_score(explainer, labeller, session, make_payload, make_flow):
+    """Equally sure verdicts: denial of service is critical, a scan is medium."""
+    writer = DetectionWriter(lambda: session, explainer, 1, 1, labeller=labeller)
+    writer.handle(session, make_payload(risk_score=0.99, flow=make_flow(duration_ms=5000.0)))
+    writer.handle(session, make_payload(risk_score=0.99, flow=make_flow(duration_ms=5.0)))
+    dos, scan = [row for row in session.added if isinstance(row, Alert)]
+    assert (dos.mitre_technique, dos.severity) == ("T1499", Severity.critical)
+    assert (scan.mitre_technique, scan.severity) == ("T1046", Severity.medium)

@@ -47,17 +47,38 @@ def _rows(session, kind):
 # --- severity --------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "risk, expected",
+    "risk, technique, expected",
     [
-        (0.99, Severity.critical),
-        (0.95, Severity.critical),
-        (0.90, Severity.high),
-        (0.72, Severity.medium),
-        (0.51, Severity.low),
+        # harmful: exploitation, denial of service
+        (0.99, "T1190", Severity.critical),
+        (0.95, "T1499", Severity.critical),
+        (0.90, "T1190", Severity.high),
+        (0.72, "T1499", Severity.medium),
+        # kind not known
+        (0.99, None, Severity.high),
+        (0.90, None, Severity.medium),
+        (0.72, None, Severity.low),
+        # a scan
+        (0.99, "T1046", Severity.medium),
+        (0.90, "T1046", Severity.low),
+        (0.72, "T1046", Severity.low),
+        (0.51, "T1190", Severity.low),
     ],
 )
-def test_severity_follows_the_calibrated_score(risk, expected):
-    assert severity_for(risk) is expected
+def test_severity_is_how_sure_and_how_harmful(risk, technique, expected):
+    assert severity_for(risk, technique) is expected
+
+
+def test_critical_needs_a_harmful_attack_not_only_certainty():
+    assert severity_for(0.9999) is not Severity.critical
+    assert severity_for(0.9999, "T1190") is Severity.critical
+
+
+def test_an_unknown_attack_never_ranks_below_a_known_scan():
+    """Undecided is not benign: not knowing the kind must not reassure."""
+    ladder = [Severity.low, Severity.medium, Severity.high, Severity.critical]
+    for risk in (0.72, 0.9, 0.99):
+        assert ladder.index(severity_for(risk)) >= ladder.index(severity_for(risk, "T1046"))
 
 
 # --- the ordinary path -----------------------------------------------------
@@ -78,7 +99,8 @@ def test_an_alerting_verdict_raises_an_alert(writer, session, make_payload):
     writer.handle(session, make_payload(risk_score=0.97))
 
     alert = _rows(session, Alert)[0]
-    assert alert.severity is Severity.critical
+    # Sure, but with no family model the kind of attack is not known.
+    assert alert.severity is Severity.high
     assert alert.status is AlertStatus.new
     assert alert.src_ip == "10.0.0.5"
     assert alert.dst_ip == "10.0.0.9"
@@ -194,7 +216,7 @@ def test_an_alert_is_linked_to_the_indicator_it_touched(writer, session, make_pa
 
 def test_a_high_threat_indicator_raises_the_severity(writer, session, make_payload):
     session.iocs = [IoC(ioc_id=9, value="198.51.100.7", type=IoCType.ip, threat_level=1)]
-    writer.handle(session, make_payload(risk_score=0.72))
+    writer.handle(session, make_payload(risk_score=0.90))
 
     # medium on the score alone, high once intelligence backs it.
     assert _rows(session, Alert)[0].severity is Severity.high
