@@ -5,7 +5,11 @@
  * column rather than being smoothed away, and the axis is labelled with clock times. The
  * right-most column is the current minute, still filling, and is drawn as such.
  *
- * Flow counts come from the flow store and can be unavailable. Then the bars are not
+ * Two series on one time axis, each to its own scale: flows checked grow up from the axis
+ * and alerts raised hang below it. Alerts had been dots nudged a few pixels by their count,
+ * which drew 85 alerts and 8 alerts at nearly the same height.
+ *
+ * Flow counts come from the flow store and can be unavailable. Then the flow bars are not
  * drawn and the strip says why - a missing measurement is not a quiet network.
  *
  * Hover a column, or focus the strip and use the arrow keys, to read one minute.
@@ -57,6 +61,9 @@ export function ActivityStrip() {
   const maxFlows = Math.max(1, ...buckets.map((bucket) => bucket.flows ?? 0))
   const maxAlerts = Math.max(1, ...buckets.map((bucket) => bucket.alerts))
   const totals = activityTotals(buckets)
+  // With no flow counts the flow lane would be an empty band, so the alerts get the room.
+  const flowLane = data?.flows_available === false ? 'h-[25%]' : 'h-[70%]'
+  const alertLane = data?.flows_available === false ? 'h-[75%]' : 'h-[30%]'
   const stale = isStale(dataUpdatedAt, now, POLL_MS)
   const active = selected ?? buckets.length - 1
   const reading = buckets[active]
@@ -72,7 +79,7 @@ export function ActivityStrip() {
             <span className="inline-block h-3 w-2 rounded-[2px] bg-accent" aria-hidden="true" /> Flows checked
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block size-2.5 rounded-full bg-signal" aria-hidden="true" /> Alerts raised
+            <span className="inline-block h-2 w-3 rounded-b-[2px] bg-signal" aria-hidden="true" /> Alerts raised
           </span>
           <span className={`numeric ${stale ? 'font-semibold text-sev-medium' : 'text-ink-faint'}`}>
             {dataUpdatedAt ? (stale ? `Not updated since ${ago(dataUpdatedAt, now)}` : `Checked ${ago(dataUpdatedAt, now)}`) : ''}
@@ -104,34 +111,37 @@ export function ActivityStrip() {
               event.preventDefault()
             }}
             onPointerLeave={() => setSelected(null)}
-            className={`relative mt-1 grid h-28 items-end gap-[2px] rounded-sm outline-offset-4 ${stale ? 'stale' : ''}`}
+            className={`relative mt-1 grid h-36 gap-[2px] rounded-sm outline-offset-4 ${stale ? 'stale' : ''}`}
             style={{ gridTemplateColumns: `repeat(${buckets.length}, minmax(0, 1fr))` }}
           >
             {buckets.map((bucket, index) => {
               const current = index === buckets.length - 1
               const flowHeight = bucket.flows === null ? 0 : bucket.flows === 0 ? 0 : Math.max(3, (bucket.flows / maxFlows) * 100)
+              const alertHeight = bucket.alerts === 0 ? 0 : Math.max(8, (bucket.alerts / maxAlerts) * 100)
               return (
                 <div
                   key={bucket.start}
                   onPointerEnter={() => setSelected(index)}
-                  className={`relative flex h-full flex-col justify-end rounded-t-[2px] transition-colors duration-150 ${
+                  className={`flex h-full flex-col rounded-[2px] transition-colors duration-150 ${
                     index === active ? 'bg-sunk' : ''
                   }`}
                 >
-                  {bucket.alerts > 0 && (
+                  <div className={`flex ${flowLane} flex-col justify-end border-b border-line`}>
                     <span
-                      className="absolute left-1/2 size-2 -translate-x-1/2 rounded-full bg-signal"
-                      style={{ bottom: `calc(${Math.min(92, flowHeight + 6 + (bucket.alerts / maxAlerts) * 8)}% )` }}
+                      className={`block rounded-t-[2px] transition-[height] duration-700 ease-[var(--ease-out-expo)] ${
+                        current ? 'activity-current' : 'bg-accent'
+                      } ${index === active ? 'opacity-100' : 'opacity-80'}`}
+                      style={{ height: `${flowHeight}%` }}
                       aria-hidden="true"
                     />
-                  )}
-                  <span
-                    className={`block rounded-t-[2px] transition-[height] duration-700 ease-[var(--ease-out-expo)] ${
-                      current ? 'activity-current' : 'bg-accent'
-                    } ${index === active ? 'opacity-100' : 'opacity-80'}`}
-                    style={{ height: `${flowHeight}%` }}
-                    aria-hidden="true"
-                  />
+                  </div>
+                  <div className={`${alertLane} pt-px`}>
+                    <span
+                      className="block rounded-b-[2px] bg-signal transition-[height] duration-700 ease-[var(--ease-out-expo)]"
+                      style={{ height: `${alertHeight}%` }}
+                      aria-hidden="true"
+                    />
+                  </div>
                 </div>
               )
             })}
