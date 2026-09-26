@@ -73,7 +73,7 @@
 
   --color-accent: #8db4ff;
   --color-focus: #f2b705;
-  --color-flap: #1d2635;
+  --color-flap: #2b3649;
 
   --color-sev-critical: #ff6b6b;
   --color-sev-high: #ff9150;
@@ -265,7 +265,7 @@ p {
     box-shadow: 0 1px 0 rgb(255 255 255 / 0.08) inset, 0 1px 2px rgb(0 0 0 / 0.25);
   }
   :root[data-theme='dark'] .flap-ink .flap-cell {
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09), 0 1px 2px rgb(0 0 0 / 0.4);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), 0 1px 2px rgb(0 0 0 / 0.4);
   }
   .flap-cell::after {
     content: '';
