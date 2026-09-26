@@ -10,10 +10,15 @@
 # -Dev: the API and the Vite dev server on the host, for working on the dashboard, at
 # http://127.0.0.1:5173. It stops the Docker API first, because both use port 8010.
 #
+# -Native: the dev servers with no Docker at all, on a PostgreSQL installed on the host
+# (binaries in $env:NETSENTINEL_PG_BIN, cluster in $env:NETSENTINEL_PG_DATA; both default
+# under D:\netsentinel-data). For a laptop whose free memory cannot hold Docker's VM:
+# PostgreSQL, the API and Vite together take about 400 MB.
+#
 # Either way the data is the demo database built by build_demo.ps1; accounts are in
 # lab\replay\out\demo_credentials.txt.
 
-param([switch]$Dev)
+param([switch]$Dev, [switch]$Native)
 
 # Native tools (docker, npm) write progress to stderr. Windows PowerShell turns that
 # into errors under "Stop", so failures are judged by exit code instead.
@@ -40,7 +45,20 @@ function Wait-Healthy($url) {
     return $up
 }
 
-if (-not (Test-Docker)) {
+if ($Native) {
+    $Dev = $true
+    $pgBin = if ($env:NETSENTINEL_PG_BIN) { $env:NETSENTINEL_PG_BIN } else { "D:\netsentinel-data\pgsql\bin" }
+    $pgData = if ($env:NETSENTINEL_PG_DATA) { $env:NETSENTINEL_PG_DATA } else { "D:\netsentinel-data\pgdata" }
+    $url = (Get-Content .env.local | Where-Object { $_ -match "^NETSENTINEL_DATABASE_URL=" }) -replace "^[^=]+=", ""
+    $null = $url -match "@([^:/]+):(\d+)/"
+    & "$pgBin\pg_isready.exe" -h $Matches[1] -p $Matches[2] *> $null
+    if ($LASTEXITCODE -ne 0) {
+        # Started detached with its own log, so closing this window leaves it running.
+        Start-Process -WindowStyle Hidden "$pgBin\pg_ctl.exe" -ArgumentList "-D", "`"$pgData`"", "-l", "`"$pgData\..\postgres.log`"", "start"
+        Write-Host "waiting for PostgreSQL..."
+        do { Start-Sleep -Seconds 1; & "$pgBin\pg_isready.exe" -h $Matches[1] -p $Matches[2] *> $null } until ($LASTEXITCODE -eq 0)
+    }
+} elseif (-not (Test-Docker)) {
     Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
     Write-Host "waiting for Docker..."
     while (-not (Test-Docker)) { Start-Sleep -Seconds 3 }
@@ -62,9 +80,11 @@ if (-not $Dev) {
 
 # --- dev servers ----------------------------------------------------------------
 
-docker @compose stop api dashboard *> $null
-docker @compose --profile storage up -d postgres
-if ($LASTEXITCODE -ne 0) { Write-Host "PostgreSQL did not start." -ForegroundColor Red; exit 1 }
+if (-not $Native) {
+    docker @compose stop api dashboard *> $null
+    docker @compose --profile storage up -d postgres
+    if ($LASTEXITCODE -ne 0) { Write-Host "PostgreSQL did not start." -ForegroundColor Red; exit 1 }
+}
 
 # The API reads NETSENTINEL_* from the environment; the demo points it at its own database.
 $vars = @{}
