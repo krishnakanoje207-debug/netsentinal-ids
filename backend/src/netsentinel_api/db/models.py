@@ -193,6 +193,8 @@ class Asset(Base):
     criticality: Mapped[Criticality] = mapped_column(
         _enum(Criticality, "criticality"), nullable=False, default=Criticality.medium
     )
+    #: When a vulnerability scan last covered this host; None if none ever has.
+    last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Sensor(Base):

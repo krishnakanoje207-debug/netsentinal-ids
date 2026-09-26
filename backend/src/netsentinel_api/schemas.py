@@ -213,6 +213,7 @@ class AssetOut(BaseModel):
     ip_address: IpText
     os: str | None
     criticality: Criticality
+    last_scanned_at: datetime | None
 
 
 class ApprovalOut(BaseModel):

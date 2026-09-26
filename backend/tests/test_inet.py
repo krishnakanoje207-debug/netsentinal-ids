@@ -84,6 +84,7 @@ def test_an_asset_address_is_text_too():
             "ip_address": ipaddress.IPv4Address("172.30.0.10"),
             "os": "alpine",
             "criticality": Criticality.high,
+            "last_scanned_at": None,
         }
     )
 
