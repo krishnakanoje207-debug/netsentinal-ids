@@ -3,7 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File lab\replay\build_demo.ps1
 #
 # Drops and recreates the netsentinel_demo database - never the main one - then
-# migrates it, creates one account per role, registers the trained models, and writes
+# migrates it, creates one account per role, imports the estate, registers the trained models, and writes
 # the replayed test-window flows through the real writer with explanations and MITRE
 # techniques. New passwords go to lab\replay\out\demo_credentials.txt.
 #
@@ -42,6 +42,10 @@ Step "migrate" { Push-Location backend; uv run --no-sync alembic upgrade head; P
 
 Remove-Item lab\replay\out\demo_credentials.txt -ErrorAction SilentlyContinue
 Step "accounts" { uv run --no-sync python lab/replay/demo_users.py --out lab/replay/out/demo_credentials.txt }
+# The estate is the UNSW-NB15 testbed's ten servers, which the replayed attacks aim at.
+# Their names are labels for the demo; the dataset publishes addresses only, so OS and
+# criticality are left unassessed (medium).
+Step "import the estate" { uv run --no-sync python -m netsentinel_api.sync_assets --csv lab/replay/demo_inventory.csv }
 Step "register Tier A" { uv run --no-sync netsentinel-register-model artefacts/tier_a/model_card.json --mode active }
 Step "register Tier D autoencoder" { uv run --no-sync netsentinel-register-model artefacts/tier_d_ae/model_card.json --mode active }
 # The forest stays in shadow: it is scored and recorded beside the autoencoder, and raises nothing.
