@@ -51,6 +51,9 @@ guard that refuses any other target.
 
 ## First run
 
+On a fresh VM, do `docs/CLOUD_VM.md` first: machine size, Docker, the Wazuh kernel
+setting, the deploy key, copying the models and the tunnel.
+
 ```bash
 cp .env.example .env
 # fill in every password; generate each with

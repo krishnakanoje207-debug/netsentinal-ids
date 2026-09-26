@@ -12,6 +12,7 @@ Design and requirements live in [`deliverables/`](deliverables).
 | [`docs/evaluation/REPORT.md`](docs/evaluation/REPORT.md) | How accurate the models are, measured honestly |
 | [`docs/testing/TEST_REPORT.md`](docs/testing/TEST_REPORT.md) | Tests, security scans, load test, requirement validation |
 | [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) | How to try to break it by hand |
+| [`docs/CLOUD_VM.md`](docs/CLOUD_VM.md) | Setting up the cloud VM that runs the full pipeline |
 
 Quickest look: `docker compose -f infra/docker-compose.yml --profile app up -d --build`,
 then https://127.0.0.1:5180 (a self-signed certificate; accept the browser warning).
