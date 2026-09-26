@@ -13,8 +13,8 @@ Addresses:
 - Accounts: `admin`, `analyst`, `modeller`, `viewer`; passwords in
   `lab\replay\out\demo_credentials.txt`
 
-Counts quoted below (135 alerts, 134 critical, 24 with a MITRE technique, attackers
-175.45.176.0-3) are the ones the current demo database produced. Read the real numbers
+Counts quoted below (135 alerts: 11 critical, 110 high, 13 medium, 1 low; 24 with a
+MITRE technique; attackers 175.45.176.0-3) are the ones the current demo database produced. Read the real numbers
 off the screen if a rebuild changes them.
 
 ## Pre-recording checklist
@@ -82,7 +82,9 @@ at the real screen, not screenshots. It can be taken again from the Tour sign."
 **Do:** pause on the headline while a count flips. Hover a row on the Latest alerts
 board, then a severity row, then a stop on "How NetSentinel works".
 
-**Say:** "The overview opens with one plain sentence. The numbers are split-flap digits
+**Say:** "The overview opens with one plain sentence. Severity means two things at once:
+how sure the models are, and how much harm the attack could do - so a confident exploit is
+critical, while an equally confident port scan is only medium. The numbers are split-flap digits
 that turn only when the server returns a different number; each new alert turns over
 onto the departures board. Hovering a row shows why it was flagged, without opening
 it. Two models are deciding: the pattern classifier, a LightGBM model trained on
@@ -182,9 +184,9 @@ And for a dark room, the same station after dark."
 false-positive rate; the anomaly autoencoder catches 98.5% of attacks at 0.8% false
 alarms, in 0.13 milliseconds a flow. 945 Python and 132 dashboard tests pass. What it
 does not claim: moved to other networks' traffic the same model drops to 0.74 and 0.05,
-which is why every model must earn its place in shadow mode; almost every replayed
-attack is rated critical, because severity here is the model's confidence, not the
-attack's impact; and the signature and host sensors need a cloud VM that was not
+which is why every model must earn its place in shadow mode; the attack-family model
+that decides how harmful an attack is gets only 57% macro-F1, so most alerts carry an
+unknown kind and rank as high rather than critical; and the signature and host sensors need a cloud VM that was not
 provisioned in this project. Thank you."
 
 ## After recording

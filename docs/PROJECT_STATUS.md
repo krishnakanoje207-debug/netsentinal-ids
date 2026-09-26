@@ -73,20 +73,27 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 |---|---|---|---|
 | 1 | Cloud VM with Suricata, Zeek, Wazuh, Redpanda and ClickHouse live, running the `pipeline` profile | Full plan | An Azure for Students (or other) VM, about 6-8 h after it exists |
 | 2 | First CI run | Quality evidence | A GitHub repository to push to |
-| 3 | Severity from impact as well as confidence | Triage | A decision (see below) |
-| 4 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
-| 5 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
+| 3 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
+| 4 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
 
-**On severity.** Severity is currently the calibrated attack probability in bands (0.95
-critical, 0.85 high, 0.70 medium). Tier A is so confident on the replayed attacks that 134
-of 135 demo alerts are critical, which flattens triage: severity then says how sure the
-model is, not how much harm the attack could do. Combining the two (for example, a
-confident reconnaissance scan as medium and a confident exploit as critical) is a change
-to what severity means in every report and on every screen, so it is left for the owner
-to decide rather than made silently.
+**Severity** (decided 26 September) combines how sure the models are with how much harm
+the attack could do. Confidence alone made 134 of 135 demo alerts critical. Impact is
+claimed only where the MITRE technique is: exploitation (T1190) and denial of service
+(T1499) are harmful, a scan (T1046) is a precursor, and an attack of unknown kind counts as
+middling, never harmless.
+
+| How sure | harmful | not known | scan |
+|---|---|---|---|
+| >= 0.95 | critical | high | medium |
+| >= 0.85 | high | medium | low |
+| >= 0.70 | medium | low | low |
+
+On the demo replay this gives 11 critical, 110 high, 13 medium and 1 low. Twelve of the
+fifteen scans become medium; one Backdoor that the family model mislabelled as a scan
+does too, which is the price of the scan label being about 85% precise. Intelligence
+matches still raise a severity by one step.
 
 ## What I need from you
 
 - For item 1: a VM, or a decision to present the VM-bound services as future work.
 - For item 2: a GitHub repository URL, if you want the workflow run.
-- For item 3: whether severity should stay "how sure" or become "how sure and how harmful".

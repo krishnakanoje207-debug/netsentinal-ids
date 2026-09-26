@@ -51,7 +51,11 @@ detected, how many are critical, how many are still open, and how many blocks ar
 for a decision. The numbers are flip digits that turn only when a count really changes;
 click one to see the alerts behind it. Below it:
 
-- **Threats by severity.** Click a severity to see those alerts.
+- **Threats by severity.** Click a severity to see those alerts. Severity combines how
+  sure the models are with how much harm the attack could do: a near-certain exploit or
+  denial of service is **critical**, a near-certain attack of unknown kind is **high**, and
+  a near-certain port scan, which has done no harm yet, is **medium**. Hover a severity to
+  read what it means.
 - **Latest alerts.** A departures board of the newest alerts; a new one turns over onto it
   as it arrives. Hover a row to see why it was flagged; click it to open the alert. The
   thin line under the board's title fills while it waits for the next refresh, and if the
