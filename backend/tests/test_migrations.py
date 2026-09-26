@@ -97,6 +97,20 @@ def test_actions_record_who_proposed_them(upgrade_sql):
     assert "ALTER TABLE response_actions DROP COLUMN proposed_by" in buffer.getvalue()
 
 
+def test_new_alerts_are_announced_on_the_channel_the_api_listens_on(upgrade_sql):
+    """0004: without the trigger the live feed connects and never pushes anything."""
+    from netsentinel_api.notify import CHANNEL
+
+    assert f"pg_notify('{CHANNEL}', NEW.alert_id::text)" in upgrade_sql
+    assert "AFTER INSERT ON alerts FOR EACH ROW" in upgrade_sql
+
+    buffer = io.StringIO()
+    config = Config(str(BACKEND / "alembic.ini"), output_buffer=buffer)
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    command.downgrade(config, "0004:0003", sql=True)
+    assert "DROP TRIGGER IF EXISTS alerts_notify_created ON alerts" in buffer.getvalue()
+
+
 def test_named_check_constraints_survive_the_migration(upgrade_sql):
     for name in (
         "ck_risk_score_range",
