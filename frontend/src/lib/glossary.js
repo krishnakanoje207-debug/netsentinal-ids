@@ -81,10 +81,22 @@ export const TIERS = {
   D: { name: 'Anomaly detector', does: 'Trained only on normal traffic; objects to anything unfamiliar.' },
 }
 
-/** @param {string} key e.g. "tier_a" */
+/**
+ * A tier's deciding model is scored under "tier_a"; any further model of the same tier
+ * (one kept in shadow beside it) under its own name, such as "tier_d_isolation_forest".
+ *
+ * @param {string} key
+ */
 export function tierName(key) {
-  const tier = key.replace(/^tier_/, '').toUpperCase()
-  return TIERS[tier]?.name ?? key
+  const match = /^tier_([a-z])(?:_(.+))?$/.exec(key)
+  const tier = match ? TIERS[match[1].toUpperCase()] : undefined
+  if (!tier) return key
+  return match[2] ? `${tier.name} (${match[2].replace(/_/g, ' ')})` : tier.name
+}
+
+/** Whether a score key names a model scored beside its tier's deciding one. */
+export function isWatchingOnly(key) {
+  return !/^tier_[a-z]$/.test(key)
 }
 
 /** MITRE ATT&CK techniques this system can name, with their official titles. */

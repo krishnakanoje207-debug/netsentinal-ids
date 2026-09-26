@@ -31,6 +31,7 @@ import {
   STATUS_MEANING,
   featureLabel,
   techniqueName,
+  isWatchingOnly,
   tierName,
 } from '../lib/glossary'
 import { ShapChart } from './ShapChart'
@@ -270,12 +271,17 @@ export function AlertDetail() {
                     {Object.entries(explanation.model_scores).map(([tier, score]) => (
                       <li key={tier}>
                         <div className="flex items-baseline justify-between gap-3">
-                          <span>{tierName(tier)}</span>
+                          <span>
+                            {tierName(tier)}
+                            {isWatchingOnly(tier) && (
+                              <span className="ml-2 text-[0.8125rem] text-ink-faint">watching only</span>
+                            )}
+                          </span>
                           <span className="numeric font-bold">{(score * 100).toFixed(0)}%</span>
                         </div>
                         <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-sunk">
                           <span
-                            className="severity-bar block h-full rounded-full bg-accent"
+                            className={`severity-bar block h-full rounded-full ${isWatchingOnly(tier) ? 'bg-ink-faint' : 'bg-accent'}`}
                             style={{ scale: `${Math.max(0.01, score)} 1` }}
                           />
                         </span>
