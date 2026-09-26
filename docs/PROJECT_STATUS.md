@@ -2,6 +2,7 @@
 
 Where NetSentinel-AI stands against the locked plan (Research Comparison and 15-Day
 Execution Plan v1.0), what remains, and why some planned tools are not running yet.
+Updated 26 September 2026.
 
 ## Measured today
 
@@ -10,70 +11,83 @@ Execution Plan v1.0), what remains, and why some planned tools are not running y
 | Tier A (LightGBM), temporal test split | PR-AUC 1.0000, precision 0.995, recall 1.000, FPR 0.05% | `docs/evaluation/REPORT.md` |
 | M1 objective O3 (PR-AUC >= 0.90) | Met | same |
 | Shortcut found and removed | TTL alone scores 0.998; excluded from the model | same, section 2 |
-| Tier D (Isolation Forest, benign-only) | Recall 0.2% -> 40% after log-scaling | same, section 3 |
-| Tier D autoencoder (benign-only), test split | PR-AUC 0.933, recall 0.86 at 1.9% FPR, p99 0.28 ms; shadow mode, not in the demo path | `artefacts/tier_d_ae/model_card.json` |
-| Attack-family classification | macro-F1 0.52, accuracy 71% (attack flows only) | `artefacts/family/model_card.json` |
-| MITRE technique on ML alerts | Claimed only at >= 70% confidence, for families right >= 85% of the time on validation: Reconnaissance (T1046), Exploits (T1190), DoS (T1499). On the test split the family model is >= 70% confident on 55% of attacks, and 85% of those confident families are right; only the confident ones in the three families above get a technique, so the technique share is lower (not measured). On the family-balanced demo replay, which over-represents the hard rare families, 21 of 31 labels were right (68%) and 104 alerts got none | same |
-| Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | same, section 5 |
-| Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D 0.06 ms p50, 0.13 ms p99 (was 8.2 ms before the forest was exported as one ONNX node) | same, section 6; `artefacts/tier_d/model_card.json` |
-| Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms | `lab/replay` |
-| Tier B (1D-CNN + BiLSTM, first 20 packets), CIC-IDS2017 Friday captures split by time | PR-AUC 0.997, recall 0.97 at 1.0% FPR; recall PortScan 1.00, DDoS 0.80, Bot 0.29 (0.80 and 0.94 on flows of 4+ packets); p99 1.2 ms; shadow mode | `artefacts/tier_b/model_card.json` |
-| Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874 | `artefacts/tier_c/model_card.json` |
+| Tier D autoencoder (benign-only, 64/8), test split | PR-AUC 0.987, recall 0.985 at 0.80% FPR, p50 0.07 ms, p99 0.13 ms; **active** in the demo | `artefacts/tier_d_ae/model_card.json` |
+| Tier D Isolation Forest (benign-only) | PR-AUC 0.64, recall 0.39 at 0.84% FPR (0.2% before log-scaling); now in shadow beside the autoencoder | `artefacts/tier_d/model_card.json` |
+| Attack-family classification | macro-F1 0.57, accuracy 70% (attack flows only); confident (>= 70%) on 74% of attacks, 76% of those right. Weakest: Backdoor 0.05, DoS 0.33, Analysis 0.37 | `artefacts/family/model_card.json` |
+| MITRE technique on ML alerts | Claimed only at >= 70% family confidence, and only for Reconnaissance (T1046), Exploits (T1190) and DoS (T1499), whose confident labels were right >= 85% of the time on validation. In the demo, 24 of 135 alerts carry a technique; the rest say why they have none | same; demo database |
+| Tier B (1D-CNN + BiLSTM, first 20 packets), CIC-IDS2017 Friday captures split by time | PR-AUC 0.996, recall 0.977 at 0.69% FPR; recall PortScan 1.00, DDoS 0.87, Bot 0.35; p99 0.67 ms; abstains on flows under 4 packets; shadow | `artefacts/tier_b/model_card.json` |
+| Tier C (E-GraphSAGE), 20k-flow windows | PR-AUC 0.994, recall 0.988, precision 0.874; shadow | `artefacts/tier_c/model_card.json` |
 | Held-out attacker (never seen in training) | Tier A PR-AUC >= 0.9999, Tier C 0.978-0.996 | `docs/evaluation/holdout/REPORT.md` |
-| Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms | `docs/testing/TEST_REPORT.md` |
-| Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities | same |
-| Automated tests | 733 Python (82% coverage) + 94 dashboard, all passing | `uv run pytest`, `npx vitest run` |
+| Cross-dataset (trained on UNSW) | 0.74 on ToN-IoT, 0.05 on CIC-IDS2018 | `docs/evaluation/REPORT.md`, section 5 |
+| Latency per flow (NFR-01, <= 5 ms) | Tier A 0.07 ms; Tier D autoencoder 0.13 ms p99; Tier B 0.67 ms p99 | model cards |
+| Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms (re-run 26 Sep on the current models) | `lab/replay` |
+| Live alert push, end to end | Alerts written by the writer process reach the dashboard's WebSocket: 8 of 8 and 12 of 12 frames in two runs, including after the database was dropped and recreated under a running API | section "Live feed" in `README.md` |
+| Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms (24 Sep) | `docs/testing/TEST_REPORT.md` |
+| Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
+| Automated tests | 945 Python + 132 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
 The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle (training)
 and the laptop (dashboard, LLM). **The cloud VM was never provisioned**, and this laptop has
-8 GB of RAM, so every service that needs Linux packet capture or several GB of memory is
-built and tested but not running. Nothing below was dropped from the design.
+8 GB of RAM (under 1 GB free with the usual desktop open), so every service that needs Linux
+packet capture or several GB of memory is built and configured but not running. Nothing
+below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |
 |---|---|---|---|
-| Wazuh 4.14 + Sysmon (host IDS, F3) | Always-on on the VM | **Not deployed** | Needs 3 GB+ and its own indexer; installed from its official images on the VM. The Wazuh Active Response client (the block path) is built and tested |
-| Apache Kafka | **Fallback** only | Not used, by design | The plan locks **Redpanda** (Kafka API, lighter). Redpanda is in `docker-compose` (profile `bus`) and the sensor/writer speak the Kafka protocol; not run locally |
-| Apache Flink | **Out of scope for v1.0** | Not built, by design | Listed as future work in the plan (section 9.2); the Python scorer does the streaming |
-| NVIDIA Triton | Dropped in rev. 1 | Not used, by design | Replaced by in-process ONNX Runtime (0.07 ms per flow, no GPU server) |
-| NVIDIA GPU | Kaggle training, LLM on the GTX 1650 | Not needed yet | Tier A and the Tier D forest are trees and trained on the laptop CPU in minutes; Tier B, Tier C (E-GraphSAGE) and the Tier D autoencoder were also trained on the laptop CPU |
-| Hugging Face | Not in the plan | Used for data only | Public mirror of the NF-v3 datasets (the UQ portal needs a web form) |
-| Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured, not running | In `docker-compose` (profile `sensors`); need a Linux host to capture |
-| ClickHouse, Vector, Grafana (F5, F19) | VM | Configured, not running | In `docker-compose`; the demo uses PostgreSQL only |
+| Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured (Compose `sensors` profile, ET Open, FoxIO JA4); run offline against capture files | Live capture needs a Linux host |
+| Wazuh 4.14 + Sysmon + auditd (F3) | Always-on on the VM | Configured (Compose `hids` profile, agent and Sysmon config); Active Response client built and tested | Needs 3 GB+ and its own indexer |
+| Redpanda (F5) | VM | Configured (`bus` profile, topics created by an init job); sensor, writer and sinks speak the Kafka protocol | Not run locally |
+| ClickHouse, Vector, Grafana (F5, F19) | VM | Configured; the flow sink and Tier C sink are built and tested; Grafana is provisioned on ClickHouse | Not run locally; the dashboard's last-hour strip says flow counts are unavailable |
+| Sensor, scorers, writers as one pipeline (F10) | VM | Compose `pipeline` profile: sensor (Tiers A, B, D), Tier C window scorer, detection writer, flow sinks, Suricata importer; model modes read from the API's registry | Needs the VM |
 | MISP, Keep (F13, F14) | VM, intel profile | Integration built and tested against fakes | MISP needs ~4 GB |
-| DFIR-IRIS (F15) | VM | Integration built and tested against fakes | Escalation says so honestly when unconfigured |
-| CrowdSec + nftables (F16) | VM | Integration built and tested against fakes | Needs a Linux edge |
-| Greenbone/OpenVAS (F17) | VM, scan window | Importer built and tested | Runs in its own window on the VM |
+| DFIR-IRIS (F15) | VM | Compose `case` profile; integration built and tested against fakes | Escalation says so honestly when unconfigured |
+| CrowdSec + nftables (F16) | VM | Compose `response` profile with the nftables bouncer; integration tested against fakes | Needs a Linux edge |
+| Greenbone/OpenVAS (F17) | VM, scan window | Compose `scan` profile; importer built and tested; findings shown per host on the Estate page | Runs in its own window on the VM |
+| Asset inventory | Assumed by F16/F17 | **Built**: `netsentinel-import-assets` from a CSV; the demo imports the dataset's ten servers | |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
-| Tier B, 1D-CNN + BiLSTM (F7) | Kaggle | **Trained on the laptop CPU** on four CIC-IDS2017 Friday capture windows (~400 MB fetched by range requests), labelled from the official labelled flows; card in shadow mode | Not yet in the live scoring path: the sensor must emit SPLT sequences to the scorer |
-| Tier C, E-GraphSAGE (F8) | Kaggle | **Trained on the laptop CPU** (20k-flow windows) and evaluated | Not yet in the live scoring path: it scores windows, not single flows |
-| Tier D autoencoder (F9) | Kaggle | **Trained on the laptop CPU** and evaluated; card in shadow mode | Not yet registered in the demo, which serves the Isolation Forest |
+| Live alert feed (F18) | Dashboard | **Running**: a PostgreSQL trigger announces each stored alert and the API pushes it over the WebSocket | |
+| Tier B (F7) | Kaggle | Trained on the laptop CPU; scored in shadow by the pipeline sensor | Not in the demo: the NetFlow replay carries no packets |
+| Tier C (F8) | Kaggle | Trained on the laptop CPU; scored in shadow over flow windows by the pipeline | Not in the demo: it scores windows of a live stream |
+| Tier D autoencoder (F9) | Kaggle | Trained on the laptop CPU; **active** in the demo, the forest in shadow | |
+| CI (GitHub Actions) | Not in the plan | Workflow written: per-package tests, frontend build, bandit, pip-audit, npm audit, Compose checks | Never run: the repository has no GitHub remote |
+| Apache Kafka | **Fallback** only | Not used, by design | The plan locks Redpanda (Kafka API, lighter) |
+| Apache Flink | **Out of scope for v1.0** | Not built, by design | Future work in the plan (section 9.2); the Python scorer does the streaming |
+| NVIDIA Triton | Dropped in rev. 1 | Not used, by design | In-process ONNX Runtime: 0.07 ms per flow, no GPU server |
 
-## Remaining work, in order
+## The dashboard
 
-Estimates are my working time. How many sessions that is depends on your plan's limits,
-which I cannot see; as a reference, everything in the "Measured today" table plus the
-dashboard redesign was one long session.
+Rebuilt on 25 September to the owner's brief: a station information system, light by
+default with a night mode, a station clock whose second hand runs only while the live feed
+is connected, split-flap counts, a departures board of alerts, hover and focus detail
+everywhere, a last-hour strip drawn to scale, and a 13-stop guided tour. Reviewed on 26
+September against the real API and database rather than fixtures; the review found and
+fixed: the live feed never pushing, the feed stopping at 50 alerts, shadow models shown by
+their raw identifiers, alert counts drawn almost flat in the last-hour strip, and faint
+night-mode tiles. The Estate page (hosts and their scan findings) was added the same day.
+Design rules are in `DESIGN.md`.
 
-| # | Task | For | Estimate |
+## Remaining work
+
+| # | Task | For | Needs |
 |---|---|---|---|
-| 1 | ~~MITRE technique on ML alerts~~ | Done | |
-| 2 | ~~Train and evaluate Tier C~~ | Done | |
-| 3 | ~~Copilot live with a summary panel~~ | Done | |
-| 4 | ~~Test report~~ (`docs/testing/TEST_REPORT.md`) | Done | |
-| 5 | One-command deployment (API + dashboard + DB in Compose) and user manual | M5 | 3-4 h |
-| 6 | Final report (SRS, design, implementation, testing) and slides | M5 | 4-6 h |
-| 7 | Cloud VM with Suricata/Zeek/Wazuh live (needs your Azure for Students account) | Full plan | 6-8 h, plus your account setup |
-| 8 | ~~Tier B with packet captures~~ | Done (shadow) | |
+| 1 | Cloud VM with Suricata, Zeek, Wazuh, Redpanda and ClickHouse live, running the `pipeline` profile | Full plan | An Azure for Students (or other) VM, about 6-8 h after it exists |
+| 2 | First CI run | Quality evidence | A GitHub repository to push to |
+| 3 | Severity from impact as well as confidence | Triage | A decision (see below) |
+| 4 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
+| 5 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
 
-Items 1-6 fit the 7-day window. Item 7 depends on a cloud VM and are the honest
-"future work" if the window closes first.
+**On severity.** Severity is currently the calibrated attack probability in bands (0.95
+critical, 0.85 high, 0.70 medium). Tier A is so confident on the replayed attacks that 134
+of 135 demo alerts are critical, which flattens triage: severity then says how sure the
+model is, not how much harm the attack could do. Combining the two (for example, a
+confident reconnaissance scan as medium and a confident exploit as critical) is a change
+to what severity means in every report and on every screen, so it is left for the owner
+to decide rather than made silently.
 
 ## What I need from you
 
-- **Nothing for items 1-6.**
-- For item 7: an Azure for Students (or other) VM, or a decision to present the VM-bound
-  services as future work.
-- Your M3/M4/M5 report template, if your college has a fixed one; otherwise the
-  M1/M2 style is reused.
+- For item 1: a VM, or a decision to present the VM-bound services as future work.
+- For item 2: a GitHub repository URL, if you want the workflow run.
+- For item 3: whether severity should stay "how sure" or become "how sure and how harmful".
