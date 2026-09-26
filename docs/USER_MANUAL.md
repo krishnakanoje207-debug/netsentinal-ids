@@ -117,9 +117,11 @@ after a few hours.
 The machines being protected, from the asset inventory, with how much each matters
 (criticality) and the known weaknesses (CVEs) a Greenbone vulnerability scan reported on
 it, worst first. Click a host's findings to list them; **Alerts involving it** opens the
-alerts that name its address. "None reported by a scan" does not mean the host is safe:
-it may not have been scanned. Blocks aimed at these addresses are refused, because a
-machine of your own is isolated rather than blocked.
+alerts that name its address. A host a scan covered shows the date of its last scan, and
+"Nothing found in the last scan" if the scan reported no CVE; that is what the scan could
+check on that date, not a guarantee. A host no scan has covered says "Not yet scanned".
+Blocks aimed at these addresses are refused, because a machine of your own is isolated
+rather than blocked.
 
 ### Models
 

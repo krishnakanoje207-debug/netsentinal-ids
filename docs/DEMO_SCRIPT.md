@@ -134,8 +134,8 @@ page."
 
 **Say:** "These are the machines being protected: the dataset's ten servers. Findings
 from a Greenbone vulnerability scan appear under each host, worst first; no scan runs on
-this laptop, so the page says 'none reported by a scan' - which it is careful to
-distinguish from 'clean'. The system refuses to block one of these addresses: a machine
+this laptop, so every host says 'not yet scanned'. After a scan, a host with nothing
+found says so with the scan's date, so an unscanned machine never passes for a clean one. The system refuses to block one of these addresses: a machine
 of your own is isolated instead."
 
 ### Scene 8 (5:20 - 7:00): Response with a human in the loop
@@ -182,7 +182,7 @@ And for a dark room, the same station after dark."
 
 **Say:** "On a temporal test split the Tier A model reaches PR-AUC 1.0000 with a 0.05%
 false-positive rate; the anomaly autoencoder catches 98.5% of attacks at 0.8% false
-alarms, in 0.13 milliseconds a flow. 945 Python and 132 dashboard tests pass. What it
+alarms, in 0.13 milliseconds a flow. 962 Python and 133 dashboard tests pass. What it
 does not claim: moved to other networks' traffic the same model drops to 0.74 and 0.05,
 which is why every model must earn its place in shadow mode; the attack-family model
 that decides how harmful an attack is gets only 57% macro-F1, so most alerts carry an
