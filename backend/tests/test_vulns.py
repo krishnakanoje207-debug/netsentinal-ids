@@ -19,13 +19,15 @@ from netsentinel_api.services.vulns import (
     ScanError,
     normalise_ip,
     parse_report,
+    parse_scanned_hosts,
     sync,
 )
 
 SCAN_END = datetime(2026, 9, 20, 3, 30, tzinfo=timezone.utc)
 
 
-def _report(results: str, scan_end: str = "2026-09-20T03:30:00+00:00") -> str:
+def _report(results: str, scan_end: str = "2026-09-20T03:30:00+00:00",
+            hosts: str = "") -> str:
     return f"""<get_reports_response status="200" status_text="OK">
   <report id="1a2b">
     <report id="1a2b">
@@ -34,6 +36,7 @@ def _report(results: str, scan_end: str = "2026-09-20T03:30:00+00:00") -> str:
       <results max="100" start="1">
         {results}
       </results>
+      {hosts}
     </report>
   </report>
 </get_reports_response>"""
@@ -203,7 +206,7 @@ def test_a_new_finding_becomes_a_row_against_its_asset():
     assert (row.asset_id, row.cve_id, row.cvss) == (1, "CVE-2021-44228", 10.0)
     assert row.detected_at == SCAN_END
     assert stats.as_dict() == {"fetched": 1, "added": 1, "updated": 0,
-                               "unknown_hosts": 0}
+                               "unknown_hosts": 0, "hosts_scanned": 1}
 
 
 def test_rescanning_updates_the_row_it_already_has():
@@ -239,3 +242,64 @@ def test_two_assets_with_the_same_cve_are_two_rows():
     findings = [_finding(host="172.30.0.10"), _finding(host="172.30.0.11")]
     sync(session, findings, [_asset(1, "172.30.0.10"), _asset(2, "172.30.0.11")], [])
     assert {row.asset_id for row in session.added} == {1, 2}
+
+
+# --- which hosts the scan covered ------------------------------------------
+
+def _scanned_host(ip: str, end: str = "2026-09-20T03:20:00+00:00") -> str:
+    return f"""<host><ip>{ip}</ip><asset asset_id="a1"/>
+        <start>2026-09-20T03:01:00+00:00</start><end>{end}</end>
+        <detail><name>hostname</name><value>victim</value></detail></host>"""
+
+
+HOST_END = datetime(2026, 9, 20, 3, 20, tzinfo=timezone.utc)
+
+
+def test_a_host_with_nothing_found_is_still_listed_as_scanned():
+    """The clean host is the one whose coverage has to be recorded."""
+    xml = _report("", hosts=_scanned_host("172.30.0.11"))
+    assert parse_scanned_hosts(xml) == {"172.30.0.11": HOST_END}
+
+
+def test_the_host_inside_a_result_is_not_the_host_list():
+    """<result><host> names a finding's address, not a scanned host with a time."""
+    assert parse_scanned_hosts(_report(_result())) == {}
+
+
+def test_a_host_with_no_end_time_takes_the_scan_end():
+    xml = _report("", hosts="<host><ip>172.30.0.11</ip></host>")
+    assert parse_scanned_hosts(xml) == {"172.30.0.11": SCAN_END}
+
+
+def test_a_time_without_an_offset_is_read_as_utc():
+    xml = _report("", hosts=_scanned_host("172.30.0.11", end="2026-09-20T03:20:00"))
+    assert parse_scanned_hosts(xml)["172.30.0.11"] == HOST_END
+
+
+def test_a_clean_host_on_the_list_is_marked_scanned():
+    asset = _asset()
+    stats = sync(StubSession(), [], [asset], [], scanned={"172.30.0.10": HOST_END})
+    assert asset.last_scanned_at == HOST_END
+    assert stats.hosts_scanned == 1
+
+
+def test_a_host_with_a_finding_is_marked_scanned_without_a_host_list():
+    """Older reports may carry no host list; a finding still proves coverage."""
+    asset = _asset()
+    sync(StubSession(), [_finding()], [asset], [])
+    assert asset.last_scanned_at == SCAN_END
+
+
+def test_a_host_the_scan_did_not_cover_stays_unscanned():
+    covered, missed = _asset(1, "172.30.0.10"), _asset(2, "172.30.0.11")
+    sync(StubSession(), [], [covered, missed], [], scanned={"172.30.0.10": HOST_END})
+    assert missed.last_scanned_at is None
+
+
+def test_an_older_report_does_not_move_the_scan_time_back():
+    asset = _asset()
+    asset.last_scanned_at = HOST_END
+    earlier = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    stats = sync(StubSession(), [], [asset], [], scanned={"172.30.0.10": earlier})
+    assert asset.last_scanned_at == HOST_END
+    assert stats.hosts_scanned == 0

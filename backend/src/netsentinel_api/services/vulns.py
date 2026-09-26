@@ -28,8 +28,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Iterable
+from datetime import datetime, timezone
+from typing import Iterable, Mapping
 from xml.etree import ElementTree
 
 import defusedxml.ElementTree as SafeElementTree
@@ -75,6 +75,8 @@ class ScanStats:
     #: inserted: a vulnerability has to belong to something, and a scan that
     #: wandered outside the inventory is worth noticing.
     unknown_hosts: int = 0
+    #: Inventory hosts whose ``last_scanned_at`` this report moved forward.
+    hosts_scanned: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -82,6 +84,7 @@ class ScanStats:
             "added": self.added,
             "updated": self.updated,
             "unknown_hosts": self.unknown_hosts,
+            "hosts_scanned": self.hosts_scanned,
         }
 
 
@@ -95,16 +98,7 @@ def parse_report(xml: str, min_qod: int = MIN_QOD) -> list[Finding]:
     names the scanned hosts chose. Entity expansion and external references are
     refused rather than resolved.
     """
-    try:
-        root = SafeElementTree.fromstring(xml)
-    except ElementTree.ParseError as exc:
-        raise ScanError(f"the report is not valid XML: {exc}") from exc
-    except DefusedXmlException as exc:
-        raise ScanError(
-            f"the report uses XML entities or external references, which no gvmd report "
-            f"needs; refusing it rather than expanding them ({type(exc).__name__})"
-        ) from exc
-
+    root = _load(xml)
     scanned_at = _report_time(root)
 
     findings: list[Finding] = []
@@ -129,6 +123,40 @@ def parse_report(xml: str, min_qod: int = MIN_QOD) -> list[Finding]:
                                     detected_at=detected_at))
 
     return findings
+
+
+def parse_scanned_hosts(xml: str) -> dict[str, datetime | None]:
+    """Every host the scan covered, with when it finished that host.
+
+    Read from the report's own host list rather than from the results, because a
+    host the scan found nothing on has no results - and that host is the one whose
+    coverage matters, since it is the difference between "clean" and "never
+    scanned". The list sits directly under ``<report>``; the ``<host>`` inside each
+    ``<result>`` is a different element and is not read here.
+    """
+    root = _load(xml)
+    scanned_at = _report_time(root)
+
+    hosts: dict[str, datetime | None] = {}
+    for element in root.iterfind(".//report/host"):
+        address = element.findtext("ip")
+        if not address or not address.strip():
+            continue
+        moment = _time(element.findtext("end")) or _time(element.findtext("start"))
+        hosts[normalise_ip(address.strip())] = moment or scanned_at
+    return hosts
+
+
+def _load(xml: str) -> ElementTree.Element:
+    try:
+        return SafeElementTree.fromstring(xml)
+    except ElementTree.ParseError as exc:
+        raise ScanError(f"the report is not valid XML: {exc}") from exc
+    except DefusedXmlException as exc:
+        raise ScanError(
+            f"the report uses XML entities or external references, which no gvmd report "
+            f"needs; refusing it rather than expanding them ({type(exc).__name__})"
+        ) from exc
 
 
 def _host(result: ElementTree.Element) -> str | None:
@@ -209,9 +237,13 @@ def _time(text: str | None) -> datetime | None:
     if not text:
         return None
     try:
-        return datetime.fromisoformat(text.strip())
+        moment = datetime.fromisoformat(text.strip())
     except ValueError:
         return None
+    # gvmd writes UTC. A time with no offset is read as UTC rather than left naive,
+    # which PostgreSQL would take as its own local time and which cannot be compared
+    # with the aware times already stored.
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def normalise_ip(value: str) -> str:
@@ -233,6 +265,7 @@ def sync(
     findings: Iterable[Finding],
     assets: Iterable[Asset],
     existing: Iterable[Vulnerability],
+    scanned: Mapping[str, datetime | None] | None = None,
 ) -> ScanStats:
     """Add or refresh the ``vulnerabilities`` rows for one report.
 
@@ -244,6 +277,11 @@ def sync(
     inserting a second row. Two rows for one CVE on one host would double every
     count on the dashboard after each scan, and the table has no unique constraint
     to stop it - this is that constraint, in the one place that writes here.
+
+    ``scanned`` is the report's host list (``parse_scanned_hosts``). Each inventory
+    host on it, and each host a finding is on, gets its ``last_scanned_at`` moved
+    forward - never back, so importing an old report does not make a host look
+    less recently covered than it is.
     """
     stats = ScanStats()
     by_ip = {
@@ -255,7 +293,9 @@ def sync(
         (row.asset_id, row.cve_id): row for row in existing
     }
 
+    findings_seen: list[Finding] = []
     for finding in findings:
+        findings_seen.append(finding)
         stats.fetched += 1
         asset = by_ip.get(finding.host)
         if asset is None:
@@ -284,6 +324,17 @@ def sync(
         if finding.detected_at is not None:
             row.detected_at = finding.detected_at
         stats.updated += 1
+
+    covered: dict[str, datetime | None] = dict(scanned or {})
+    for finding in findings_seen:
+        covered.setdefault(finding.host, finding.detected_at)
+    for host, moment in covered.items():
+        asset = by_ip.get(host)
+        if asset is None or moment is None:
+            continue
+        if asset.last_scanned_at is None or moment > asset.last_scanned_at:
+            asset.last_scanned_at = moment
+            stats.hosts_scanned += 1
 
     if stats.unknown_hosts:
         logger.warning(

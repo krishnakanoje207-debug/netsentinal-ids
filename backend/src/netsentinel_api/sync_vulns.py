@@ -25,7 +25,14 @@ from sqlalchemy import select
 
 from netsentinel_api.db.models import Asset, AuditLog, Vulnerability
 from netsentinel_api.db.session import get_sessionmaker
-from netsentinel_api.services.vulns import MIN_QOD, ScanError, ScanStats, parse_report, sync
+from netsentinel_api.services.vulns import (
+    MIN_QOD,
+    ScanError,
+    ScanStats,
+    parse_report,
+    parse_scanned_hosts,
+    sync,
+)
 
 logger = logging.getLogger("netsentinel.vulns")
 
@@ -37,6 +44,7 @@ def run(session, xml: str, min_qod: int = MIN_QOD) -> ScanStats:
         findings,
         list(session.scalars(select(Asset))),
         list(session.scalars(select(Vulnerability))),
+        scanned=parse_scanned_hosts(xml),
     )
     session.add(
         AuditLog(
