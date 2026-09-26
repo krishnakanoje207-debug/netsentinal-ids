@@ -5,6 +5,8 @@
 
     python -m netsentinel_sensor.agent --pcap capture.pcap --dry-run
 
+    python -m netsentinel_sensor.agent --pcap capture.pcap --models ... --out flows.jsonl
+
     NETSENTINEL_SENSOR_TOKEN=... python -m netsentinel_sensor.agent \
         --interface netsentinel-lab --models ... --registry-url http://127.0.0.1:8010
 
@@ -47,6 +49,7 @@ from netsentinel_scoring.registry import load_model
 from netsentinel_sensor.capture import from_interface, from_pcap_file
 from netsentinel_sensor.publisher import (
     CollectingPublisher,
+    FilePublisher,
     Publisher,
     RedpandaPublisher,
 )
@@ -321,10 +324,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--sensor-name", default="early_flow")
-    parser.add_argument(
+    destination = parser.add_mutually_exclusive_group()
+    destination.add_argument(
         "--dry-run",
         action="store_true",
         help="score but publish nowhere; prints a summary at the end",
+    )
+    destination.add_argument(
+        "--out",
+        help="write scored flows to this JSON Lines file instead of Redpanda, "
+        "for netsentinel-writer --replay",
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -352,9 +361,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     scorer = build_scorer(args.models, modes)
-    publisher: Publisher = (
-        CollectingPublisher() if args.dry_run else RedpandaPublisher(args.brokers)
-    )
+    publisher: Publisher
+    if args.dry_run:
+        publisher = CollectingPublisher()
+    elif args.out:
+        publisher = FilePublisher(args.out)
+    else:
+        publisher = RedpandaPublisher(args.brokers)
     agent = SensorAgent(scorer, publisher, sensor_name=args.sensor_name)
 
     # SIGTERM is how Docker stops a container; without this the open flows are lost.

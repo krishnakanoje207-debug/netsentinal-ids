@@ -1,7 +1,8 @@
 """Where scored flows go.
 
-Two publishers: Redpanda for the real path, and a collecting one for tests. Both satisfy
-the same tiny protocol, so the agent has no idea which it is talking to.
+Three publishers: Redpanda for the real path, a JSON Lines file for a host with no bus
+(the writer's ``--replay`` reads it), and a collecting one for tests. All satisfy the same
+tiny protocol, so the agent has no idea which it is talking to.
 
 Why the bus at all, when Vector writes Suricata's logs straight to ClickHouse: the scored
 flow stream has a consumer that can fall behind its producer. The SHAP writer runs
@@ -48,6 +49,26 @@ class CollectingPublisher:
 
     def close(self) -> None:
         self.closed = True
+
+
+class FilePublisher:
+    """One JSON object per line, in the shape the writer's ``--replay`` reads.
+
+    For a machine that cannot run Redpanda, such as a Windows laptop scoring its own
+    capture: the writer then replays the file as it would consume the topic.
+    """
+
+    def __init__(self, path: str) -> None:
+        self._handle = open(path, "w", encoding="utf-8")
+
+    def publish(self, key: str, payload: dict[str, Any]) -> None:
+        self._handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
+
+    def flush(self) -> None:
+        self._handle.flush()
+
+    def close(self) -> None:
+        self._handle.close()
 
 
 class RedpandaPublisher:

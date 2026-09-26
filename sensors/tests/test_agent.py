@@ -154,3 +154,20 @@ def test_flow_payload_separates_the_vector_from_the_verdict(scorer, pcap_path):
     # itself must not contain it.
     assert "risk_score" not in SCALAR_FIELDS
     assert payload["verdict"]["threshold"] == 0.5
+
+
+def test_a_file_publisher_writes_what_the_writer_replays(scorer, pcap_path, expected_flows, tmp_path):
+    """One JSON object per line, read back exactly as netsentinel-writer --replay does."""
+    import json
+
+    from netsentinel_sensor.publisher import FilePublisher
+
+    out = tmp_path / "flows.jsonl"
+    publisher = FilePublisher(str(out))
+    run(SensorAgent(scorer, publisher), pcap_path)
+    publisher.close()
+
+    with open(out, encoding="utf-8") as handle:
+        payloads = [json.loads(line) for line in handle if line.strip()]
+    assert len(payloads) == expected_flows
+    assert {"flow", "verdict", "models", "contract"} <= set(payloads[0])
