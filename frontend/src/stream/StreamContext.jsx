@@ -15,14 +15,26 @@ import { useAlertStream } from './useAlertStream'
 
 const StreamContext = createContext(null)
 
+/** How long frames are gathered into one refetch. See onAlert. */
+export const REFETCH_COALESCE_MS = 250
+
 export function StreamProvider({ children }) {
   const { token } = useAuth()
   const queryClient = useQueryClient()
 
+  // A burst of alerts (a scan, a flood) arrives as a burst of frames. Refetching per
+  // frame would cancel each refetch with the next, and the lists could stay loading for
+  // as long as the attack lasts, so frames within a short window share one refetch.
+  const pending = useRef(null)
   const onAlert = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['alerts'] })
-    void queryClient.invalidateQueries({ queryKey: ['alert-summary'] })
+    if (pending.current !== null) return
+    pending.current = setTimeout(() => {
+      pending.current = null
+      void queryClient.invalidateQueries({ queryKey: ['alerts'] })
+      void queryClient.invalidateQueries({ queryKey: ['alert-summary'] })
+    }, REFETCH_COALESCE_MS)
   }, [queryClient])
+  useEffect(() => () => clearTimeout(pending.current), [])
 
   const stream = useAlertStream(token, onAlert)
 
