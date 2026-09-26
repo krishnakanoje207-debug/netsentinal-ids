@@ -36,6 +36,7 @@ completions, without type syntax in the way. The tests are the real safety net.
 | `overview/` | The landing page: headline, severity, latest alerts, the last hour, how it works |
 | `alerts/` | Feed, search, detail view, the reasons chart, CSV export |
 | `actions/` | The approval queue |
+| `estate/` | The protected hosts, their scan findings worst first, and links to their alerts |
 | `models/` | The registry, its shadow evidence and the promote control |
 | `stream/` | The one WebSocket alert feed, with backoff, shared through context |
 | `theme/` | Day and night |

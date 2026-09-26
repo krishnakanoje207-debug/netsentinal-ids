@@ -172,6 +172,12 @@ export const api = {
   /** @returns {Promise<import('./types').AlertDetail>} */
   alert: (token, alertId) => request(`/alerts/${alertId}`, { token }),
 
+  /** @returns {Promise<import('./types').Asset[]>} */
+  assets: (token) => request('/assets?limit=200', { token }),
+
+  /** @returns {Promise<import('./types').Vulnerability[]>} */
+  vulnerabilities: (token, assetId) => request(`/assets/${assetId}/vulnerabilities`, { token }),
+
   /**
    * The local model's summary of an alert, or null when none has been written. A
    * missing summary is an ordinary state, not an error the page should shout about.

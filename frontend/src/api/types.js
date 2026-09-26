@@ -172,6 +172,27 @@
  */
 
 /**
+ * A host of the estate, from the inventory import.
+ *
+ * @typedef {object} Asset
+ * @property {number} asset_id
+ * @property {string} hostname
+ * @property {string} ip_address
+ * @property {string | null} os
+ * @property {'low' | 'medium' | 'high'} criticality
+ */
+
+/**
+ * A CVE a Greenbone scan reported on one host.
+ *
+ * @typedef {object} Vulnerability
+ * @property {number} vuln_id
+ * @property {string} cve_id
+ * @property {number | null} cvss null when the scan gave no score
+ * @property {string} detected_at when the scan saw it, ISO 8601
+ */
+
+/**
  * @typedef {object} Health
  * @property {string} status
  * @property {string} version
@@ -191,4 +212,5 @@ export const PERMISSIONS = {
   responsePropose: 'response:propose',
   modelsRead: 'models:read',
   modelsDeploy: 'models:deploy',
+  assetsRead: 'assets:read',
 }
