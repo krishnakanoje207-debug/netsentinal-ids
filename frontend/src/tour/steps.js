@@ -112,6 +112,16 @@ export const TOUR_STEPS = [
       'out afterwards. Nobody can approve their own proposal.',
   },
   {
+    id: 'estate',
+    route: '/estate',
+    target: 'estate',
+    title: 'What is being protected',
+    body:
+      'Your own machines, and the known weaknesses a vulnerability scan found on each. The system ' +
+      'refuses to block these addresses: a machine of your own is isolated instead.',
+    requires: PERMISSIONS.assetsRead,
+  },
+  {
     id: 'models',
     route: '/models',
     target: 'models',

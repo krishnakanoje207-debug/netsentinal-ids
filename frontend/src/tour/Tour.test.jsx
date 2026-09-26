@@ -58,10 +58,12 @@ describe('tour', () => {
     vi.unstubAllGlobals()
   })
 
-  it('only includes the models stop for a role that can see the models page', () => {
+  it('gates the estate and models stops on the permission that shows their page', () => {
     const gated = TOUR_STEPS.filter((step) => step.requires)
-    expect(gated.map((step) => step.id)).toEqual(['models'])
-    expect(gated[0].requires).toBe(PERMISSIONS.modelsRead)
+    expect(gated.map((step) => [step.id, step.requires])).toEqual([
+      ['estate', PERMISSIONS.assetsRead],
+      ['models', PERMISSIONS.modelsRead],
+    ])
   })
 
   it('invites a first-time visitor once, and remembers a dismissal', async () => {
