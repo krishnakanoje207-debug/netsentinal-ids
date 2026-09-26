@@ -1,6 +1,6 @@
 # Testing and validation report (Milestone 4)
 
-Everything below was run on 23 September 2026 on the development laptop (Windows 11,
+Everything below was first run on 23 September 2026 on the development laptop (Windows 11,
 8 GB RAM) against the offline demonstration: PostgreSQL in Docker, the API, the
 dashboard, and flows replayed from the NF-UNSW-NB15-v3 test window. Raw outputs sit
 beside this file.
@@ -9,12 +9,18 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 733 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 945 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
-| Dashboard (React components, API client, stream) | 94 | all pass | `cd frontend; npx vitest run` |
+| Dashboard (React components, API client, stream) | 132 | all pass | `cd frontend; npx vitest run` |
 
-The Python suite and coverage were re-run on 24 September after the Tier D autoencoder
-and the failed-login audit test were added.
+Test counts are from 26 September, after the live alert push, the inventory import, feed
+paging and the Estate page were added; coverage was last measured on 24 September.
+
+**Live push, verified against the real stack on 26 September** (native PostgreSQL 16, the
+API under uvicorn, the dashboard under Vite): a WebSocket client signed in as the analyst
+received one frame per alert the writer stored - 8 of 8, then 12 of 12 after the demo
+database was dropped and recreated under the running API, which logged the lost
+connection, retried and listened again on its own.
 
 **Coverage** (Python, `coverage.txt`): **82%** of 4,667 statements. The uncovered code is
 concentrated in command-line entry points (intel sync, vulnerability import, the
@@ -98,19 +104,19 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 |---|---|---|---|
 | O1 | Telemetry visible within 10 s | Deferred | needs Suricata/Zeek/Wazuh on the VM |
 | O2 | Signature detection of scan, brute force, web attack | Deferred | Suricata configured, not running |
-| O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, C 0.994, D 0.64; macro-F1 0.52; cross-dataset 0.74 / 0.05 reported |
-| O4 | Early-flow scoring, < 5 ms per flow | Partial | Tier A 0.07 ms, Tier D 0.06 ms; early-packet extractor built and parity-tested, served models use flow aggregates |
+| O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
+| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets, so it has not scored live traffic |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
 | O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
-| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Deferred | Suricata and Zeek are services in the `sensors` Compose profile, never run; the JA4 package is not installed; Wazuh and Sysmon are not in Compose (`infra/README.md` points to Wazuh's own stack) |
+| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Partial | Suricata 8 with JA4 and Zeek with the FoxIO JA4 scripts are configured (`sensors` profile) and were run offline on capture files; Wazuh, Sysmon and auditd are configured (`hids` profile); none runs live without the VM |
 | FR-04 | Early-flow features | Partial | extractor + offline/live parity test |
-| FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; ClickHouse `network_flows` DDL generated from the contract, but no sink writes scored flows to it (they go sensor -> Redpanda -> writer -> PostgreSQL) |
+| FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; the flow sink writes every scored flow to ClickHouse `network_flows` and the Tier C sink writes window scores, both tested against fakes with dead-lettering; not run against a live ClickHouse |
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
-| FR-07 | Tier B | Partial | code + tests; needs packet captures |
-| FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; not yet in the live path |
-| FR-09 | Tier D | Met (offline) | Isolation Forest served; autoencoder trained on benign flows only: PR-AUC 0.933, recall 0.86 at 1.9% FPR, p99 0.28 ms; card in shadow mode, not in the demo path |
+| FR-07 | Tier B | Met (offline) | trained on CIC-IDS2017 captures: PR-AUC 0.996, recall 0.977 at 0.69% FPR; in the pipeline sensor in shadow |
+| FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; scored in shadow over flow windows by the pipeline's Tier C scorer |
+| FR-09 | Tier D | Met | autoencoder trained on benign flows only, served in the demo: PR-AUC 0.987, recall 0.985 at 0.80% FPR, p99 0.13 ms; the Isolation Forest scores beside it in shadow |
 | FR-10 | Fusion with signatures and intel | Partial | A+D fused; intel raises severity; signatures not running |
 | FR-11 | Shadow / active, switchable | Met | promotion gate, CLI and dashboard |
 | FR-12 | SHAP on every detection | Met | database constraint |
@@ -118,14 +124,14 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | FR-14 | MISP enrichment | Partial | tested against fakes |
 | FR-15 | Keep, DFIR-IRIS | Partial | tested against fakes; escalation works without IRIS |
 | FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes |
-| FR-17 | OpenVAS findings per asset | Partial | importer tested |
-| FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard |
+| FR-17 | OpenVAS findings per asset | Partial | importer tested; findings shown per host on the Estate page; hosts loaded by the inventory import; no scan run without the VM |
+| FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard; alerts pushed over the WebSocket as they are stored (section 1) |
 | FR-19 | Search and export | Partial | address / network / technique search and CSV; no time-range search or PDF |
 | FR-20 | JWT + Admin, Analyst, ML Engineer, Viewer | Met | Viewer added 23 Sep |
 | FR-21 | Audit of logins, approvals, changes, actions | Met | every login outcome, triage, decision, export, promotion |
 | FR-22 | Model registry with SHA-256 | Met | registry refuses a mismatched file |
 | FR-23 | Scripted attacks + replay | Met (replay) / Partial (scripts need the lab VM) | `lab/` |
-| NFR-01 | Latency | Met | Tier A and the served Tier D Isolation Forest within budget (section 3) |
+| NFR-01 | Latency | Met | Tier A 0.07 ms, Tier D autoencoder 0.13 ms p99, Tier B 0.67 ms p99 |
 | NFR-02 | Page load | Met | section 3 |
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
 | NFR-04 | HTTPS, bcrypt, JWT expiry, RBAC, secrets out of git | Met | nginx terminates TLS 1.2/1.3 for the dashboard, `/api` and the alert WebSocket (wss) on 127.0.0.1:5180, and redirects plain HTTP to HTTPS; the self-signed certificate is made at image build, so no key is in the repository (`frontend/nginx.conf`, `frontend/Dockerfile`); verified live: health 200 and analyst login 200 over HTTPS, wss stream connects, bad token refused |
@@ -135,5 +141,5 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | NFR-08 | Modular, versioned, documented | Met | 7 packages, OpenAPI at /api/v1/docs |
 | NFR-09 | Scalable later | Met (by design) | Kafka-protocol bus; Flink is future work |
 | NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; `app` profile verified (up in 34 s); full stack never run on a 16 GB host; Wazuh not in Compose |
-| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the ClickHouse flow table that would hold them has no sink writing to it |
+| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the flow sink writes them to ClickHouse `network_flows` on the VM, which does not run on this laptop |
 | NFR-12 | Free licences, academic datasets, attacks only in the lab | Met | see O8; `lab/scenarios/_guard.sh` refuses any target outside 172.30.0.0/24; published ports bind to 127.0.0.1 |
