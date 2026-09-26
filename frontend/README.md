@@ -25,7 +25,7 @@ backend deliberately ships no CORS middleware.
 
 ## Layout
 
-Plain JavaScript with JSX, not TypeScript. Shapes are written down as JSDoc typedefs in
+Look and motion rules are in [`DESIGN.md`](DESIGN.md). Plain JavaScript with JSX, not TypeScript. Shapes are written down as JSDoc typedefs in
 `api/types.js` - comments, so they read as plain English and still drive editor
 completions, without type syntax in the way. The tests are the real safety net.
 

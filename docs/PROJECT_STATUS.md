@@ -66,7 +66,6 @@ September against the real API and database rather than fixtures; the review fou
 fixed: the live feed never pushing, the feed stopping at 50 alerts, shadow models shown by
 their raw identifiers, alert counts drawn almost flat in the last-hour strip, and faint
 night-mode tiles. The Estate page (hosts and their scan findings) was added the same day.
-Design rules are in `DESIGN.md`.
 
 ## Remaining work
 
