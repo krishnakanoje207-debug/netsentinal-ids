@@ -6,9 +6,9 @@
  *
  * - Findings hang off their host, as they do in the API. "What else is open on this
  *   machine" is the question asked during triage; a flat list of every CVE answers nobody.
- * - A host with no findings says "none reported", never "clean". The scan import does not
- *   record which hosts a scan covered, so an unscanned host and a clean one look the same
- *   here, and the page says so rather than letting one pass for the other.
+ * - A host with no findings says either "nothing found in the last scan" or "not yet
+ *   scanned", from the host's last_scanned_at, and never "clean". The two used to look the
+ *   same, which let an unscanned machine pass for a clean one.
  * - A finding the scan did not score shows a dash, not a zero, for the reason a missing
  *   risk score is "undecided" elsewhere in the console.
  * - Every host links to the alerts that name its address.
@@ -70,8 +70,16 @@ function HostRow({ asset, findings, onAlerts }) {
         <div className="min-w-0">
           {findings.isLoading && <span className="text-sm text-ink-faint">Reading findings...</span>}
           {findings.error && <span className="text-sm text-sev-critical">Findings could not be read.</span>}
-          {list && list.length === 0 && (
-            <span className="text-[0.9375rem] text-ink-dim">None reported by a scan</span>
+          {list && list.length === 0 && asset.last_scanned_at && (
+            <span className="text-[0.9375rem] text-ink-dim">Nothing found in the last scan</span>
+          )}
+          {list && list.length === 0 && !asset.last_scanned_at && (
+            <span
+              className="text-[0.9375rem] font-semibold text-sev-medium"
+              title="No vulnerability scan has covered this host, so nothing is known about it"
+            >
+              Not yet scanned
+            </span>
           )}
           {list && list.length > 0 && (
             <button
@@ -87,6 +95,11 @@ function HostRow({ asset, findings, onAlerts }) {
                 <span className="font-normal text-ink-dim">{open ? ', hide' : ', show'}</span>
               </span>
             </button>
+          )}
+          {asset.last_scanned_at && (
+            <p className="text-[0.8125rem] text-ink-faint" data-testid="last-scan">
+              Last scan {new Date(asset.last_scanned_at).toLocaleDateString()}
+            </p>
           )}
         </div>
         <button
@@ -185,9 +198,8 @@ export function EstatePage({ onFilter }) {
             </ul>
           </div>
           <p className="mt-3 max-w-3xl text-[0.8125rem] leading-relaxed text-ink-dim">
-            "None reported" is not "clean". Findings come from Greenbone scans, and the import
-            does not record which hosts a scan covered, so a host that was never scanned also
-            shows none.
+            "Nothing found" is not "clean": it is what a Greenbone scan could check on that
+            date. A host no scan has covered says "Not yet scanned" instead.
           </p>
         </>
       )}

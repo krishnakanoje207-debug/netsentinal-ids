@@ -180,6 +180,7 @@
  * @property {string} ip_address
  * @property {string | null} os
  * @property {'low' | 'medium' | 'high'} criticality
+ * @property {string | null} last_scanned_at when a vulnerability scan last covered it
  */
 
 /**

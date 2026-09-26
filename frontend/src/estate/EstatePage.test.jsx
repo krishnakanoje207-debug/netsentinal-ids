@@ -14,9 +14,11 @@ import { EstatePage, cvssBand } from './EstatePage'
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ token: 'a-token' }) }))
 
+const SCANNED = '2026-09-20T10:00:00Z'
 const HOSTS = [
-  { asset_id: 1, hostname: 'web-01', ip_address: '172.30.0.10', os: 'Ubuntu 24.04', criticality: 'high' },
-  { asset_id: 2, hostname: 'ssh-01', ip_address: '172.30.0.11', os: null, criticality: 'medium' },
+  { asset_id: 1, hostname: 'web-01', ip_address: '172.30.0.10', os: 'Ubuntu 24.04', criticality: 'high', last_scanned_at: SCANNED },
+  { asset_id: 2, hostname: 'ssh-01', ip_address: '172.30.0.11', os: null, criticality: 'medium', last_scanned_at: SCANNED },
+  { asset_id: 3, hostname: 'db-01', ip_address: '172.30.0.12', os: null, criticality: 'low', last_scanned_at: null },
 ]
 const FINDINGS = {
   1: [
@@ -25,6 +27,7 @@ const FINDINGS = {
     { vuln_id: 3, cve_id: 'CVE-2019-0003', cvss: null, detected_at: '2026-09-20T10:00:00Z' },
   ],
   2: [],
+  3: [],
 }
 
 function renderPage(onFilter = vi.fn()) {
@@ -55,15 +58,24 @@ describe('EstatePage', () => {
 
   it('counts hosts and findings', async () => {
     renderPage()
-    expect(await screen.findByTestId('estate-summary')).toHaveTextContent('2 hosts, 3 findings reported.')
+    expect(await screen.findByTestId('estate-summary')).toHaveTextContent('3 hosts, 3 findings reported.')
   })
 
-  it('says none reported, not clean, for a host with no findings', async () => {
+  it('says nothing found in the last scan, not clean, for a scanned host with no findings', async () => {
     renderPage()
     const [, ssh] = await screen.findAllByTestId('estate-host')
-    expect(await within(ssh).findByText('None reported by a scan')).toBeInTheDocument()
+    expect(await within(ssh).findByText('Nothing found in the last scan')).toBeInTheDocument()
+    expect(within(ssh).getByTestId('last-scan')).toHaveTextContent('Last scan')
     expect(within(ssh).getByText('OS not recorded')).toBeInTheDocument()
     expect(screen.queryByText(/clean/i, { selector: 'span' })).not.toBeInTheDocument()
+  })
+
+  it('tells an unscanned host apart from a clean one', async () => {
+    renderPage()
+    const [, , db] = await screen.findAllByTestId('estate-host')
+    expect(await within(db).findByText('Not yet scanned')).toBeInTheDocument()
+    expect(within(db).queryByText('Nothing found in the last scan')).not.toBeInTheDocument()
+    expect(within(db).queryByTestId('last-scan')).not.toBeInTheDocument()
   })
 
   it('lists findings worst first, with an unscored one as a dash', async () => {
