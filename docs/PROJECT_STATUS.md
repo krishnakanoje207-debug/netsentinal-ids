@@ -51,7 +51,7 @@ below was dropped from the design.
 | Tier B (F7) | Kaggle | Trained on the laptop CPU; scored in shadow by the pipeline sensor | Not in the demo: the NetFlow replay carries no packets |
 | Tier C (F8) | Kaggle | Trained on the laptop CPU; scored in shadow over flow windows by the pipeline | Not in the demo: it scores windows of a live stream |
 | Tier D autoencoder (F9) | Kaggle | Trained on the laptop CPU; **active** in the demo, the forest in shadow | |
-| CI (GitHub Actions) | Not in the plan | Workflow written: per-package tests, frontend build, bandit, pip-audit, npm audit, Compose checks | Never run: the repository has no GitHub remote |
+| CI (GitHub Actions) | Not in the plan | **Running** on every push to the private repository `netsentinal-ids`: per-package tests, frontend tests and build, bandit, pip-audit, npm audit, Compose validation; green since the first run on 26 Sep | |
 | Apache Kafka | **Fallback** only | Not used, by design | The plan locks Redpanda (Kafka API, lighter) |
 | Apache Flink | **Out of scope for v1.0** | Not built, by design | Future work in the plan (section 9.2); the Python scorer does the streaming |
 | NVIDIA Triton | Dropped in rev. 1 | Not used, by design | In-process ONNX Runtime: 0.07 ms per flow, no GPU server |
@@ -72,9 +72,8 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Cloud VM with Suricata, Zeek, Wazuh, Redpanda and ClickHouse live, running the `pipeline` profile | Full plan | An Azure for Students (or other) VM, about 6-8 h after it exists |
-| 2 | First CI run | Quality evidence | A GitHub repository to push to |
-| 3 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
-| 4 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
+| 2 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
+| 3 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
 
 **Severity** (decided 26 September) combines how sure the models are with how much harm
 the attack could do. Confidence alone made 134 of 135 demo alerts critical. Impact is
@@ -96,4 +95,3 @@ matches still raise a severity by one step.
 ## What I need from you
 
 - For item 1: a VM, or a decision to present the VM-bound services as future work.
-- For item 2: a GitHub repository URL, if you want the workflow run.
