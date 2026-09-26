@@ -30,11 +30,15 @@ export function featureLabel(name) {
 }
 
 /** What a severity asks of whoever is reading it. */
+/**
+ * Severity is how sure the models are and how much harm the attack could do: critical
+ * needs both. An attack of unknown kind counts as middling harm, never as harmless.
+ */
 export const SEVERITY_MEANING = {
-  critical: 'Almost certainly an attack. Look now.',
-  high: 'Likely an attack. Look today.',
-  medium: 'Suspicious. Worth a look.',
-  low: 'Unusual but probably harmless.',
+  critical: 'Almost certainly an attack, of a kind that does real damage. Look now.',
+  high: 'Almost certainly an attack of an unknown kind, or likely a damaging one. Look today.',
+  medium: 'Worth a look: a likely attack, or a scan that has done no harm yet.',
+  low: 'Unusual, or an early probe. Probably harmless on its own.',
   info: 'Recorded for context only.',
 }
 
