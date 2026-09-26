@@ -15,6 +15,8 @@ Design and requirements live in [`deliverables/`](deliverables).
 
 Quickest look: `docker compose -f infra/docker-compose.yml --profile app up -d --build`,
 then https://127.0.0.1:5180 (a self-signed certificate; accept the browser warning).
+Without Docker, on the Windows laptop: `lab\replay\start_demo.ps1 -Native`, then
+http://127.0.0.1:5173 (see the user manual, Part 2).
 
 ## Layout
 
@@ -68,7 +70,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 733 tests, no database or network needed
+uv run pytest            # 945 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -130,13 +132,24 @@ holds the native booster and produces the explanation. That is also why LightGBM
 in `writer` and in `training`, and nowhere near the API.
 
 Not every flow becomes a row. PostgreSQL holds the ones at or above the deciding
-threshold; the rest are counted and dropped. ClickHouse has a `network_flows` table
-and DDL for scored flows, but no sink writing to it is built yet. A shadow verdict is
+threshold; the rest are counted and dropped. Every scored flow, alert or not, goes to
+ClickHouse `network_flows` through the flow sink (`netsentinel-flow-sink`), which is what
+the dashboard's last-hour strip counts. A shadow verdict is
 stored — against the shadow tier's own score and threshold, so the shadow period can be
 evaluated afterwards — and never raises an alert.
 
 Delivery is at-least-once: the bus offset is committed after the database transaction,
 so a crash replays a message rather than losing a detection.
+
+### Live feed
+
+The dashboard's WebSocket (`/api/v1/alerts/stream`) pushes each alert the moment it is
+stored, whichever process stored it. A trigger on the `alerts` table (migration 0004)
+sends a PostgreSQL `NOTIFY` with the new alert's id when the inserting transaction
+commits; the API listens on its own connection (`netsentinel_api.notify`) and hands the
+id to every connected dashboard, which then refetches its lists. The dashboard also
+polls every few seconds, so a notification missed while the listener reconnects costs
+seconds, never an alert. A burst of frames is gathered into one refetch.
 
 ### Without the VM: replaying the dataset
 

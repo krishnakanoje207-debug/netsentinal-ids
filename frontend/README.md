@@ -12,7 +12,7 @@ cloud VM.
 ```bash
 npm install
 npm run dev          # http://localhost:5173, proxying /api to 127.0.0.1:8000
-npm test             # 118 tests
+npm test             # 132 tests
 npm run build        # bundle for production
 npm run lint         # oxlint
 ```
@@ -121,7 +121,7 @@ routine and a tight retry loop would be a self-inflicted denial of service.
 
 The document specifies **TypeScript** "for a type-safe UI"; this is JavaScript. Typed
 source is only an asset to someone who can read and maintain it, and this codebase has to
-be defended by its author. The 118 tests cover the behaviour that types would have caught
+be defended by its author. The 132 tests cover the behaviour that types would have caught
 at the boundaries - error mapping, permission gating, the undecided-vs-benign rule - and
 they are language-agnostic. **M2 §4 needs updating to match.**
 
@@ -129,5 +129,5 @@ The document also specifies React 18; this is React 19, which is what `create vi
 scaffolds and is the current stable release. Nothing in the design depends on 18.
 
 The explanation chart is drawn in HTML and CSS, not with a chart library. The pages
-beyond the overview load when first opened, so the first load is about 394 kB
-(123 kB gzipped).
+beyond the overview load when first opened, so the first load is about 359 kB
+(110 kB gzipped).
