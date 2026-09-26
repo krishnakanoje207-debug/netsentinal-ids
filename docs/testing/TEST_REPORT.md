@@ -9,7 +9,7 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 962 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 965 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 133 | all pass | `cd frontend; npx vitest run` |
 

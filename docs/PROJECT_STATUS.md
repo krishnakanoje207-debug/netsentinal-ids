@@ -24,7 +24,7 @@ Updated 26 September 2026.
 | Live alert push, end to end | Alerts written by the writer process reach the dashboard's WebSocket: 8 of 8 and 12 of 12 frames in two runs, including after the database was dropped and recreated under a running API | section "Live feed" in `README.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms (24 Sep) | `docs/testing/TEST_REPORT.md` |
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
-| Automated tests | 962 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 965 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
