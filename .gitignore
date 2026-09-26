@@ -48,3 +48,6 @@ lab/pcaps/out/
 # *.pem / *.key above.
 infra/suricata/rules/*.rules
 infra/wazuh/config/wazuh_indexer/internal_users.yml
+
+# Captures of this computer's own traffic (lab/local/watch_this_pc.ps1)
+lab/local/out/

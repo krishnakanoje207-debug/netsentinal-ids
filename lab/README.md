@@ -77,3 +77,20 @@ locust -f lab/load/locustfile.py --host http://127.0.0.1:8000
 Locust is not in the workspace dependencies. It runs on the laptop against the API
 reached through the SSH tunnel, and adding it to the VM's install would pull a web
 framework onto a box that has no use for one.
+
+## This computer's own traffic
+
+`local/watch_this_pc.ps1` scores the laptop's own traffic without a Linux sensor or
+Redpanda: Windows' packet monitor captures (one administrator prompt), the real sensor
+scores the capture with `--drop-repeats` (pktmon logs each packet once per stack
+component), and the real writer stores the alerts in a separate database,
+`netsentinel_mypc`, with this computer as the estate.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1 -Seconds 300
+powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Native -Database netsentinel_mypc
+```
+
+Expect most flows to alert. The detectors learned normal traffic from NF-UNSW-NB15,
+whose training split has no benign HTTPS at all, so ordinary browsing is foreign to them.
+The capture holds your real traffic; it stays in `lab/local/out/`, which git ignores.

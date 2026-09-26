@@ -16,9 +16,11 @@
 # PostgreSQL, the API and Vite together take about 400 MB.
 #
 # Either way the data is the demo database built by build_demo.ps1; accounts are in
-# lab\replay\out\demo_credentials.txt.
+# lab\replay\out\demo_credentials.txt. With the dev servers, -Database netsentinel_mypc
+# shows this computer's own traffic instead (lab\local\watch_this_pc.ps1, accounts in
+# lab\local\out\credentials.txt).
 
-param([switch]$Dev, [switch]$Native)
+param([switch]$Dev, [switch]$Native, [string]$Database = "netsentinel_demo")
 
 # Native tools (docker, npm) write progress to stderr. Windows PowerShell turns that
 # into errors under "Stop", so failures are judged by exit code instead.
@@ -92,7 +94,7 @@ foreach ($line in (Get-Content .env.local | Where-Object { $_ -match "^NETSENTIN
     $k, $v = $line -split "=", 2
     $vars[$k] = $v
 }
-$db = $vars["NETSENTINEL_DATABASE_URL"] -replace "/[^/]+$", "/netsentinel_demo"
+$db = $vars["NETSENTINEL_DATABASE_URL"] -replace "/[^/]+$", "/$Database"
 
 $api = @"
 `$env:UV_CACHE_DIR='D:/uv-cache'
