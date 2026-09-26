@@ -503,7 +503,7 @@ def client(
     models: list[MLModel],
     scored: list[Scored],
 ) -> Iterator[TestClient]:
-    app = create_app()
+    app = create_app(listen_for_alerts=False)
 
     def _session() -> Iterator[FakeSession]:
         yield session
