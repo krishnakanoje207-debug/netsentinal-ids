@@ -9,9 +9,9 @@ beside this file.
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 945 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 962 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
-| Dashboard (React components, API client, stream) | 132 | all pass | `cd frontend; npx vitest run` |
+| Dashboard (React components, API client, stream) | 133 | all pass | `cd frontend; npx vitest run` |
 
 Test counts are from 26 September, after the live alert push, the inventory import, feed
 paging and the Estate page were added; coverage was last measured on 24 September.

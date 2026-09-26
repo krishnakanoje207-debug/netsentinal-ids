@@ -24,7 +24,7 @@ Updated 26 September 2026.
 | Live alert push, end to end | Alerts written by the writer process reach the dashboard's WebSocket: 8 of 8 and 12 of 12 frames in two runs, including after the database was dropped and recreated under a running API | section "Live feed" in `README.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms (24 Sep) | `docs/testing/TEST_REPORT.md` |
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
-| Automated tests | 945 Python + 132 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 962 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -44,7 +44,7 @@ below was dropped from the design.
 | MISP, Keep (F13, F14) | VM, intel profile | Integration built and tested against fakes | MISP needs ~4 GB |
 | DFIR-IRIS (F15) | VM | Compose `case` profile; integration built and tested against fakes | Escalation says so honestly when unconfigured |
 | CrowdSec + nftables (F16) | VM | Compose `response` profile with the nftables bouncer; integration tested against fakes | Needs a Linux edge |
-| Greenbone/OpenVAS (F17) | VM, scan window | Compose `scan` profile; importer built and tested; findings shown per host on the Estate page | Runs in its own window on the VM |
+| Greenbone/OpenVAS (F17) | VM, scan window | Compose `scan` profile; importer built and tested; findings and the date of each host's last scan shown on the Estate page | Runs in its own window on the VM |
 | Asset inventory | Assumed by F16/F17 | **Built**: `netsentinel-import-assets` from a CSV; the demo imports the dataset's ten servers | |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
 | Live alert feed (F18) | Dashboard | **Running**: a PostgreSQL trigger announces each stored alert and the API pushes it over the WebSocket | |
@@ -72,8 +72,19 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Cloud VM with Suricata, Zeek, Wazuh, Redpanda and ClickHouse live, running the `pipeline` profile | Full plan | An Azure for Students (or other) VM, about 6-8 h after it exists |
-| 2 | Attack-family model: Backdoor, DoS and Analysis are weak (F1 0.05-0.37) | Accuracy | Features that separate them; flow statistics alone confuse them with Exploits and Fuzzers |
-| 3 | Record which hosts a vulnerability scan covered | Estate page | A `last_scanned_at` per host from the Greenbone report's host list |
+
+**Attack-family accuracy (investigated 26 September, left as it is).** Backdoor, DoS and
+Analysis stay weak (test F1 0.05-0.37), and flow features cannot fix it. On the same
+split, adding the TCP flags the sensor can also produce raised macro-F1 from 0.566 to
+0.587, and adding every NetFlow field except TTL reached only 0.591, with Backdoor still
+0.06. The model fits its own training data to only F1 0.47 on Backdoor and DoS, so those
+flows are not separable by these statistics; Backdoor also drifts over time (its test
+window aims at ports 53, 80 and 445, its training window at 179 and 520). A gain of 0.02
+is within the spread between runs, so the model was not changed. Telling these apart
+needs packet content: Suricata signatures and Tier B on a live capture.
+
+The Estate page now records which hosts a scan covered (`assets.last_scanned_at`, from
+the Greenbone report's host list, done 26 September).
 
 **Severity** (decided 26 September) combines how sure the models are with how much harm
 the attack could do. Confidence alone made 134 of 135 demo alerts critical. Impact is
