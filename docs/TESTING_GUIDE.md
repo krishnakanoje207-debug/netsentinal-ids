@@ -10,7 +10,7 @@ saw, what you expected).
 powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1
 ```
 
-- Dashboard: https://127.0.0.1:5180 (http://127.0.0.1:5173 with `start_demo.ps1 -Dev`)
+- Dashboard: https://127.0.0.1:5180 (http://127.0.0.1:5173 with `start_demo.ps1 -Dev` or `-Native`)
 - API and its interactive docs: http://127.0.0.1:8010/api/v1/docs
 - Accounts and passwords: `lab\replay\out\demo_credentials.txt`
 - To reset everything to a clean demo (new passwords):
@@ -66,7 +66,7 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 
 | # | Do | Expect |
 |---|---|---|
-| 3.1 | Open Alerts | Up to 50 alerts, "live" in green |
+| 3.1 | Open Alerts | 50 alerts and **Show older alerts** below them; the header clock's red hand sweeping and "Live" beside it |
 | 3.2 | Search `175.45.176.0` | Only alerts from or to that address |
 | 3.3 | Search `175.45.176.0/24` | Every alert on that network |
 | 3.4 | Search `149.171.126.10` | Matches in the **To** column too (either end matches) |
@@ -121,8 +121,8 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 ## 8. The automated suites
 
 ```powershell
-uv run --no-sync pytest -q          # 709 Python tests, no database needed
-cd frontend; npx vitest run         # 94 dashboard tests
+uv run --no-sync pytest -q          # 945 Python tests, no database needed
+cd frontend; npx vitest run         # 132 dashboard tests
 ```
 
 Both must be all green. A failure is a bug in the code or in the test, and either is
