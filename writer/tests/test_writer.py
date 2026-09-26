@@ -344,3 +344,20 @@ def test_sigterm_mid_message_still_commits_its_offset(monkeypatch):
 
     assert entry.main(["--card", "card.json", "--sensor-id", "1"]) == 0
     assert events == ["commit", "close"]
+
+
+def test_a_paced_replay_waits_between_flows_but_not_before_the_first():
+    """--replay-interval: a demonstration shows alerts arriving one at a time."""
+    waits: list[float] = []
+    consumer = ReplayConsumer([{"n": 1}, {"n": 2}, {"n": 3}], interval=2.5, sleep=waits.append)
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 2, 3]
+    assert waits == [2.5, 2.5]
+
+
+def test_an_unpaced_replay_never_sleeps():
+    waits: list[float] = []
+    consumer = ReplayConsumer([{"n": 1}, {"n": 2}], sleep=waits.append)
+
+    assert len(list(consumer.messages())) == 2
+    assert waits == []

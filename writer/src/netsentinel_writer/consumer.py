@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Callable, Iterator, Protocol
 
 from netsentinel_core.bus import FLOW_TOPIC
@@ -33,15 +34,29 @@ class Consumer(Protocol):
 
 
 class ReplayConsumer:
-    """Serves a fixed list of payloads. Used by the tests and by ``--replay``."""
+    """Serves a fixed list of payloads. Used by the tests and by ``--replay``.
 
-    def __init__(self, payloads: list[dict[str, Any]]) -> None:
+    ``interval`` spaces the payloads out in seconds, so a demonstration shows alerts
+    arriving one by one, as they would from a sensor, rather than all at once.
+    """
+
+    def __init__(
+        self,
+        payloads: list[dict[str, Any]],
+        interval: float = 0.0,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self._payloads = list(payloads)
+        self._interval = interval
+        self._sleep = sleep
         self.commits = 0
         self.closed = False
 
     def messages(self) -> Iterator[dict[str, Any]]:
-        yield from self._payloads
+        for index, payload in enumerate(self._payloads):
+            if index and self._interval > 0:
+                self._sleep(self._interval)
+            yield payload
 
     def commit(self) -> None:
         self.commits += 1

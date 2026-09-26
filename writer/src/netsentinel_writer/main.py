@@ -82,6 +82,14 @@ def main(argv: list[str] | None = None) -> int:
         "(see lab/replay)",
     )
     parser.add_argument(
+        "--replay-interval",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="with --replay, wait this long between flows, so a demonstration shows "
+        "alerts arriving live",
+    )
+    parser.add_argument(
         "--family-card",
         help="attack-family model card; with it, confident ML alerts carry a MITRE technique",
     )
@@ -134,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.replay:
         with open(args.replay, encoding="utf-8") as handle:
             payloads = [json.loads(line) for line in handle if line.strip()]
-        consumer: Consumer = ReplayConsumer(payloads)
+        consumer: Consumer = ReplayConsumer(payloads, interval=args.replay_interval)
     else:
         consumer = RedpandaConsumer(
             args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
