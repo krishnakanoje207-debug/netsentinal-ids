@@ -6,6 +6,13 @@
     <mark_cache_size>268435456</mark_cache_size>
     <!-- Background merges are the usual cause of a memory spike here. -->
     <background_pool_size>4</background_pool_size>
+    <!-- A pool of 4 holds 8 entries (the concurrency ratio is 2), and ClickHouse
+         refuses to start while these defaults (20, 8 and 25) exceed or fill it. -->
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>4</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>4</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>4</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
     <logger>
         <level>warning</level>
         <size>100M</size>
