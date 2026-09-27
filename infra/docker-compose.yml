@@ -23,8 +23,8 @@
 #
 # Budget, as the sum of the memory caps below: storage 2.5 GB, bus 1.2 GB, ingest
 # 0.25 GB, sensors 2 GB, pipeline 1.7 GB, lab 0.4 GB, dashboards 0.25 GB, response
-# 0.25 GB, app 0.6 GB beyond storage. About 9.1 GB; with hids (3 GB) that is the
-# always-on core, 12.1 GB.
+# 0.45 GB, app 0.6 GB beyond storage. About 9.3 GB; with hids (3 GB) that is the
+# always-on core, 12.3 GB.
 #
 # intel (2.9 GB), case (1.6 GB) and scan (4.3 GB once its one-shot containers exit)
 # are separate profiles and take turns. Core + case is 13.7 GB. Core + intel is

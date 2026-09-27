@@ -20,18 +20,19 @@ Budget, as the sum of each profile's memory caps:
 | `pipeline` | sensor, Tier C scorer, detection writer, flow and Tier C sinks, Suricata importer | 1.7 GB |
 | `lab` | victims, benign traffic, attacker | 0.4 GB |
 | `dashboards` | Grafana | 0.25 GB |
-| `response` | CrowdSec Local API | 0.25 GB |
+| `response` | CrowdSec Local API, responder | 0.45 GB |
 | `app` | API, dashboard (PostgreSQL shared with `storage`) | 0.6 GB |
 | `hids` | Wazuh manager, indexer, dashboard | 3 GB |
-| **core** | everything above | **12.1 GB** |
+| **core** | everything above | **12.3 GB** |
 | `intel` | MISP, MariaDB, Redis, Keep | 2.9 GB |
 | `case` | DFIR-IRIS app, worker, PostgreSQL, RabbitMQ, nginx | 1.6 GB |
 | `scan` | Greenbone gvmd, ospd-openvas, openvasd, Redis, PostgreSQL, feeds | 4.3 GB |
 
-The `pipeline` profile moved the core from 10.4 GB to 12.1 GB, and the rotation with
-it. Core plus `case` is 13.7 GB and fits. Core plus `intel` is 15.0 GB, which leaves
-about 1 GB for the OS: too little to run unattended, so for the demo stop `dashboards`
-or `hids` while `intel` is up. Core plus `scan` is 16.4 GB and does not fit at all;
+The `pipeline` profile moved the core from 10.4 GB to 12.1 GB, and the responder to
+12.3 GB, and the rotation with them. Core plus `case` is 13.9 GB and fits. Core plus
+`intel` is 15.2 GB, which leaves under 1 GB for the OS: too little to run unattended, so
+for the demo stop `dashboards` or `hids` while `intel` is up. Core plus `scan` is 16.6 GB
+and does not fit at all;
 stop `hids` for the scan window. None of the three rotating profiles produces
 detections, so the detection path never waits on them. `scan`'s 4.3 GB excludes three
 one-shot containers that exit once their setup is done.
