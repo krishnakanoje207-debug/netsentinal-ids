@@ -608,9 +608,23 @@ services:
     networks: [backplane]
     restart: unless-stopped
 
+  # Keep runs as uid 999, and a new named volume belongs to root, so its SQLite file
+  # cannot be created and the API restarts forever. Idempotent.
+  keep-init:
+    image: alpine:3.20
+    profiles: [intel]
+    command: ["chown", "999:999", "/state"]
+    volumes:
+      - keep-data:/state
+    mem_limit: 32m
+    network_mode: none
+
   keep:
     image: us-central1-docker.pkg.dev/keephq/keep/keep-api:0.33.6
     profiles: [intel]
+    depends_on:
+      keep-init:
+        condition: service_completed_successfully
     environment:
       DATABASE_CONNECTION_STRING: sqlite:////state/keep.db
       KEEP_API_KEY: ${KEEP_API_KEY:?set KEEP_API_KEY in .env}
