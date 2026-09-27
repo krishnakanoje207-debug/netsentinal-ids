@@ -1,0 +1,4 @@
+hostname,ip_address,os,criticality
+victim-web,172.30.0.10,linux,high
+victim-ssh,172.30.0.11,linux,high
+benign-traffic,172.30.0.2,linux,low
