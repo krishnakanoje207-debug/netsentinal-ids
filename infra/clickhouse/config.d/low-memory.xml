@@ -2,7 +2,9 @@
      sensors and the bus, that assumption ends with the OOM killer picking a victim.
      These caps are what keep it a good neighbour. -->
 <clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.12</max_server_memory_usage_to_ram_ratio>
+    <!-- Of the container's 2 GB mem_limit, not the host's RAM: ClickHouse reads the
+         cgroup limit, and 0.12 of it left merges 245 MB. -->
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
     <mark_cache_size>268435456</mark_cache_size>
     <!-- Background merges are the usual cause of a memory spike here. -->
     <background_pool_size>4</background_pool_size>

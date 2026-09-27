@@ -185,7 +185,9 @@ services:
       - clickhouse-data:/var/lib/clickhouse
       # Generated from the feature contract; see core/features/clickhouse.py.
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      # The file, not the directory: the image's own config.d holds the listen_host
+      # setting, and hiding it leaves ClickHouse reachable only from inside itself.
+      - ./clickhouse/config.d/low-memory.xml:/etc/clickhouse-server/config.d/low-memory.xml:ro
     ports:
       - "127.0.0.1:8123:8123"
       - "127.0.0.1:9000:9000"
@@ -197,7 +199,8 @@ services:
         hard: 262144
     networks: [backplane]
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      # 127.0.0.1, not localhost: that resolves to ::1, where it does not listen.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 10
