@@ -184,6 +184,39 @@ To show alerts arriving live, give the build an interval in seconds between flow
 `build_demo.ps1 -Native -Interval 1` writes the 535 replayed flows over about nine
 minutes, so an open dashboard fills up as you watch.
 
+### The live pipeline on the cloud VM
+
+The whole detection path, with the host sensors, response, dashboards and case
+management, runs on an 8 GB cloud VM; the threat-intelligence and vulnerability-scan
+services take turns there. Setting it up is in `docs/CLOUD_VM.md`, and what each part
+costs in memory is in `infra/README.md`.
+
+Only SSH is open on the VM. Open the tunnel from `docs/CLOUD_VM.md` (step 7) on the
+laptop, then use:
+
+| On the laptop | What |
+|---|---|
+| https://127.0.0.1:5180 | the NetSentinel dashboard |
+| http://127.0.0.1:8010/api/v1/docs | the API |
+| http://127.0.0.1:3000 | Grafana |
+| https://127.0.0.1:5601 | the Wazuh dashboard |
+| https://127.0.0.1:8443 | DFIR-IRIS |
+
+To see an attack arrive, run a port scan from the lab's attacker. On the VM, in
+`~/netsentinel/infra`:
+
+```bash
+docker compose exec attacker nmap -sS -p 1-1000 172.30.0.10
+```
+
+The scan's flows appear as alerts on the dashboard as they are scored, and the last-hour
+strip shows flow counts, because the flow store is running there.
+
+On the VM the anomaly detectors run twice: the versions calibrated on the benchmark
+datasets, and versions re-baselined on the lab's own normal traffic, which watch in
+shadow. The ML engineer promotes a re-baselined version from the **Models** page, or
+with `netsentinel-shadow-report`, once enough alerts have been reviewed.
+
 ### The estate
 
 The asset inventory is a CSV with the columns `hostname,ip_address,os,criticality`

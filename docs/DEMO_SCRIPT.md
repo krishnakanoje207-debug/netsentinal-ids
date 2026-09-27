@@ -3,7 +3,8 @@
 A scene-by-scene script for recording the NetSentinel-AI demonstration. Each scene
 says what is on screen, what to click, and what to say. Everything shown is the
 offline demonstration described in `docs/USER_MANUAL.md` (Part 2): real trained
-models scoring flows replayed from the unseen test window of NF-UNSW-NB15-v3.
+models scoring flows replayed from the unseen test window of NF-UNSW-NB15-v3. A
+shorter live version on the cloud VM follows the script ("The live VM").
 
 Addresses:
 
@@ -182,15 +183,56 @@ And for a dark room, the same station after dark."
 
 **Say:** "On a temporal test split the Tier A model reaches PR-AUC 1.0000 with a 0.05%
 false-positive rate; the anomaly autoencoder catches 98.5% of attacks at 0.8% false
-alarms, in 0.13 milliseconds a flow. 965 Python and 133 dashboard tests pass. What it
+alarms, in 0.13 milliseconds a flow. 976 Python and 133 dashboard tests pass. What it
 does not claim: moved to other networks' traffic the same model drops to 0.74 and 0.05,
 which is why every model must earn its place in shadow mode; the attack-family model
 that decides how harmful an attack is gets only 57% macro-F1, so most alerts carry an
-unknown kind and rank as high rather than critical; and the signature and host sensors need a cloud VM that was not
-provisioned in this project. Thank you."
+unknown kind and rank as high rather than critical; and on the live lab the anomaly
+models first flagged normal traffic, until they were re-baselined on the lab's own. Thank you."
 
 ## After recording
 
 - Rebuild the demo database (`build_demo.ps1 -Native`) to record again: it clears the
   approved action and issues new passwords.
 - Do not show `lab\replay\out\demo_credentials.txt` or `.env.local` on screen.
+
+## The live VM
+
+The full pipeline runs on an 8 GB cloud VM (setup in `docs/CLOUD_VM.md`, memory per
+profile in `infra/README.md`). Nothing on it is open but SSH; open the tunnel from
+`docs/CLOUD_VM.md` step 7 on the laptop, then:
+
+| On the laptop | What |
+|---|---|
+| https://127.0.0.1:5180 | the NetSentinel dashboard |
+| http://127.0.0.1:8010/api/v1/docs | the API |
+| http://127.0.0.1:3000 | Grafana |
+| https://127.0.0.1:5601 | the Wazuh dashboard |
+| https://127.0.0.1:8443 | DFIR-IRIS |
+
+**Do:** sign in to the dashboard with an account created on the VM. On the VM, in
+`~/netsentinel/infra`, run the scan from the lab's attacker:
+
+```bash
+docker compose exec attacker nmap -sS -p 1-1000 172.30.0.10
+```
+
+**Say:** "This is a real port scan on an isolated lab network, captured by the sensor
+and scored as it happens. When it was run for this project, its 1000 flows averaged a
+risk of 0.937 and 999 of them crossed 0.5; the lab's normal client averaged 0.168, with
+none above 0.5."
+
+**Do:** point at the last-hour strip, which now shows flow counts, then open Grafana and
+the Wazuh dashboard.
+
+**Say:** "Here ClickHouse is running, so the strip counts flows. The same flows are in
+Grafana, and Wazuh shows what happened on the host itself."
+
+**Do:** open **Models** (any role can read it; promoting needs the ML engineer).
+
+**Say:** "On this lab the anomaly models first called ordinary web traffic unusual,
+because they had learnt 'normal' from benchmark datasets. They were re-baselined on the
+lab's own normal traffic: false alarms on held-out normal flows went from 12.1% to 0%,
+and the scan was still caught in full. The re-baselined versions are scoring here in
+shadow; they are promoted from this page, or with the shadow report, once analysts'
+verdicts give enough evidence."

@@ -19,6 +19,13 @@ then https://127.0.0.1:5180 (a self-signed certificate; accept the browser warni
 Without Docker, on the Windows laptop: `lab\replay\start_demo.ps1 -Native`, then
 http://127.0.0.1:5173 (see the user manual, Part 2).
 
+The full pipeline ran on an 8 GB cloud VM on 27 September 2026: sensors, bus,
+ClickHouse, scoring, the API and dashboard, Wazuh, CrowdSec, Grafana and DFIR-IRIS
+together, with MISP and Greenbone taking turns. An nmap scan on the live lab put 999 of
+its 1000 flows above 0.5. Setup is in [`docs/CLOUD_VM.md`](docs/CLOUD_VM.md), memory in
+[`infra/README.md`](infra/README.md), results in
+[`docs/testing/TEST_REPORT.md`](docs/testing/TEST_REPORT.md) section 7.
+
 ## Layout
 
 A uv workspace. Folders follow the deployment boundaries in the M2 design rather
@@ -33,8 +40,8 @@ than language conventions — each one ends up on a different node.
 | [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
 | [`copilot/`](copilot) | laptop GPU | Read-only LLM summaries, schema-checked | built |
 | [`frontend/`](frontend) | browser | React SOC dashboard | built |
-| [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | D3/D8 |
-| [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | D2 onwards |
+| [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | built, run on the VM |
+| [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | built, run on the VM |
 
 Dependencies run one way only. `core` is the single shared package and is
 deliberately tiny — `dpkt` and nothing else — so the sensor stays installable on a
@@ -71,7 +78,7 @@ PyTorch Geometric and ONNX Runtime have no reliable wheels for it yet.
 
 ```bash
 uv sync                  # creates .venv and installs every workspace member
-uv run pytest            # 965 tests, no database or network needed
+uv run pytest            # 976 tests, no database or network needed
 ```
 
 On a machine with a full system drive, redirect the package cache first:
@@ -93,6 +100,9 @@ uv run netsentinel-train-tier-a --data data/processed --out artefacts/tier_a
 uv run python -m netsentinel_training.models.tier_d --data data/processed --out artefacts/tier_d
 # and its second half, a dense autoencoder on the same benign flows
 uv run python -m netsentinel_training.models.tier_d_ae --data data/processed --out artefacts/tier_d_ae
+# re-baseline Tier D on a deployment's own benign flows: same ONNX file, new version, born in shadow
+uv run python -m netsentinel_training.models.recalibrate artefacts/tier_d_ae/model_card.json \
+    --flows lab_benign.parquet --version 1.2.0-lab --out artefacts/tier_d_ae_lab --note "..."
 
 # Tier C graph model, on 20k-flow time windows; and the attack-family model
 uv run python -m netsentinel_training.models.tier_c --data data/processed --out artefacts/tier_c
@@ -113,6 +123,11 @@ Tier C trains on the laptop CPU in windows of 20,000 flows, and so does the Tier
 autoencoder (PR-AUC 0.933 against the forest's 0.639, p99 0.28 ms); the demo serves
 it active, with the forest in shadow beside it. Tier B (1D-CNN + BiLSTM) needs
 packet captures, which the NetFlow datasets do not have.
+
+On the live lab both Tier D models scored its ordinary traffic about 0.99, because their
+"normal" was the benchmarks' benign traffic. Re-baselined on 1857 lab benign flows, fused
+false alerts on 1190 held-out ones fell from 12.1% to 0.0%, and the nmap scan was still
+detected in full. The re-baselined cards score in shadow beside the served ones.
 
 ## From the wire to the dashboard
 
