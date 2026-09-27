@@ -3,18 +3,18 @@
 Everything below was first run on 23 September 2026 on the development laptop (Windows 11,
 8 GB RAM) against the offline demonstration: PostgreSQL in Docker, the API, the
 dashboard, and flows replayed from the NF-UNSW-NB15-v3 test window. Raw outputs sit
-beside this file.
+beside this file. Section 7 records the first run on the cloud VM, on 27 September 2026.
 
 ## 1. Automated tests
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 965 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 976 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 133 | all pass | `cd frontend; npx vitest run` |
 
-Test counts are from 26 September, after the live alert push, the inventory import, feed
-paging and the Estate page were added; coverage was last measured on 24 September.
+Test counts are from 27 September, after the Tier D re-baselining tool and its 11 tests
+were added; coverage was last measured on 24 September.
 
 **Live push, verified against the real stack on 26 September** (native PostgreSQL 16, the
 API under uvicorn, the dashboard under Vite): a WebSocket client signed in as the analyst
@@ -96,41 +96,41 @@ Raw figures: `load/run_stats.csv`.
 
 ## 6. Validation against Milestone 1
 
-Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
-**Deferred** (needs the 16 GB cloud VM that was never provisioned; see
-`docs/PROJECT_STATUS.md`).
+Status: **Met**, or **Partial** (built and tested, not fully demonstrated). The live
+results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, memory in
+`infra/README.md`).
 
 | Req. | Summary | Status | Evidence |
 |---|---|---|---|
-| O1 | Telemetry visible within 10 s | Deferred | needs Suricata/Zeek/Wazuh on the VM |
-| O2 | Signature detection of scan, brute force, web attack | Deferred | Suricata configured, not running |
+| O1 | Telemetry visible within 10 s | Partial | Suricata, Zeek and Wazuh ran live on the VM and their events reached ClickHouse and the Wazuh indexer (section 7); the 10 s delay was not measured |
+| O2 | Signature detection of scan, brute force, web attack | Partial | Suricata 8 ran live on the VM with ET Open and filled `suricata_events`; signature alerts per attack type not measured |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
-| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets, so it has not scored live traffic |
+| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
-| O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet |
+| O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet; on the live lab, Tier D re-baselining took fused false alerts on held-out benign flows from 12.1% to 0.0% (section 7) |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
-| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Partial | Suricata 8 with JA4 and Zeek with the FoxIO JA4 scripts are configured (`sensors` profile) and were run offline on capture files; Wazuh, Sysmon and auditd are configured (`hids` profile); none runs live without the VM |
+| FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Met (Suricata, Zeek, Wazuh) / Partial (Sysmon) | on the VM, Suricata 8 and Zeek 8 both fingerprinted a TLS exchange with JA4 and the Zeek JA4 reached ClickHouse; a Wazuh agent with auditd sent 299 host alerts; Sysmon is configured (`hids` profile), not run (section 7) |
 | FR-04 | Early-flow features | Partial | extractor + offline/live parity test |
-| FR-05 | Bus + ClickHouse | Partial | Redpanda consumer/producer tested; the flow sink writes every scored flow to ClickHouse `network_flows` and the Tier C sink writes window scores, both tested against fakes with dead-lettering; not run against a live ClickHouse |
+| FR-05 | Bus + ClickHouse | Met | Redpanda and ClickHouse ran live on the VM; `network_flows`, `tier_c_scores`, `suricata_events` and `zeek_logs` all fill; the sinks' inserts had been refused by the real server until fixed (section 7) |
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
 | FR-07 | Tier B | Met (offline) | trained on CIC-IDS2017 captures: PR-AUC 0.996, recall 0.977 at 0.69% FPR; in the pipeline sensor in shadow |
 | FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; scored in shadow over flow windows by the pipeline's Tier C scorer |
 | FR-09 | Tier D | Met | autoencoder trained on benign flows only, served in the demo: PR-AUC 0.987, recall 0.985 at 0.80% FPR, p99 0.13 ms; the Isolation Forest scores beside it in shadow |
-| FR-10 | Fusion with signatures and intel | Partial | A+D fused; intel raises severity; signatures not running |
+| FR-10 | Fusion with signatures and intel | Partial | A+D fused; intel raises severity; Suricata runs on the VM and its events are imported |
 | FR-11 | Shadow / active, switchable | Met | promotion gate, CLI and dashboard |
 | FR-12 | SHAP on every detection | Met | database constraint |
 | FR-13 | Local LLM summary, read-only, validated | Met | section 4 |
-| FR-14 | MISP enrichment | Partial | tested against fakes |
-| FR-15 | Keep, DFIR-IRIS | Partial | tested against fakes; escalation works without IRIS |
-| FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes |
-| FR-17 | OpenVAS findings per asset | Partial | importer tested; findings shown per host on the Estate page; hosts loaded by the inventory import; no scan run without the VM |
+| FR-14 | MISP enrichment | Partial | tested against fakes; MISP 2.5.17 answers on the VM, from the host and from the API container |
+| FR-15 | Keep, DFIR-IRIS | Partial | tested against fakes; escalation works without IRIS; on the VM, Keep's healthcheck answers 200 and the IRIS API accepts the seeded key |
+| FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes; on the VM a test ban appeared in the nftables set and was removed when lifted; the responder is now a Compose service |
+| FR-17 | OpenVAS findings per asset | Partial | importer tested; findings shown per host on the Estate page; hosts loaded by the inventory import; Greenbone runs on the VM in its own window, taking turns with MISP |
 | FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard; alerts pushed over the WebSocket as they are stored (section 1) |
 | FR-19 | Search and export | Partial | address / network / technique search and CSV; no time-range search or PDF |
 | FR-20 | JWT + Admin, Analyst, ML Engineer, Viewer | Met | Viewer added 23 Sep |
 | FR-21 | Audit of logins, approvals, changes, actions | Met | every login outcome, triage, decision, export, promotion |
 | FR-22 | Model registry with SHA-256 | Met | registry refuses a mismatched file |
-| FR-23 | Scripted attacks + replay | Met (replay) / Partial (scripts need the lab VM) | `lab/` |
+| FR-23 | Scripted attacks + replay | Met (replay, nmap scan on the live lab) / Partial (other scripts) | `lab/`; the nmap scan's 1000 flows on the VM, 999 above 0.5 (section 7) |
 | NFR-01 | Latency | Met | Tier A 0.07 ms, Tier D autoencoder 0.13 ms p99, Tier B 0.67 ms p99 |
 | NFR-02 | Page load | Met | section 3 |
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
@@ -140,6 +140,75 @@ Status: **Met**, **Partial** (built and tested, not fully demonstrated), or
 | NFR-07 | Alert to decision in <= 3 clicks, clear text | Met | Overview -> alert -> action |
 | NFR-08 | Modular, versioned, documented | Met | 7 packages, OpenAPI at /api/v1/docs |
 | NFR-09 | Scalable later | Met (by design) | Kafka-protocol bus; Flink is future work |
-| NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; `app` profile verified (up in 34 s); full stack never run on a 16 GB host; Wazuh not in Compose |
-| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the flow sink writes them to ClickHouse `network_flows` on the VM, which does not run on this laptop |
+| NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; only an 8 GB VM was available: everything but intel (MISP) and scan (Greenbone) runs together at 5.2 GB used, and those two take turns (`infra/README.md`) |
+| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the flow sink writes them to ClickHouse `network_flows`, which filled live on the VM |
 | NFR-12 | Free licences, academic datasets, attacks only in the lab | Met | see O8; `lab/scenarios/_guard.sh` refuses any target outside 172.30.0.0/24; published ports bind to 127.0.0.1 |
+
+## 7. Live run on the cloud VM (27 September 2026)
+
+Azure for Students, Central India: 4 vCPU, 8 GB RAM, Ubuntu 24.04 LTS, swap raised to
+12 GB. The 16 GB sizes in the plan were not available on the subscription. Only SSH is
+open; every service binds to 127.0.0.1 and is reached through a tunnel. Setup is in
+`docs/CLOUD_VM.md`, memory per profile in `infra/README.md`.
+
+The live lab: attacker 172.30.0.100, victim-web 172.30.0.10 (nginx), victim-ssh
+172.30.0.11, and a benign client 172.30.0.2 running a curl loop.
+
+### Checks passed
+
+| Check | Result |
+|---|---|
+| nmap SYN scan of 1000 ports from the attacker | 1000 flows, mean risk 0.937, 999 of 1000 above 0.5; alerts went from 97 to 1102 (medium 466, high 454, low 186 at that point) |
+| Benign client flows | mean risk 0.168, none above 0.5 |
+| ClickHouse tables | `network_flows`, `tier_c_scores`, `suricata_events` and `zeek_logs` all fill live |
+| JA4 | a TLS exchange on the lab bridge fingerprinted by both Suricata and Zeek (`t13d311000_e8f1e7e78f70_518fb456ca59`, `t13i3111h2_e8f1e7e78f70_6bebaf5329ac`); the Zeek JA4 reached ClickHouse |
+| Wazuh 4.14.8 | indexer cluster green, manager API issues tokens, dashboard serves; an agent with 21 auditd rules on the VM enrolled and sent 299 host alerts (audit commands, PAM sessions) within minutes |
+| CrowdSec LAPI + nftables bouncer | a test ban on 203.0.113.9 appeared in the set `crowdsec-blacklists-cscli` and was removed when lifted |
+| Grafana | ClickHouse datasource health "Data source is working"; the NetSentinel telemetry dashboard provisioned |
+| DFIR-IRIS 2.4.29 | login page 200, API accepts the seeded key, customer 1 exists |
+| MISP 2.5.17 | login answers on port 80, from the host and from the API container |
+| Keep 0.33.6 | healthcheck 200 |
+| Greenbone | run in its own window, taking turns with MISP |
+
+### Defects found only against the real servers
+
+Each of these passed the unit tests and the fakes. All 11 are fixed and committed.
+
+| Component | Defect |
+|---|---|
+| ClickHouse | refused to start (code 36): the smaller merge pool (4 = 8 entries) was below three default merge-tree thresholds (20, 8, 25) |
+| ClickHouse | unreachable from other containers: mounting the whole `config.d` hid the image's `listen_host` file |
+| ClickHouse | memory ratio 0.12 applied to the 2 GB container limit, not host RAM: 245 MB, and merges failed; now 0.8 of the container |
+| ClickHouse | healthcheck used `localhost`, which resolves to `::1`, where it does not listen |
+| Suricata | restarted forever: the image entrypoint chowns `/etc/suricata` and died on the read-only overlay mounted there |
+| Suricata | dropped about 6,800 ET rules: an `--include` mapping replaces the stock address and port groups wholesale, so `HTTP_SERVERS` and the rest were undefined; the offline pcap runs used the same overlay, so they loaded fewer rules |
+| Vector | refused its config: the VRL function `to_timestamp` does not exist in Vector 0.41 |
+| Vector | inserts rejected: ClickHouse's basic DateTime64 parser refuses RFC 3339 strings (`date_time_best_effort` now set) |
+| Flow and Tier C sinks | every insert HTTP 400: JSONEachRow refuses an unquoted decimal timestamp; now integer milliseconds. The unit tests had checked only the row builder, never a real server |
+| MISP | redirected all HTTP to https on 443, which nothing could reach |
+| Keep | restarted 40+ times: its named volume belonged to root, and Keep runs as uid 999 |
+
+Also: IRIS's nginx could not read its private key (it needed owner 33), and the responder,
+which executes approved actions, had never been run on the VM; it is now a Compose service.
+
+### Tier D false positives on live traffic
+
+The benign client raised 119 low alerts in about 15 minutes. Tier A called these flows
+benign (about 0.006), but both Tier D models scored them about 0.99: their "normal" was
+calibrated on the benchmarks' benign traffic (CIC-IDS2017, UNSW), not the lab's. With
+Tier D pinned at its threshold, the fused rule alerted whenever Tier A cleared its own low
+threshold (0.0047), on about 10% of benign flows.
+
+The fix is a re-baselining tool (`training/src/netsentinel_training/models/recalibrate.py`).
+It refits Tier D's calibration quantiles and threshold on the deployment's own benign
+flows and keeps the ONNX graph byte-identical, so the hash is unchanged. The new version
+is born in shadow, and the card records where its baseline came from.
+
+| Lab cards `tier_d_autoencoder 1.2.0-lab`, `tier_d_isolation_forest 1.1.0-lab` | Before | After |
+|---|---|---|
+| Fused false alerts, 1190 held-out lab benign flows after 05:20 UTC | 12.1% | 0.0% |
+| nmap scan's 1000 flows detected | 100% | 100% |
+
+Both were fitted on 1857 lab benign flows (04:37-05:20 UTC), are registered, and score in
+shadow on the VM; promotion goes through the shadow report. The Isolation Forest detects
+none of the scan before or after, and it was already in shadow.
