@@ -63,7 +63,8 @@ transforms:
       # Built explicitly rather than by deletion; ClickHouse rejects unknown fields and
       # Suricata adds new ones between releases.
       . = {
-        "ts": to_timestamp!(.timestamp),
+        # to_timestamp left VRL in Vector 0.37; Suricata writes 2026-09-27T04:24:57.380079+0000.
+        "ts": parse_timestamp!(.timestamp, "%Y-%m-%dT%H:%M:%S%.f%z"),
         "event_type": .event_type,
         "signature_id": to_int(.alert.signature_id) ?? 0,
         "signature": to_string(.alert.signature) ?? "",
@@ -100,7 +101,8 @@ transforms:
       }
 
       . = {
-        "ts": to_timestamp(to_float(parsed.ts) ?? 0.0, unit: "seconds") ?? now(),
+        # Zeek's ts is float seconds; from_unix_timestamp takes an integer.
+        "ts": from_unix_timestamp!(to_int((to_float(parsed.ts) ?? 0.0) * 1000000.0), unit: "microseconds"),
         "log_type": log_type,
         "uid": to_string(parsed.uid) ?? "",
         "id_orig_h": to_string(get!(value: parsed, path: ["id.orig_h"])) ?? "0.0.0.0",
@@ -129,6 +131,9 @@ sinks:
       max_size: 268435488
       when_full: block
     skip_unknown_fields: false
+    # Vector sends timestamps as RFC 3339 strings, which ClickHouse's basic
+    # DateTime64 parser refuses.
+    date_time_best_effort: true
 
   clickhouse_zeek:
     type: clickhouse
@@ -148,6 +153,9 @@ sinks:
       max_size: 268435488
       when_full: block
     skip_unknown_fields: false
+    # Vector sends timestamps as RFC 3339 strings, which ClickHouse's basic
+    # DateTime64 parser refuses.
+    date_time_best_effort: true
 
   # Lines that genuinely failed to parse. Kept rather than discarded: a steady trickle
   # here means a sensor changed its output format, which is worth knowing before a model
