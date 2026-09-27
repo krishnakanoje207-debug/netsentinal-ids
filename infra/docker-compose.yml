@@ -288,12 +288,14 @@ services:
     network_mode: host
     cap_add: [NET_ADMIN, NET_RAW, SYS_NICE]
     # The stock suricata.yaml plus our overrides: lab address groups and JA4.
-    command: ["-i", "netsentinel-lab", "--include", "/etc/suricata/netsentinel.yaml"]
+    command: ["-i", "netsentinel-lab", "--include", "/etc/netsentinel/suricata.yaml"]
     volumes:
       - suricata-logs:/var/log/suricata
       # ET Open, fetched once by suricata-update (see README); not committed.
       - ./suricata/rules:/var/lib/suricata/rules
-      - ./suricata/netsentinel.yaml:/etc/suricata/netsentinel.yaml:ro
+      # Outside /etc/suricata: the image's entrypoint chowns that whole directory and
+      # exits when it meets a read-only file there.
+      - ./suricata/netsentinel.yaml:/etc/netsentinel/suricata.yaml:ro
     mem_limit: 1g
     restart: unless-stopped
 
