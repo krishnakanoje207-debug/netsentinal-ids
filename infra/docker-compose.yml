@@ -411,6 +411,10 @@ services:
       - /artefacts/tier_d_ae/model_card.json
       - /artefacts/tier_d/model_card.json
       - /artefacts/tier_b/model_card.json
+      # The same two Tier D graphs, baselined on the lab's own benign traffic
+      # (training/.../recalibrate.py). Shadow until the shadow report promotes them.
+      - /artefacts/tier_d_ae_lab/model_card.json
+      - /artefacts/tier_d_lab/model_card.json
     environment:
       NETSENTINEL_SENSOR_TOKEN: ${NETSENTINEL_SENSOR_TOKEN:-}
     volumes:
