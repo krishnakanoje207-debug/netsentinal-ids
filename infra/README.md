@@ -36,9 +36,23 @@ stop `hids` for the scan window. None of the three rotating profiles produces
 detections, so the detection path never waits on them. `scan`'s 4.3 GB excludes three
 one-shot containers that exit once their setup is done.
 
+**On an 8 GB VM** (the only size the student subscription allowed) the caps no longer
+fit, but real use does. Measured on the first day, with swap raised to 12 GB:
+
+| Running | Host memory used | Available |
+|---|---|---|
+| detection path (`storage`, `bus`, `ingest`, `sensors`, `pipeline`, `lab`, `app`) | 3.3 GB | 4.4 GB |
+| + `hids` | 4.8 GB | 2.9 GB |
+| + `response`, `dashboards`, `case` | 5.2 GB | 2.5 GB |
+
+The largest were the Wazuh indexer (1.3 GB of its 1.5 GB), ClickHouse (650 MB), Suricata
+(570 MB) and Redpanda (410 MB). So everything but `intel` and `scan` runs together;
+`intel` takes turns with `case`, and `scan` with `intel` and `hids`.
+
 The pipeline's caps (384 MB for the sensor, the Tier C scorer and the writer, 192 MB
-for each sink and the importer) are estimates from the libraries each process loads,
-not measurements. Check `docker stats` on the first day, as for the indexer.
+for each sink and the importer) were estimates from the libraries each process loads.
+On the first day they held with room to spare: the sensor used 150 MB, the writer 104 MB,
+each sink about 50 MB and the Tier C scorer 39 MB.
 
 Two figures are above the plan (M1 §7.4): IRIS is capped at 1.6 GB against the plan's
 ~1.0 GB, because its app and worker are separate Python processes that each need
@@ -201,6 +215,15 @@ docker compose run --rm --entrypoint vector vector validate \
 
 That nmap-to-ClickHouse round trip is the D3 exit criterion.
 
+If `SHOW TABLES` comes back empty, ClickHouse's very first start probably crashed: that
+leaves its volume non-empty, and every later start skips the init schema. Start it from
+an empty volume again:
+
+```bash
+docker compose rm -sf clickhouse && docker volume rm netsentinel_clickhouse-data
+docker compose --profile storage up -d
+```
+
 ## Decisions worth knowing
 
 **The lab bridge has a fixed name.** Docker names bridges `br-<hash>`, which changes
@@ -222,7 +245,9 @@ only see traffic addressed to itself, not the conversations between the other co
 **Suricata's configuration is an overlay, not a copy.** `suricata/netsentinel.yaml` is
 loaded with `--include` after the image's stock `suricata.yaml` and sets only mapping
 keys: the lab's address groups (`EXTERNAL_NET` is `any`, because the attacker is on the
-lab subnet too) and `app-layer.protocols.tls.ja4-fingerprints: yes`. The stock eve-log
+lab subnet too) and `app-layer.protocols.tls.ja4-fingerprints: yes`. An included mapping
+replaces the stock one whole rather than merging key by key, so the overlay restates
+every stock address and port group, not only the ones it changes. The stock eve-log
 already writes alert, flow, dns, http and extended tls records, and extended tls
 includes `tls.ja4` once fingerprinting is on. Outputs are left alone on purpose:
 Suricata merges an included list by position, so an `outputs:` list in the overlay would
@@ -241,7 +266,9 @@ academic use.
 when a consumer can fall behind a producer. A log tail into a columnar store is not that.
 The scored-flow stream from the extractor does go through Redpanda, where replay matters.
 
-**ClickHouse is capped to roughly 12% of RAM.** It otherwise assumes it owns the machine,
+**ClickHouse is capped to 80% of its container's 2 GB.** It reads the cgroup limit, not
+the host's RAM, as "RAM"; the first version asked for 12%, meaning 12% of 16 GB, and got
+245 MB, too little for a merge. It otherwise assumes it owns the machine,
 and on a shared box that ends with the OOM killer choosing a victim.
 
 ## The schema is generated, not written
@@ -360,7 +387,9 @@ cp wazuh/config/wazuh_indexer/internal_users.example.yml \
 docker run --rm -it wazuh/wazuh-indexer:4.14.8 \
   bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
 #    run it twice - once for WAZUH_INDEXER_PASSWORD (admin), once for
-#    WAZUH_DASHBOARD_PASSWORD (kibanaserver) - and paste each hash into the copy
+#    WAZUH_DASHBOARD_PASSWORD (kibanaserver) - and paste each hash into the copy.
+#    Without a terminal, `htpasswd -bnBC 12 "" '<password>'` (apache2-utils) makes the
+#    same bcrypt hash; drop the leading ':'.
 
 # 3. WAZUH_INDEXER_PASSWORD, WAZUH_DASHBOARD_PASSWORD and WAZUH_API_PASSWORD in .env
 #    (the API password needs upper, lower, digit and symbol)
@@ -453,6 +482,8 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
   -keyout iris/certificates/iris.key -out iris/certificates/iris.pem \
   -subj "/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,DNS:iris-nginx,IP:127.0.0.1"
+# nginx in the image runs as www-data (33) and cannot read a key only you can
+sudo chown 33:33 iris/certificates/iris.key
 
 docker compose --profile case up -d
 # https://127.0.0.1:8443 through the tunnel, administrator / IRIS_ADM_PASSWORD
