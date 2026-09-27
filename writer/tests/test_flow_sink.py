@@ -96,11 +96,11 @@ def test_an_undecided_flow_is_stored_as_null_not_zero():
     assert flow_row(_payload(risk_score=None))["risk_score"] is None
 
 
-def test_ts_is_always_a_decimal():
+def test_ts_is_sent_as_whole_milliseconds():
     payload = _payload()
-    payload["flow"]["ts"] = 1_700_000_000
+    payload["flow"]["ts"] = 1_700_000_000.7866
     ts = flow_row(payload)["ts"]
-    assert isinstance(ts, float) and ts == 1_700_000_000.0
+    assert isinstance(ts, int) and ts == 1_700_000_000_787
 
 
 def test_a_missing_column_fails_rather_than_defaulting():

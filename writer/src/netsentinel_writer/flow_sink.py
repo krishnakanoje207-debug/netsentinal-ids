@@ -65,9 +65,9 @@ def flow_row(payload: Mapping[str, Any]) -> dict[str, Any]:
     # Indexed rather than .get(): a column the message lacks is a producer out of
     # step with the table, and storing a default would hide it.
     row = {name: flow[name] for name in COLUMNS}
-    # Always a decimal: ClickHouse reads a whole number into DateTime64(3) as
-    # milliseconds, not seconds.
-    row["ts"] = float(row["ts"])
+    # Whole milliseconds: JSONEachRow reads an integer into DateTime64(3) as
+    # milliseconds and refuses an unquoted decimal outright.
+    row["ts"] = round(float(row["ts"]) * 1000)
     return row
 
 

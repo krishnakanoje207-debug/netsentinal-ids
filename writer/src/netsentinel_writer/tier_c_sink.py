@@ -36,8 +36,8 @@ def tier_c_row(payload: Mapping[str, Any]) -> dict[str, Any]:
     model = payload["models"][0]
     window = payload["window"]
     return {
-        # A decimal, as in the flow sink: a whole number reads as milliseconds.
-        "ts": float(flow["ts"]),
+        # Whole milliseconds, as in the flow sink.
+        "ts": round(float(flow["ts"]) * 1000),
         "flow_id": flow["flow_id"],
         "sensor": flow["sensor"],
         "src_ip": flow["src_ip"],

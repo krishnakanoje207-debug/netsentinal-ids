@@ -63,7 +63,7 @@ def test_columns_are_the_ddl_columns_clickhouse_does_not_fill():
 def test_the_window_message_fills_every_column():
     row = tier_c_row(_messages()[1])
     assert tuple(row) == COLUMNS
-    assert row["ts"] == 1_700_000_001.0
+    assert row["ts"] == 1_700_000_001_000
     assert row["dst_ip"] == "10.0.0.10"
     assert row["sensor"] == "early_flow"
     assert (row["model_name"], row["model_version"]) == ("egraphsage", "1.2.0")
