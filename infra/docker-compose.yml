@@ -594,6 +594,9 @@ services:
       MYSQL_USER: misp
       MYSQL_PASSWORD: ${MISP_DB_PASSWORD:?set MISP_DB_PASSWORD in .env}
       REDIS_HOST: misp-redis
+      # Only port 80 is published and tunnelled, and the image otherwise answers every
+      # HTTP request with a redirect to https on 443, which nothing here can reach.
+      DISABLE_SSL_REDIRECT: "true"
       # Warninglists are what keep 8.8.8.8 out of the feed, and the sync asks MISP to
       # enforce them. They have to be loaded for that request to mean anything.
       ENABLE_DB_SETTINGS: "true"
