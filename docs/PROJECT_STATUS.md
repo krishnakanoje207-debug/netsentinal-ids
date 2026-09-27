@@ -2,7 +2,7 @@
 
 Where NetSentinel-AI stands against the locked plan (Research Comparison and 15-Day
 Execution Plan v1.0), what remains, and why some planned tools are not running yet.
-Updated 26 September 2026.
+Updated 27 September 2026.
 
 ## Measured today
 
@@ -24,26 +24,30 @@ Updated 26 September 2026.
 | Live alert push, end to end | Alerts written by the writer process reach the dashboard's WebSocket: 8 of 8 and 12 of 12 frames in two runs, including after the database was dropped and recreated under a running API | section "Live feed" in `README.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms (24 Sep) | `docs/testing/TEST_REPORT.md` |
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
-| Automated tests | 965 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
+| JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
+| Tier D on the lab's own traffic | The benchmark-calibrated models called the lab's plain HTTP 0.99 anomalous (12.1% of benign flows alerted). Re-baselined on 1857 lab benign flows: 0.0% on 1190 held-out ones, the scan still 100% detected; in shadow | `artefacts/tier_d_ae_lab/model_card.json` |
+| Automated tests | 976 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
 The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle (training)
-and the laptop (dashboard, LLM). **The cloud VM was never provisioned**, and this laptop has
-8 GB of RAM (under 1 GB free with the usual desktop open), so every service that needs Linux
-packet capture or several GB of memory is built and configured but not running. Nothing
-below was dropped from the design.
+and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
+Azure for Students offered no 16 GB size. Measured there, everything but MISP and
+Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
+profiles"). The first live run found eleven defects that the tests against fakes had not,
+all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |
 |---|---|---|---|
-| Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | Configured (Compose `sensors` profile, ET Open, FoxIO JA4); run offline against capture files | Live capture needs a Linux host |
-| Wazuh 4.14 + Sysmon + auditd (F3) | Always-on on the VM | Configured (Compose `hids` profile, agent and Sysmon config); Active Response client built and tested | Needs 3 GB+ and its own indexer |
-| Redpanda (F5) | VM | Configured (`bus` profile, topics created by an init job); sensor, writer and sinks speak the Kafka protocol | Not run locally |
-| ClickHouse, Vector, Grafana (F5, F19) | VM | Configured; the flow sink and Tier C sink are built and tested; Grafana is provisioned on ClickHouse | Not run locally; the dashboard's last-hour strip says flow counts are unavailable |
-| Sensor, scorers, writers as one pipeline (F10) | VM | Compose `pipeline` profile: sensor (Tiers A, B, D), Tier C window scorer, detection writer, flow sinks, Suricata importer; model modes read from the API's registry | Needs the VM |
-| MISP, Keep (F13, F14) | VM, intel profile | Integration built and tested against fakes | MISP needs ~4 GB |
-| DFIR-IRIS (F15) | VM | Compose `case` profile; integration built and tested against fakes | Escalation says so honestly when unconfigured |
-| CrowdSec + nftables (F16) | VM | Compose `response` profile with the nftables bouncer; integration tested against fakes | Needs a Linux edge |
+| Suricata 8 + Zeek + JA4 (F1, F2) | Always-on on the VM | **Running** on the VM's lab bridge: ET Open, JA4 from both, into ClickHouse through Vector | |
+| Wazuh 4.14 + Sysmon + auditd (F3) | Always-on on the VM | **Running**: indexer, manager and dashboard; the VM's agent with auditd sent 299 host alerts in its first minutes | Sysmon on the laptop is not enrolled yet (it reaches the manager through the tunnel) |
+| Redpanda (F5) | VM | **Running**: topics created by the init job; sensor, writer and sinks on it | |
+| ClickHouse, Vector, Grafana (F5, F19) | VM | **Running**: all four tables filling live; Grafana's ClickHouse datasource healthy | |
+| Sensor, scorers, writers as one pipeline (F10) | VM | **Running**: sensor (Tiers A, B, D, and the two lab-baselined Tier D cards in shadow), Tier C window scorer, detection writer, flow sinks, Suricata importer | |
+| MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: MISP answers the API over the backplane, Keep healthy | MISP's API key is made in its UI before the first sync |
+| DFIR-IRIS (F15) | VM | **Running**: the API is wired to it and trusts its certificate | |
+| CrowdSec + nftables (F16) | VM | **Running**: a ban reached the kernel's nftables set and was lifted; the responder that executes approved actions is a service | |
 | Greenbone/OpenVAS (F17) | VM, scan window | Compose `scan` profile; importer built and tested; findings and the date of each host's last scan shown on the Estate page | Runs in its own window on the VM |
 | Asset inventory | Assumed by F16/F17 | **Built**: `netsentinel-import-assets` from a CSV; the demo imports the dataset's ten servers | |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
@@ -71,7 +75,8 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 
 | # | Task | For | Needs |
 |---|---|---|---|
-| 1 | Cloud VM with Suricata, Zeek, Wazuh, Redpanda and ClickHouse live, running the `pipeline` profile | Full plan | An Azure for Students (or other) VM, about 6-8 h after it exists |
+| 1 | Enrol the laptop's Wazuh agent with Sysmon through the SSH tunnel | F3 on Windows | The Wazuh agent installed on the laptop |
+| 2 | Promote the lab-baselined Tier D models once the shadow report on live traffic agrees | Fewer false alarms live | A few hours of live lab traffic |
 
 **Attack-family accuracy (investigated 26 September, left as it is).** Backdoor, DoS and
 Analysis stay weak (test F1 0.05-0.37), and flow features cannot fix it. On the same
@@ -105,4 +110,4 @@ matches still raise a severity by one step.
 
 ## What I need from you
 
-- For item 1: a VM, or a decision to present the VM-bound services as future work.
+- For item 1: installing the Wazuh agent on the laptop (it needs administrator rights).
