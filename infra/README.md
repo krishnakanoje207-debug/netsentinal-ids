@@ -311,6 +311,18 @@ The dashboard is file-provisioned and not editable in the UI: change
 `grafana/provisioning/dashboards/json/netsentinel-telemetry.json` and restart Grafana,
 so the repository stays the source of truth.
 
+## intel: MISP
+
+The API reaches MISP as `http://misp` on the backplane. Its key is made in MISP, not
+here: sign in at `http://127.0.0.1:8081` through the tunnel (`MISP_ADMIN_EMAIL` /
+`MISP_ADMIN_PASSWORD`), create an automation key, and put it in `.env` as
+`NETSENTINEL_MISP_API_KEY`. Blank, the sync refuses to run and nothing else notices.
+
+```bash
+docker compose --profile app up -d                       # recreate the API with the key
+docker compose exec api netsentinel-sync-intel --since 7d
+```
+
 ## Response: CrowdSec and the nftables bouncer
 
 The `response` profile runs the CrowdSec **Local API only** — `DISABLE_AGENT` is set,
@@ -324,9 +336,12 @@ sets in the host's network namespace. A bouncer inside Docker would filter its o
 namespace and block nothing.
 
 ```bash
-# 1. the API needs a watcher account to write decisions with
-docker compose --profile response up -d
-docker compose exec crowdsec cscli machines add netsentinel-api --password '<generated>'
+# 1. the responder needs a watcher account to write decisions with. Generate its
+#    password into .env as NETSENTINEL_CROWDSEC_PASSWORD first:
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+docker compose --profile response up -d crowdsec       # the LAPI alone, for now
+docker compose exec crowdsec cscli machines add netsentinel-api \
+  --password '<NETSENTINEL_CROWDSEC_PASSWORD>'
 
 # 2. the bouncer needs its own key, and runs on the VM itself
 docker compose exec crowdsec cscli bouncers add nftables-bouncer
@@ -335,12 +350,19 @@ sudo install -m 600 crowdsec/crowdsec-firewall-bouncer.yaml /etc/crowdsec/bounce
 # paste the key into api_key in the installed copy (never the repository's), then
 sudo systemctl restart crowdsec-firewall-bouncer
 
-# 3. point the responder at the LAPI (in the API's environment, not .env here)
-export NETSENTINEL_CROWDSEC_URL="http://127.0.0.1:8080"
-export NETSENTINEL_CROWDSEC_MACHINE_ID="netsentinel-api"
-export NETSENTINEL_CROWDSEC_PASSWORD="<the password from step 1>"
-uv run netsentinel-respond --once
+# 3. the responder, which executes approved actions every 10 seconds. It needs
+#    PostgreSQL and the API's migrations from the app profile, so they come up together
+docker compose --profile app --profile response up -d --build
+docker compose logs responder | grep ready   # "responder ready for block_ip ..."
 ```
+
+Compose points the API and the responder at `http://crowdsec:8080` as
+`netsentinel-api`; only the password comes from `.env`. Until it is set the responder
+exits at start ("no enforcement point configured") and keeps being restarted, while
+approvals wait in the queue: the safe way to be unconfigured. Off the VM, the same worker runs by hand
+against the tunnelled LAPI with `NETSENTINEL_CROWDSEC_URL=http://127.0.0.1:8080`,
+`NETSENTINEL_CROWDSEC_MACHINE_ID` and `NETSENTINEL_CROWDSEC_PASSWORD` exported:
+`uv run netsentinel-respond --once`.
 
 Verifying the D11 exit gate, end to end:
 
@@ -490,14 +512,20 @@ docker compose --profile case up -d
 ```
 
 `IRIS_ADM_*` seed the administrator on the first start of an empty database only.
-Then point the API at it — trusting `iris/certificates/iris.pem` rather than turning
-verification off, as the API's own settings insist:
+The API and the responder are already pointed at it: compose gives them
+`https://iris-nginx` and `IRIS_ADM_API_KEY`, and once that key is set it makes
+`iris/certificates/iris.pem` their trust store (`SSL_CERT_FILE`) rather than turning
+verification off, as the API's own settings insist. Recreate them after the first
+start of `case` so they pick it up:
 
 ```bash
-export NETSENTINEL_IRIS_URL="https://127.0.0.1:8443"   # or https://iris-nginx from the app profile
-export NETSENTINEL_IRIS_API_KEY="<IRIS_ADM_API_KEY>"
-export NETSENTINEL_IRIS_CUSTOMER_ID=1
+docker compose --profile app --profile response up -d
 ```
+
+Off the VM, the same three settings by hand, through the tunnel:
+`NETSENTINEL_IRIS_URL=https://127.0.0.1:8443`, `NETSENTINEL_IRIS_API_KEY` and
+`SSL_CERT_FILE` pointing at a copy of `iris.pem`. `NETSENTINEL_IRIS_CUSTOMER_ID`
+defaults to 1.
 
 The customer id is worth checking before the demo: IRIS files every case against one,
 rejects an id it does not know, and ships with exactly one. A wrong id surfaces as an

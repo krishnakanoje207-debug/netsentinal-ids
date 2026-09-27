@@ -129,11 +129,11 @@ services:
   # --- application ----------------------------------------------------------
 
   api:
-    build:
+    build: &api-build
       context: ..
       dockerfile: backend/Dockerfile
     profiles: [app]
-    environment:
+    environment: &api-env
       # NETSENTINEL_DB selects the database inside PostgreSQL; the demonstration
       # database built by lab/replay/build_demo.ps1 is netsentinel_demo.
       NETSENTINEL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD}@postgres:5432/${NETSENTINEL_DB:-netsentinel}
@@ -150,6 +150,33 @@ services:
       NETSENTINEL_CLICKHOUSE_URL: http://clickhouse:8123
       NETSENTINEL_CLICKHOUSE_USER: ${CLICKHOUSE_USER:-netsentinel}
       NETSENTINEL_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      # The integrations, each off while its secret is blank: the settings treat a
+      # URL without its key as unconfigured, so the addresses can be fixed here and
+      # only the secrets come from .env. All three are reached over the backplane.
+      # CrowdSec's watcher account is the one README "Response" registers.
+      NETSENTINEL_CROWDSEC_URL: http://crowdsec:8080
+      NETSENTINEL_CROWDSEC_MACHINE_ID: netsentinel-api
+      NETSENTINEL_CROWDSEC_PASSWORD: ${NETSENTINEL_CROWDSEC_PASSWORD:-}
+      # The administrator key IRIS is seeded with, rather than a second copy of it.
+      NETSENTINEL_IRIS_URL: https://iris-nginx
+      NETSENTINEL_IRIS_API_KEY: ${IRIS_ADM_API_KEY:-}
+      # IRIS's certificate is self-signed, and the settings keep verification on, so
+      # the certificate is made the trust store instead. That replaces the default
+      # store for every HTTPS call these processes make, which is safe while IRIS is
+      # the only HTTPS endpoint they call. Set only once the IRIS key is, because the
+      # key and the certificate are made in the same setup step (README "case") and
+      # a trust store that does not exist fails every HTTP client, not just IRIS's.
+      SSL_CERT_FILE: ${IRIS_ADM_API_KEY:+/etc/netsentinel/iris/iris.pem}
+      # MISP answers plain HTTP on the backplane (its HTTPS redirect is off). Its key
+      # is created in MISP's own UI, so it is blank until someone has done that.
+      NETSENTINEL_MISP_URL: http://misp
+      NETSENTINEL_MISP_API_KEY: ${NETSENTINEL_MISP_API_KEY:-}
+    volumes: &api-volumes
+      # The directory rather than iris.pem itself: a missing file would be created
+      # as an empty directory on the host, and then block the openssl command that
+      # makes the certificate. The key beside it is owned by nginx's user, 33, and
+      # unreadable to this one.
+      - ./iris/certificates:/etc/netsentinel/iris:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,6 +185,30 @@ services:
     ports:
       - "127.0.0.1:${API_PORT:-8010}:8000"
     mem_limit: 512m
+    networks: [backplane]
+    restart: unless-stopped
+
+  # Approving an action only records the approval; this is what carries it out
+  # (responder.py). The same image and settings as the API. In the response profile,
+  # because it is useless without an enforcement point and refuses to start without
+  # one. PostgreSQL and the schema come from the app profile, and compose refuses a
+  # dependency on an unselected service, so they are not listed: until they are up
+  # the process exits and the restart policy tries again. Bring both up together:
+  #
+  #   docker compose --profile app --profile response up -d --build
+  responder:
+    build: *api-build
+    profiles: [response]
+    command: ["netsentinel-respond", "--interval", "10"]
+    environment: *api-env
+    volumes: *api-volumes
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    # The image's health check asks the API port, which nothing listens on here.
+    healthcheck:
+      disable: true
+    mem_limit: 192m
     networks: [backplane]
     restart: unless-stopped
 
