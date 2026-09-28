@@ -32,6 +32,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false as sa_false,
     func,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB
@@ -207,6 +208,11 @@ class Sensor(Base):
         _enum(SensorStatus, "sensor_status"), nullable=False, default=SensorStatus.offline
     )
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Set by an administrator; the writer refuses to ingest for a revoked sensor.
+    #: Separate from ``status``, which says whether it is up, not whether it is trusted.
+    revoked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa_false()
+    )
 
 
 class Vulnerability(Base):

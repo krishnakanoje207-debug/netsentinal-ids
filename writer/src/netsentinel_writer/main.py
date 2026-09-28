@@ -10,7 +10,7 @@ traffic:
 * the booster loads and matches the hash in its card,
 * the model is registered in ``ml_models``, because a detection has to point at a row
   rather than at a file,
-* the sensor row exists.
+* the sensor row exists and has not been revoked.
 
 ``--sensor-id`` is given rather than read from the message because ``sensors`` is
 keyed by the host it runs on (M2 3.1), not by a name the payload could carry. Telling
@@ -56,8 +56,14 @@ def resolve_model_id(session, name: str, version: str) -> int:
 
 
 def resolve_sensor_id(session, sensor_id: int) -> int:
-    if session.get(Sensor, sensor_id) is None:
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
         raise StartupError(f"no sensor with sensor_id {sensor_id}")
+    if sensor.revoked:
+        raise StartupError(
+            f"sensor_id {sensor_id} has been revoked by an administrator; "
+            "re-enable it on the Admin page before ingesting for it"
+        )
     return sensor_id
 
 

@@ -383,3 +383,18 @@ def test_an_unpaced_replay_never_sleeps():
 
     assert len(list(consumer.messages())) == 2
     assert waits == []
+
+
+def test_a_revoked_sensor_is_refused_at_startup():
+    """An administrator revoking a sensor on the Admin page stops its ingest."""
+    from netsentinel_api.db.models import Sensor
+    from netsentinel_writer.main import StartupError, resolve_sensor_id
+
+    rows = {1: Sensor(sensor_id=1, revoked=False), 2: Sensor(sensor_id=2, revoked=True)}
+    session = types.SimpleNamespace(get=lambda _model, key: rows.get(key))
+
+    assert resolve_sensor_id(session, 1) == 1
+    with pytest.raises(StartupError, match="revoked"):
+        resolve_sensor_id(session, 2)
+    with pytest.raises(StartupError, match="no sensor"):
+        resolve_sensor_id(session, 3)

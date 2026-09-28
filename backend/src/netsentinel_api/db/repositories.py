@@ -22,12 +22,15 @@ from netsentinel_api.db.models import (
     Alert,
     AlertStatus,
     Asset,
+    AuditLog,
     CopilotSummary,
     Detection,
     MLModel,
     ModelMode,
     ModelTier,
     ResponseAction,
+    Role,
+    Sensor,
     Severity,
     User,
     Vulnerability,
@@ -441,3 +444,88 @@ class ModelRepository:
                 ).where(Detection.created_at >= start)
             )
         ]
+
+
+class AdminRepository:
+    """Accounts, sensors and the audit trail, for the administrator's page."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def users(self) -> list[User]:
+        return list(
+            self._session.scalars(
+                select(User).options(joinedload(User.role)).order_by(User.username)
+            )
+        )
+
+    def user(self, user_id: int) -> User | None:
+        return self._session.scalar(
+            select(User).options(joinedload(User.role)).where(User.user_id == user_id)
+        )
+
+    def taken(self, username: str, email: str) -> bool:
+        """Whether either is already in use; both columns are UNIQUE."""
+        return (
+            self._session.scalar(
+                select(User.user_id).where(or_(User.username == username, User.email == email))
+            )
+            is not None
+        )
+
+    def roles(self) -> list[Role]:
+        return list(self._session.scalars(select(Role).order_by(Role.name)))
+
+    def role(self, name: str) -> Role | None:
+        return self._session.scalar(select(Role).where(Role.name == name))
+
+    def sensors(self) -> list[tuple[Sensor, str]]:
+        """Every sensor with the hostname it runs on."""
+        return [
+            (sensor, hostname)
+            for sensor, hostname in self._session.execute(
+                select(Sensor, Asset.hostname)
+                .join(Asset, Asset.asset_id == Sensor.host_asset_id)
+                .order_by(Sensor.sensor_id)
+            )
+        ]
+
+    def sensor(self, sensor_id: int) -> tuple[Sensor, str] | None:
+        row = self._session.execute(
+            select(Sensor, Asset.hostname)
+            .join(Asset, Asset.asset_id == Sensor.host_asset_id)
+            .where(Sensor.sensor_id == sensor_id)
+        ).first()
+        return (row[0], row[1]) if row is not None else None
+
+    def audit(
+        self,
+        *,
+        actor: str | None = None,
+        action: str | None = None,
+        window: TimeRange | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[tuple[AuditLog, str | None]]:
+        """Newest first, with the actor's username; None for a system action.
+
+        ``action`` matches as a prefix, so ``user.`` finds every account change.
+        On ``ts`` itself, so ix_audit_log_ts serves the range and the order.
+        """
+        statement = select(AuditLog, User.username).outerjoin(
+            User, User.user_id == AuditLog.user_id
+        )
+        if actor:
+            statement = statement.where(User.username == actor)
+        if action:
+            statement = statement.where(AuditLog.action.startswith(action, autoescape=True))
+        if window is not None and window.start is not None:
+            statement = statement.where(AuditLog.ts >= window.start)
+        if window is not None and window.end is not None:
+            statement = statement.where(AuditLog.ts <= window.end)
+        statement = (
+            statement.order_by(AuditLog.ts.desc(), AuditLog.log_id.desc())
+            .limit(min(limit, MAX_PAGE_SIZE))
+            .offset(offset)
+        )
+        return [(entry, username) for entry, username in self._session.execute(statement)]

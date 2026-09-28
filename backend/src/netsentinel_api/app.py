@@ -18,6 +18,7 @@ from netsentinel_api.notify import AlertListener
 from netsentinel_api.routes import (
     actions,
     activity,
+    admin,
     alerts,
     assets,
     auth,
@@ -70,6 +71,7 @@ def create_app(*, listen_for_alerts: bool = True) -> FastAPI:
     app.include_router(assets.router, prefix=API_PREFIX)
     app.include_router(actions.router, prefix=API_PREFIX)
     app.include_router(models.router, prefix=API_PREFIX)
+    app.include_router(admin.router, prefix=API_PREFIX)
     app.include_router(stream.router, prefix=API_PREFIX)
 
     # No CORS middleware on purpose. The dashboard reaches the API through an SSH

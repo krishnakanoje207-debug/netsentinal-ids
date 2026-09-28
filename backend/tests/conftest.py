@@ -109,6 +109,9 @@ class FakeSession:
             elif isinstance(instance, ResponseAction) and instance.action_id is None:
                 self._last_id += 1
                 instance.action_id = self._last_id
+            elif isinstance(instance, User) and instance.user_id is None:
+                self._last_id += 1
+                instance.user_id = self._last_id
 
     def refresh(self, instance: object, /) -> None:
         """Load what the database assigned: an approval's id and its decided_at."""

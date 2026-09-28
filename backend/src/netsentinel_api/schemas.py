@@ -21,6 +21,8 @@ from netsentinel_api.db.models import (
     IncidentStatus,
     ModelMode,
     ModelTier,
+    SensorStatus,
+    SensorType,
     Severity,
 )
 
@@ -330,6 +332,56 @@ class PromoteIn(BaseModel):
     # spell it. It travels in the request because the evidence recorded in the
     # audit row has to come from the same query that justified the promotion.
     since: str = Field(default="7d", max_length=10)
+
+
+class AccountOut(UserOut):
+    """An account as the administrator's page lists it. No password hash, as ever."""
+
+    role: str | None
+    created_at: datetime | None
+
+
+class AccountIn(BaseModel):
+    username: str = Field(min_length=1, max_length=50)
+    email: str = Field(min_length=3, max_length=255)
+    # The length rule bcrypt imposes is checked by hash_password, which says why.
+    password: str = Field(min_length=1)
+    role: str = Field(max_length=50)
+
+
+class AccountUpdate(BaseModel):
+    """Either field, or both; one left out is left alone."""
+
+    role: str | None = Field(default=None, max_length=50)
+    is_active: bool | None = None
+
+
+class RoleOut(BaseModel):
+    name: str
+    permissions: list[str]
+
+
+class SensorOut(BaseModel):
+    sensor_id: int
+    type: SensorType
+    hostname: str
+    status: SensorStatus
+    last_seen: datetime | None
+    revoked: bool
+
+
+class SensorUpdate(BaseModel):
+    revoked: bool
+
+
+class AuditEntryOut(BaseModel):
+    log_id: int
+    ts: datetime
+    user_id: int | None
+    username: str | None = Field(description="null for a system action")
+    action: str
+    entity: str
+    details: dict
 
 
 class HealthOut(BaseModel):

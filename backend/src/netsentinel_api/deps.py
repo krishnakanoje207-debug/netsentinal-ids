@@ -20,6 +20,7 @@ from netsentinel_api.config import Settings, get_settings
 from netsentinel_api.db.models import User
 from netsentinel_api.db.repositories import (
     ActionRepository,
+    AdminRepository,
     AlertRepository,
     AssetRepository,
     ModelRepository,
@@ -148,6 +149,12 @@ def get_model_repo(
     return ModelRepository(session)
 
 
+def get_admin_repo(
+    session: Annotated[Session, Depends(get_session)],
+) -> AdminRepository:
+    return AdminRepository(session)
+
+
 SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repo)]
@@ -155,3 +162,4 @@ AlertRepoDep = Annotated[AlertRepository, Depends(get_alert_repo)]
 AssetRepoDep = Annotated[AssetRepository, Depends(get_asset_repo)]
 ActionRepoDep = Annotated[ActionRepository, Depends(get_action_repo)]
 ModelRepoDep = Annotated[ModelRepository, Depends(get_model_repo)]
+AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repo)]
