@@ -124,7 +124,7 @@ def test_a_configured_keep_produces_a_forwarder():
     settings = Settings(jwt_secret=SECRET, keep_url="http://keep.local/", keep_api_key="k")
     forwarder = forwarder_from(settings)
     assert isinstance(forwarder, KeepForwarder)
-    assert forwarder._url == f"http://keep.local/alerts/event/{PROVIDER}"
+    assert forwarder._url == "http://keep.local/alerts/event"
 
 
 # --- sending ---------------------------------------------------------------

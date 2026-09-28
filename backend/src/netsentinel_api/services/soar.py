@@ -102,7 +102,10 @@ class KeepForwarder:
     """
 
     def __init__(self, url: str, api_key: str, timeout: float = REQUEST_TIMEOUT_SECONDS) -> None:
-        self._url = url.rstrip("/") + f"/alerts/event/{PROVIDER}"
+        # The generic webhook. Keep reads the segment after /alerts/event/ as one of
+        # its own provider types and answers 400 "Provider netsentinel not found";
+        # the event's own ``source`` is what attributes it to this system.
+        self._url = url.rstrip("/") + "/alerts/event"
         self._api_key = api_key
         self._timeout = timeout
 
