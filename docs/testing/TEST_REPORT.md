@@ -102,7 +102,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 
 | Req. | Summary | Status | Evidence |
 |---|---|---|---|
-| O1 | Telemetry visible within 10 s | Partial | Suricata, Zeek and Wazuh ran live on the VM and their events reached ClickHouse and the Wazuh indexer (section 7); the 10 s delay was not measured |
+| O1 | Telemetry visible within 10 s | Met | on the VM, 10 tagged HTTP requests were queryable in ClickHouse within 8.9 s at worst: Suricata median 4.7 s, Zeek 5.8 s, the sensor's flow record 5.1 s (section 7, `live/telemetry_latency.csv`) |
 | O2 | Signature detection of scan, brute force, web attack | Partial | Suricata 8 ran live on the VM with ET Open and filled `suricata_events`; signature alerts per attack type not measured |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
 | O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow |
@@ -136,12 +136,12 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
 | NFR-04 | HTTPS, bcrypt, JWT expiry, RBAC, secrets out of git | Met | nginx terminates TLS 1.2/1.3 for the dashboard, `/api` and the alert WebSocket (wss) on 127.0.0.1:5180, and redirects plain HTTP to HTTPS; the self-signed certificate is made at image build, so no key is in the repository (`frontend/nginx.conf`, `frontend/Dockerfile`); verified live: health 200 and analyst login 200 over HTTPS, wss stream connects, bad token refused |
 | NFR-05 | Safe LLM | Met | section 2 and 4 |
-| NFR-06 | Restart policies, buffering | Partial | `restart: unless-stopped`; bus buffering designed, not run |
+| NFR-06 | Restart policies, buffering | Met | `restart: unless-stopped`; on the VM the detection writer was stopped for 61 s during an nmap scan: 318 scored flows waited on Redpanda, the writer caught up 13 s after restart, and all 300 alerting flows were stored (section 7) |
 | NFR-07 | Alert to decision in <= 3 clicks, clear text | Met | Overview -> alert -> action |
 | NFR-08 | Modular, versioned, documented | Met | 7 packages, OpenAPI at /api/v1/docs |
 | NFR-09 | Scalable later | Met (by design) | Kafka-protocol bus; Flink is future work |
 | NFR-10 | Whole stack in Docker Compose on a 16 GB Linux host | Partial | `infra/docker-compose.yml` profiles with memory caps; only an 8 GB VM was available: everything but intel (MISP) and scan (Greenbone) runs together at 5.2 GB used, and those two take turns (`infra/README.md`) |
-| NFR-11 | Verdict traceable to model version, features, SHAP | Partial | detection row carries `model_id` (name, version, SHA-256) and NOT NULL SHAP; input feature values not stored with it, only `flow_id`; the flow sink writes them to ClickHouse `network_flows`, which filled live on the VM |
+| NFR-11 | Verdict traceable to model version, features, SHAP | Met | detection row carries `model_id` (name, version, SHA-256), NOT NULL SHAP and the 73 contract feature values the verdict was computed from (`detections.features`, migration 0007; rows stored before it hold none); the alert page lists them under the SHAP chart |
 | NFR-12 | Free licences, academic datasets, attacks only in the lab | Met | see O8; `lab/scenarios/_guard.sh` refuses any target outside 172.30.0.0/24; published ports bind to 127.0.0.1 |
 
 ## 7. Live run on the cloud VM (27 September 2026)
