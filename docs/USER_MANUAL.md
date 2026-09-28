@@ -79,7 +79,10 @@ bottom loads the next fifty.
 - **Search** takes an address (`175.45.176.0`), a network (`175.45.176.0/24`) or an attack
   technique (`T1046`). Anything else gets a message saying what would work.
 - **Filters** narrow by status or severity.
-- **Export CSV** saves exactly what you are looking at, filters included.
+- **From** and **until** narrow to alerts raised in a time window, in your own clock. Each
+  end shows as a chip under the filters; click it to remove it.
+- **Export CSV** and **Export PDF** save exactly what you are looking at, filters and time
+  window included. The PDF is a printable table that lists the filters it was made with.
 
 ### One alert
 
@@ -94,7 +97,9 @@ Open an alert by clicking its row.
 3. **Why this was flagged** is a chart of the measurements that mattered, drawn as a tug of
    war. Red bars made the connection look more like an attack, blue bars more normal;
    longer bars mattered more. Below it, each model's own score; a model marked
-   *watching only* is in shadow mode and did not decide.
+   *watching only* is in shadow mode and did not decide. **Input features** opens the
+   exact values the models were given for this connection. Alerts stored before the
+   system kept them say so instead.
 4. **AI summary** is a short write-up by a language model running on the same machine. It
    can be wrong; the evidence above it is what counts. Summaries that state things the
    evidence does not contain are thrown away before they reach this page.
@@ -129,6 +134,21 @@ For the ML engineer, and readable by everyone. Each AI model, whether it is **ac
 (deciding) or in **shadow** (watching and being measured only), its alert threshold, and
 how its alerts were judged by analysts. A shadow model can be promoted only when enough
 alerts have been reviewed; if the button is disabled, the reason is written under it.
+
+### Admin
+
+For administrators only; the page is not in the navigation for other roles.
+
+- **Accounts** lists who can sign in and with which role. **New account** creates one;
+  the role picker changes a role at once; **Disable** asks you to confirm, and a disabled
+  account is signed out everywhere immediately. Your own row has neither, so the system
+  can never be left without an administrator.
+- **Sensors** lists the sensors sending traffic, with when each was last seen. **Revoke**
+  asks you to confirm; a revoked sensor's writer refuses to start until it is trusted again.
+- **Audit log** is every sign-in, decision, export and change, newest first. Filter by who
+  did it, by the kind of action (`user.` finds every account change) and by time.
+
+Every change made here is itself written to the audit log.
 
 ### When something looks wrong
 
