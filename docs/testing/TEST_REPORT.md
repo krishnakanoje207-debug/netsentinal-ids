@@ -126,7 +126,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes; on the VM a test ban appeared in the nftables set and was removed when lifted; the responder is now a Compose service |
 | FR-17 | OpenVAS findings per asset | Partial | importer tested; findings shown per host on the Estate page; hosts loaded by the inventory import; Greenbone runs on the VM in its own window, taking turns with MISP |
 | FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard; alerts pushed over the WebSocket as they are stored (section 1) |
-| FR-19 | Search and export | Partial | address / network / technique search and CSV; no time-range search or PDF |
+| FR-19 | Search and export | Met | address / network / technique search and a from/to time range (ISO 8601; a reversed or unreadable range is refused with a sentence); export as CSV or PDF with the same filters, audited |
 | FR-20 | JWT + Admin, Analyst, ML Engineer, Viewer | Met | Viewer added 23 Sep |
 | FR-21 | Audit of logins, approvals, changes, actions | Met | every login outcome, triage, decision, export, promotion |
 | FR-22 | Model registry with SHA-256 | Met | registry refuses a mismatched file |
