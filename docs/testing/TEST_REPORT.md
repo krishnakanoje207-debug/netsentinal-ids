@@ -103,7 +103,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | Req. | Summary | Status | Evidence |
 |---|---|---|---|
 | O1 | Telemetry visible within 10 s | Met | on the VM, 10 tagged HTTP requests were queryable in ClickHouse within 8.9 s at worst: Suricata median 4.7 s, Zeek 5.8 s, the sensor's flow record 5.1 s (section 7, `live/telemetry_latency.csv`) |
-| O2 | Signature detection of scan, brute force, web attack | Partial | Suricata 8 ran live on the VM with ET Open and filled `suricata_events`; signature alerts per attack type not measured |
+| O2 | Signature detection of scan, brute force, web attack | Met | on the VM (section 8): ET SCAN signatures on the nmap scan, SQL injection, XSS, traversal and sqlmap signatures on the web attack, and the two lab SSH rules on the brute force (ET's own name port 22 only) |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
 | O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
@@ -122,15 +122,15 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | FR-12 | SHAP on every detection | Met | database constraint |
 | FR-13 | Local LLM summary, read-only, validated | Met | section 4 |
 | FR-14 | MISP enrichment | Partial | tested against fakes; MISP 2.5.17 answers on the VM, from the host and from the API container |
-| FR-15 | Keep, DFIR-IRIS | Partial | tested against fakes; escalation works without IRIS; on the VM, Keep's healthcheck answers 200 and the IRIS API accepts the seeded key |
+| FR-15 | Keep, DFIR-IRIS | Met | live on the VM (section 8): Keep accepted the forwarder's alerts and folded two with one fingerprint into one, once the webhook path was fixed; the API's IRIS client opened case 2 |
 | FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes; on the VM a test ban appeared in the nftables set and was removed when lifted; the responder is now a Compose service |
-| FR-17 | OpenVAS findings per asset | Partial | importer tested; findings shown per host on the Estate page; hosts loaded by the inventory import; Greenbone runs on the VM in its own window, taking turns with MISP |
+| FR-17 | OpenVAS findings per asset | Met | on the VM (section 8) Greenbone scanned the lab: 44 results, none with a CVE since the images are current, so none stored; the scan date recorded per covered host and shown on the Estate page; the importer is tested on findings with CVEs |
 | FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard; alerts pushed over the WebSocket as they are stored (section 1) |
 | FR-19 | Search and export | Met | address / network / technique search and a from/to time range (ISO 8601; a reversed or unreadable range is refused with a sentence); export as CSV or PDF with the same filters, audited |
 | FR-20 | JWT + Admin, Analyst, ML Engineer, Viewer | Met | Viewer added 23 Sep |
 | FR-21 | Audit of logins, approvals, changes, actions | Met | every login outcome, triage, decision, export, promotion |
 | FR-22 | Model registry with SHA-256 | Met | registry refuses a mismatched file |
-| FR-23 | Scripted attacks + replay | Met (replay, nmap scan on the live lab) / Partial (other scripts) | `lab/`; the nmap scan's 1000 flows on the VM, 999 above 0.5 (section 7) |
+| FR-23 | Scripted attacks + replay | Met | `lab/`: replay, and every scenario run on the live lab (section 8): scan 1301 of 1308 flows alerted, brute force 6 of 10, DNS exfiltration 50 of 50, web attack caught by signatures |
 | NFR-01 | Latency | Met | Tier A 0.07 ms, Tier D autoencoder 0.13 ms p99, Tier B 0.67 ms p99 |
 | NFR-02 | Page load | Met | section 3 |
 | NFR-03 | Honest evaluation | Met | temporal split, PR-AUC, Brier, held-out attacker, cross-dataset |
@@ -172,7 +172,7 @@ The live lab: attacker 172.30.0.100, victim-web 172.30.0.10 (nginx), victim-ssh
 
 ### Defects found only against the real servers
 
-Each of these passed the unit tests and the fakes. All 12 are fixed and committed.
+Each of these passed the unit tests and the fakes. All 16 are fixed and committed.
 
 | Component | Defect |
 |---|---|
@@ -188,6 +188,10 @@ Each of these passed the unit tests and the fakes. All 12 are fixed and committe
 | MISP | redirected all HTTP to https on 443, which nothing could reach |
 | Keep | restarted 40+ times: its named volume belonged to root, and Keep runs as uid 999 |
 | Sensor | ended a TCP flow on the first FIN, so the peer's FIN-ACK and the final ACK became one-packet flows of their own, two per connection, which Tier A scored like probes that got no reply; a flow now ends once both sides have sent a FIN, or at once on a RST |
+| Greenbone | gvmd was killed for memory at its 1 GB cap partway through every VT update, so its database stayed at 0 VTs and the scan config never appeared; the scan window waited a day. 2 GB now |
+| Suricata | ET's SSH brute-force rules name port 22 outright rather than `$SSH_PORTS`, and victim-ssh listens on 2222, so hydra raised no signature; `infra/suricata/lab.rules` carries the two rules on `$SSH_PORTS` |
+| Keep | every forward would have been refused, 400 "Provider netsentinel not found": Keep reads `/alerts/event/<x>` as one of its own provider types. The generic `/alerts/event` accepts the same body |
+| Detection writer | compose never passed it Keep's address and key, so it logged "Keep is not configured" and forwarded nothing |
 
 Also: IRIS's nginx could not read its private key (it needed owner 33), and the responder,
 which executes approved actions, had never been run on the VM; it is now a Compose service.
@@ -213,3 +217,66 @@ is born in shadow, and the card records where its baseline came from.
 Both were fitted on 1857 lab benign flows (04:37-05:20 UTC), are registered, and score in
 shadow on the VM; promotion goes through the shadow report. The Isolation Forest detects
 none of the scan before or after, and it was already in shadow.
+
+## 8. Second live run on the VM (28 September 2026)
+
+The sensor was redeployed with the TCP teardown fix at 06:21 UTC, and the scripted attacks
+were run one after another, each from its own lab address so its flows and alerts could be
+told apart. The raw figures are in `docs/testing/live/`.
+
+### The teardown fix, live
+
+In the hour before the fix the benign client's roughly 890 connections produced 1,774
+flows from the client and 889 from the web server: every server-side flow and half the
+client's were one-packet phantoms. After it: no one-packet flows, about 12 packets per
+flow with both FINs counted, and no alert from the benign client.
+
+### Telemetry delay (O1)
+
+Ten HTTP requests, each with a unique path and source port, were sent across the lab and
+ClickHouse was polled until each record appeared. Times include the polling interval.
+
+| Source | Median | Worst |
+|---|---|---|
+| Suricata eve `http` event | 4.7 s | 8.9 s |
+| Zeek `http.log` | 5.8 s | 7.4 s |
+| The sensor's flow record | 5.1 s | 6.3 s |
+
+### Each scenario, by signature and by the ML tiers
+
+| Scenario (source) | Flows | ML alerts | Suricata signatures |
+|---|---|---|---|
+| nmap `-sS -sV`, 1000 ports, and a 300-port rerun (.100) | 1308 | 1301 | ET SCAN Nmap Scripting Engine and Nmap User-Agent, inbound to MSSQL, Oracle, MySQL, PostgreSQL and VNC ports |
+| SSH brute force, hydra (.101, .107) | 10 | 6 | none on the first run; the two lab rules (potential SSH scan, libssh brute force) on the rerun |
+| Web attack: SQL injection, traversal, XSS, command injection (.102) | 9 | 1 | `/etc/passwd` in URI (3), SELECT USER SQL injection, script tag XSS, sqlmap scan |
+| DNS exfiltration, 50 high-entropy names (.103) | 50 | 50 | none |
+| HTTP exfiltration, one 8 MB POST (.104) | 1 | 0 | curl to a dotted quad (informational) |
+| Beacon, 40 callbacks at 30 +/- 5 s (.105) | 38 | 1 | curl to a dotted quad, unconfigured nginx (informational) |
+| Greenbone full-and-fast scan of the lab (.3) | | 776 | |
+
+The two sides cover each other: the flow models catch what has a shape (the scans, the
+login burst, the DNS tunnel) and the signatures catch what has content (the web payloads).
+Neither caught the single large POST or the slow beacon, whose flows each look like one
+ordinary request; a beacon is visible only as regularity across flows.
+
+### Bus buffering (NFR-06)
+
+The detection writer was stopped for 61 s while an nmap scan ran. 318 scored flows queued
+on `netsentinel.flows`; 13 s after the restart the writer's lag was 0, and all 300 of the
+alerting flows had a stored detection, checked flow id by flow id.
+
+### Greenbone (FR-17)
+
+With gvmd at 2 GB the feed loaded in 13 minutes and the scan of 172.30.0.0/24 took 11. It
+reported 44 results on five hosts: 36 log entries and 8 low (ICMP and TCP timestamps, a
+weak SSH MAC), none carrying a CVE, because the lab's images are current. The importer
+keeps findings with a CVE only, so it stored none, and recorded the scan date on the three
+inventory hosts it covered. The scanner itself raised 776 ML alerts on the way.
+
+### Keep and DFIR-IRIS (FR-15)
+
+Against the live Keep, the forwarder's alert body was accepted on the generic webhook and
+two alerts with one fingerprint became one Keep alert, as de-duplication intends; the
+provider path it used before was refused (defect above). Against the live IRIS, the API's
+case client opened case 2 for an nmap alert.
+
