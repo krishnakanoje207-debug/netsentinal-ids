@@ -41,31 +41,45 @@ export function saveBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-/** @param {{status: string, severity: string, q?: string, save?: typeof saveBlob}} props */
-export function ExportButton({ status, severity, q, save = saveBlob }) {
+/**
+ * @param {{status: string, severity: string, q?: string, from?: string, to?: string,
+ *   save?: typeof saveBlob}} props
+ */
+export function ExportButton({ status, severity, q, from, to, save = saveBlob }) {
   const { token } = useAuth()
 
   const exportAlerts = useMutation({
-    mutationFn: () =>
+    /** @param {'csv' | 'pdf'} format */
+    mutationFn: (format) =>
       api.exportAlerts(token, {
         status: status || undefined,
         severity: severity || undefined,
         q: q || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        format: format === 'pdf' ? 'pdf' : undefined,
       }),
     onSuccess: (result) => save(result.blob, result.filename),
   })
 
   return (
     <div className="flex flex-col items-end">
-      <button
-        type="button"
-        disabled={exportAlerts.isPending}
-        onClick={() => exportAlerts.mutate()}
-        className="control press inline-flex items-center gap-1.5 font-semibold disabled:opacity-50"
-      >
-        <DownloadSimple size={15} weight="bold" aria-hidden="true" />
-        {exportAlerts.isPending ? 'Exporting...' : 'Export CSV'}
-      </button>
+      <div className="flex gap-2">
+        {['csv', 'pdf'].map((format) => (
+          <button
+            key={format}
+            type="button"
+            disabled={exportAlerts.isPending}
+            onClick={() => exportAlerts.mutate(format)}
+            className="control press inline-flex items-center gap-1.5 font-semibold disabled:opacity-50"
+          >
+            <DownloadSimple size={15} weight="bold" aria-hidden="true" />
+            {exportAlerts.isPending && exportAlerts.variables === format
+              ? 'Exporting...'
+              : `Export ${format.toUpperCase()}`}
+          </button>
+        ))}
+      </div>
 
       {exportAlerts.data?.truncated && (
         <p

@@ -78,12 +78,47 @@ export function SearchBox({ value, onSearch }) {
   )
 }
 
+/**
+ * The time range, in the analyst's own clock; the API is sent the UTC instants.
+ *
+ * Committed as each end is set rather than on a button: a picker only reports a
+ * complete time, so there is no half-typed value to refuse on the way.
+ *
+ * @param {{from: string, to: string, onChange: (next: {from: string, to: string}) => void}} props
+ */
+export function TimeRange({ from, to, onChange }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="datetime-local"
+        value={from}
+        max={to || undefined}
+        onChange={(event) => onChange({ from: event.target.value, to })}
+        aria-label="Alerts raised from"
+        className="control data"
+      />
+      <span className="text-sm text-ink-dim">to</span>
+      <input
+        type="datetime-local"
+        value={to}
+        min={from || undefined}
+        onChange={(event) => onChange({ from, to: event.target.value })}
+        aria-label="Alerts raised until"
+        className="control data"
+      />
+    </div>
+  )
+}
+
 /** The filters in force, in words, each removable. */
-function ActiveFilters({ status, severity, q, onFilterChange }) {
+function ActiveFilters({ filters, onFilterChange }) {
+  const { status, severity, q, from, to } = filters
   const chips = [
-    q && { key: 'q', label: `"${q}"`, clear: { status, severity, q: '' } },
-    severity && { key: 'severity', label: `${severity} severity`, clear: { status, severity: '', q } },
-    status && { key: 'status', label: statusLabel(status), clear: { status: '', severity, q } },
+    q && { key: 'q', label: `"${q}"`, clear: { ...filters, q: '' } },
+    from && { key: 'from', label: `from ${from.replace('T', ' ')}`, clear: { ...filters, from: '' } },
+    to && { key: 'to', label: `until ${to.replace('T', ' ')}`, clear: { ...filters, to: '' } },
+    severity && { key: 'severity', label: `${severity} severity`, clear: { ...filters, severity: '' } },
+    status && { key: 'status', label: statusLabel(status), clear: { ...filters, status: '' } },
   ].filter(Boolean)
   if (chips.length === 0) return null
   return (
@@ -103,7 +138,7 @@ function ActiveFilters({ status, severity, q, onFilterChange }) {
       ))}
       <button
         type="button"
-        onClick={() => onFilterChange({ status: '', severity: '', q: '' })}
+        onClick={() => onFilterChange({ status: '', severity: '', q: '', from: '', to: '' })}
         className="text-[0.8125rem] font-semibold text-accent hover:underline"
       >
         Clear all
@@ -119,10 +154,11 @@ function uniqueById(rows) {
 }
 
 /**
- * @param {{status: string, severity: string, q: string,
- *   onFilterChange: (next: {status: string, severity: string, q: string}) => void}} props
+ * @typedef {{status: string, severity: string, q: string, from?: string, to?: string}} Filters
+ * @param {Filters & {onFilterChange: (next: Filters) => void}} props
  */
-export function AlertFeed({ status, severity, q, onFilterChange }) {
+export function AlertFeed({ status, severity, q, from = '', to = '', onFilterChange }) {
+  const filters = { status, severity, q, from, to }
   const { token } = useAuth()
   const stream = useStream()
 
@@ -130,12 +166,14 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
   // between pages shifts the next one down a row, so rows are de-duplicated by id.
   const { data, error, isLoading, dataUpdatedAt, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useInfiniteQuery({
-      queryKey: ['alerts', 'feed', status, severity, q],
+      queryKey: ['alerts', 'feed', status, severity, q, from, to],
       queryFn: ({ pageParam }) =>
         api.alerts(token, {
           status: status || undefined,
           severity: severity || undefined,
           q: q || undefined,
+          from: from || undefined,
+          to: to || undefined,
           limit: PAGE_SIZE,
           offset: pageParam,
         }),
@@ -147,7 +185,7 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
     })
   const alerts = data ? uniqueById(data.pages.flat()) : undefined
 
-  const filtered = Boolean(status || severity || q)
+  const filtered = Boolean(status || severity || q || from || to)
   const emptyText = filtered
     ? `No alerts match ${q ? `"${q}"` : 'these filters'}. That is not the same as nothing happening.`
     : stream.status === 'open'
@@ -163,11 +201,12 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
       />
 
       <div className="mb-4 flex flex-wrap items-start gap-2" data-tour="filters">
-        <SearchBox value={q} onSearch={(next) => onFilterChange({ status, severity, q: next })} />
+        <SearchBox value={q} onSearch={(next) => onFilterChange({ ...filters, q: next })} />
+        <TimeRange from={from} to={to} onChange={(range) => onFilterChange({ ...filters, ...range })} />
         <select
           aria-label="Filter by status"
           value={status}
-          onChange={(event) => onFilterChange({ status: event.target.value, severity, q })}
+          onChange={(event) => onFilterChange({ ...filters, status: event.target.value })}
           className="control"
         >
           <option value="">All statuses</option>
@@ -180,7 +219,7 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
         <select
           aria-label="Filter by severity"
           value={severity}
-          onChange={(event) => onFilterChange({ status, severity: event.target.value, q })}
+          onChange={(event) => onFilterChange({ ...filters, severity: event.target.value })}
           className="control capitalize"
         >
           <option value="">All severities</option>
@@ -191,11 +230,11 @@ export function AlertFeed({ status, severity, q, onFilterChange }) {
           ))}
         </select>
         <div className="sm:ml-auto">
-          <ExportButton status={status} severity={severity} q={q} />
+          <ExportButton status={status} severity={severity} q={q} from={from} to={to} />
         </div>
       </div>
 
-      <ActiveFilters status={status} severity={severity} q={q} onFilterChange={onFilterChange} />
+      <ActiveFilters filters={filters} onFilterChange={onFilterChange} />
 
       {error && <ErrorNotice error={error} />}
 

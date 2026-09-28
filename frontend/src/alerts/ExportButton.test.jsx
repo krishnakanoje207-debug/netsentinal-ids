@@ -38,7 +38,7 @@ function csvResponse({ truncated = false, filename = 'netsentinel-alerts-2026092
   }
 }
 
-function setup({ status = '', severity = '', response = csvResponse({}) } = {}) {
+function setup({ status = '', severity = '', from, to, response = csvResponse({}) } = {}) {
   const save = vi.fn()
   vi.mocked(fetch).mockImplementation(async (input) => {
     if (String(input).includes('/auth/me')) {
@@ -50,7 +50,7 @@ function setup({ status = '', severity = '', response = csvResponse({}) } = {}) 
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>
       <AuthProvider>
-        <ExportButton status={status} severity={severity} save={save} />
+        <ExportButton status={status} severity={severity} from={from} to={to} save={save} />
       </AuthProvider>
     </QueryClientProvider>,
   )
@@ -97,6 +97,38 @@ describe('ExportButton', () => {
       // The file has to match the screen it was taken from, or it is evidence
       // nobody can reproduce.
       expect(requested.some((url) => url.includes('status=new&severity=high'))).toBe(true)
+    })
+  })
+
+  it('offers a PDF beside the CSV, of the same filtered feed', async () => {
+    const { user, save } = setup({
+      severity: 'high',
+      from: '2026-09-20T09:00',
+      to: '2026-09-20T12:00',
+      response: csvResponse({ filename: 'netsentinel-alerts-20260920-100000.pdf' }),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Export PDF' }))
+
+    await waitFor(() => expect(save).toHaveBeenCalled())
+    expect(save.mock.calls[0][1]).toBe('netsentinel-alerts-20260920-100000.pdf')
+    const url = new URL(
+      vi.mocked(fetch).mock.calls.map((call) => String(call[0])).find((u) => u.includes('/export')),
+      'http://localhost',
+    )
+    expect(url.searchParams.get('format')).toBe('pdf')
+    expect(url.searchParams.get('severity')).toBe('high')
+    // The picker's local time leaves as the UTC instant the API compares.
+    expect(url.searchParams.get('from')).toBe(new Date('2026-09-20T09:00').toISOString())
+    expect(url.searchParams.get('to')).toBe(new Date('2026-09-20T12:00').toISOString())
+  })
+
+  it('asks for the CSV without naming a format, which is the default', async () => {
+    const { user } = setup({})
+    await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+
+    await waitFor(() => {
+      const requested = vi.mocked(fetch).mock.calls.map((call) => String(call[0]))
+      expect(requested.some((u) => u.includes('/export') && !u.includes('format='))).toBe(true)
     })
   })
 

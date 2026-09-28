@@ -169,7 +169,7 @@ function Shell({ children }) {
 }
 
 function Authenticated() {
-  const [filters, setFilters] = useState({ status: '', severity: '', q: '' })
+  const [filters, setFilters] = useState({ status: '', severity: '', q: '', from: '', to: '' })
   return (
     <StreamProvider>
       <TourProvider>
@@ -184,6 +184,8 @@ function Authenticated() {
                   status={filters.status}
                   severity={filters.severity}
                   q={filters.q}
+                  from={filters.from}
+                  to={filters.to}
                   onFilterChange={setFilters}
                 />
               }

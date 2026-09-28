@@ -83,3 +83,49 @@ describe('AlertFeed paging', () => {
     expect(await screen.findByText(`${PAGE_SIZE + 1} alerts shown`)).toBeInTheDocument()
   })
 })
+
+describe('AlertFeed time range', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  function renderWithRange(onFilterChange = () => {}) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <AlertFeed
+            status=""
+            severity=""
+            q=""
+            from="2026-09-20T09:00"
+            to=""
+            onFilterChange={onFilterChange}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('asks the API for the range on screen', async () => {
+    const fetchAlerts = vi.spyOn(api, 'alerts').mockResolvedValue([alert(1)])
+
+    renderWithRange()
+    await screen.findByText('1 alert shown')
+
+    expect(fetchAlerts).toHaveBeenCalledWith(
+      'a-token',
+      expect.objectContaining({ from: '2026-09-20T09:00', to: undefined }),
+    )
+  })
+
+  it('shows the range as a filter that can be removed on its own', async () => {
+    vi.spyOn(api, 'alerts').mockResolvedValue([])
+    const onFilterChange = vi.fn()
+
+    renderWithRange(onFilterChange)
+    await userEvent.setup().click(
+      await screen.findByRole('button', { name: 'Remove filter from 2026-09-20 09:00' }),
+    )
+
+    expect(onFilterChange).toHaveBeenCalledWith({ status: '', severity: '', q: '', from: '', to: '' })
+  })
+})

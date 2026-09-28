@@ -124,7 +124,11 @@ export async function rawRequest(path, options = {}) {
  * One builder for the feed and the export, because the export claims to be the
  * screen it was taken from and two copies of this would eventually make that a lie.
  *
- * @param {{status?: string, severity?: string, q?: string}} params
+ * `from` and `to` arrive as a time picker's value, in the analyst's own clock, and
+ * leave as the UTC instant the API compares against.
+ *
+ * @param {{status?: string, severity?: string, q?: string, from?: string, to?: string,
+ *   format?: string}} params
  * @param {number} [limit]
  */
 function feedQuery(params, limit) {
@@ -132,6 +136,9 @@ function feedQuery(params, limit) {
   if (params.status) query.set('status', params.status)
   if (params.severity) query.set('severity', params.severity)
   if (params.q) query.set('q', params.q)
+  if (params.from) query.set('from', new Date(params.from).toISOString())
+  if (params.to) query.set('to', new Date(params.to).toISOString())
+  if (params.format) query.set('format', params.format)
   if (limit !== undefined) query.set('limit', String(limit))
   if (params.offset) query.set('offset', String(params.offset))
   return query.toString()
@@ -215,7 +222,7 @@ export const api = {
     request(`/alerts/${alertId}/escalate`, { token, method: 'POST', json: {} }),
 
   /**
-   * The feed as a CSV file. Returns the body and the two things the caller needs to
+   * The feed as a CSV file, or a PDF with `format: 'pdf'`. Returns the body and the two things the caller needs to
    * save it honestly: the name the server chose, and whether the file is partial.
    *
    * Not a plain link, because the API needs a bearer token and an anchor cannot
