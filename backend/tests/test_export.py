@@ -10,11 +10,22 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+import zlib
 from datetime import datetime, timezone
 
 import pytest
 
-from netsentinel_api.services.export import COLUMNS, alerts_csv, filename, neutralise
+from netsentinel_api.db.models import Role, User
+from netsentinel_api.rbac import MODELS_READ, as_column
+from netsentinel_api.security import create_access_token
+from netsentinel_api.services.export import (
+    COLUMNS,
+    alerts_csv,
+    alerts_pdf,
+    filename,
+    neutralise,
+)
 
 NOW = datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc)
 
@@ -186,8 +197,100 @@ def test_the_read_is_recorded(client, auth_header, session, analyst):
         "status": None,
         "severity": "high",
         "search": None,
+        "from": None,
+        "to": None,
+        "format": "csv",
     }
 
 
 def test_exporting_needs_permission_to_read_alerts(client):
     assert client.get("/api/v1/alerts/export").status_code == 401
+
+
+# --- the PDF ---------------------------------------------------------------
+
+PDF = "/api/v1/alerts/export?format=pdf"
+
+
+def pdf_text(body: bytes) -> bytes:
+    """The page content, inflated. fpdf2 compresses every stream it writes."""
+    streams = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", body, re.S)
+    return b"".join(zlib.decompress(stream) for stream in streams)
+
+
+def test_the_pdf_is_a_pdf_attachment(client, auth_header):
+    response = client.get(PDF, headers=auth_header)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    assert response.headers["content-disposition"].endswith('.pdf"')
+    assert response.headers["x-export-truncated"] == "false"
+
+
+def test_the_pdf_has_the_csv_columns_and_the_row(client, auth_header):
+    text = pdf_text(client.get(PDF, headers=auth_header).content)
+
+    for column in COLUMNS:
+        # Narrow columns wrap a long header, so only its first few letters are
+        # certain to sit on one line.
+        assert f"({column[:8]}".encode() in text
+    assert b"(203.0.113.9)" in text
+    assert b"(0.9300)" in text
+
+
+def test_the_pdf_says_which_filters_produced_it(client, auth_header):
+    text = pdf_text(client.get(f"{PDF}&severity=high&q=T1046", headers=auth_header).content)
+
+    # A printed table cannot be re-filtered, so it has to say what it is.
+    assert b"severity=high" in text
+    assert b"search=T1046" in text
+    assert b"Generated: " in text
+
+
+def test_the_pdf_honours_the_feed_filters(client, auth_header):
+    text = pdf_text(client.get(f"{PDF}&severity=low", headers=auth_header).content)
+
+    assert b"Rows: 0" in text
+    assert b"(203.0.113.9)" not in text
+
+
+def test_a_pdf_value_a_spreadsheet_would_run_is_printed_as_it_is():
+    # Nothing executes a PDF, so the apostrophe the CSV adds would only alter it.
+    text = pdf_text(alerts_pdf([{"alert_id": 1, "source": "-x"}], {}, NOW))
+
+    assert b"(-x)" in text
+
+
+def test_a_value_the_pdf_font_cannot_draw_does_not_fail_the_export():
+    body = alerts_pdf([{"alert_id": 1, "source": "snow\u2603man"}], {}, NOW)
+
+    assert b"(snow?man)" in pdf_text(body)
+
+
+def test_the_pdf_export_is_recorded_as_a_pdf(client, auth_header, session):
+    client.get(PDF, headers=auth_header)
+
+    entry = next(e for e in session.audit_entries() if e.action == "alerts.exported")
+    assert entry.details["format"] == "pdf"
+
+
+def test_an_unknown_format_is_refused(client, auth_header):
+    assert client.get("/api/v1/alerts/export?format=xlsx", headers=auth_header).status_code == 422
+
+
+def test_the_pdf_needs_a_signed_in_reader(client):
+    assert client.get(PDF).status_code == 401
+
+
+def test_the_pdf_needs_alerts_read(client, settings, session):
+    session.user = User(user_id=9, username="modeller-only", email="m@example.test",
+                        password_hash="x", role_id=9, is_active=True,
+                        role=Role(role_id=9, name="models_only",
+                                  permissions=as_column({MODELS_READ})))
+    token = create_access_token(settings, 9, "models_only")
+
+    response = client.get(PDF, headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 403
+    assert "alerts:read" in response.json()["detail"]

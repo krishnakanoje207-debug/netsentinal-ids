@@ -32,7 +32,7 @@ from netsentinel_api.db.models import (
     User,
     Vulnerability,
 )
-from netsentinel_api.services.search import AddressQuery, TechniqueQuery
+from netsentinel_api.services.search import AddressQuery, TechniqueQuery, TimeRange
 from netsentinel_api.services.shadow import LABELS, Scored
 
 
@@ -63,6 +63,20 @@ def _matching(
         or_(Alert.src_ip.op("<<=")(network), Alert.dst_ip.op("<<=")(network))
     )
 
+
+def _within(statement: Select, window: TimeRange | None) -> Select:
+    """Narrow a query to a time range, for the feed and the export alike.
+
+    On ``created_at`` itself, so ix_alerts_created_at serves it.
+    """
+    if window is None:
+        return statement
+    if window.start is not None:
+        statement = statement.where(Alert.created_at >= window.start)
+    if window.end is not None:
+        statement = statement.where(Alert.created_at <= window.end)
+    return statement
+
 #: Cap on a page of alerts. A SOC feed is unbounded; a response must not be.
 MAX_PAGE_SIZE = 200
 
@@ -92,6 +106,7 @@ class AlertRepository:
         status: AlertStatus | None = None,
         severity: Severity | None = None,
         search: AddressQuery | TechniqueQuery | None = None,
+        window: TimeRange | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Alert]:
@@ -101,6 +116,7 @@ class AlertRepository:
         if severity is not None:
             statement = statement.where(Alert.severity == severity)
         statement = _matching(statement, search)
+        statement = _within(statement, window)
         # Newest first, which is what ix_alerts_created_at is ordered for.
         statement = (
             statement.order_by(Alert.created_at.desc())
@@ -115,6 +131,7 @@ class AlertRepository:
         status: AlertStatus | None = None,
         severity: Severity | None = None,
         search: AddressQuery | TechniqueQuery | None = None,
+        window: TimeRange | None = None,
         limit: int = MAX_EXPORT_ROWS,
     ) -> list[dict]:
         """The same feed, flattened for a file, with the score and the model that
@@ -144,6 +161,7 @@ class AlertRepository:
         if severity is not None:
             statement = statement.where(Alert.severity == severity)
         statement = _matching(statement, search)
+        statement = _within(statement, window)
         statement = statement.order_by(Alert.created_at.desc()).limit(
             min(limit, MAX_EXPORT_ROWS) + 1
         )

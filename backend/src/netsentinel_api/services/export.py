@@ -1,9 +1,11 @@
 """Turning alerts into a file somebody can take away.
 
-CSV, and not XLSX or PDF. An export exists to leave this system - into a
-spreadsheet, an appendix, a mail to whoever owns the host - and CSV is the one
-format that opens in all of those without a library that can break. The dashboard
-already renders the alert; this is for the readers who do not have it.
+CSV first. An export exists to leave this system - into a spreadsheet, an
+appendix, a mail to whoever owns the host - and CSV is the one format that opens in
+all of those without a library that can break. The dashboard already renders the
+alert; this is for the readers who do not have it. A PDF of the same rows is
+offered for the reader who will print it or file it, and it says which filters
+produced it, because a printed table cannot be re-filtered.
 
 **The rule that shapes this module: a spreadsheet executes what it opens.** A cell
 beginning ``=``, ``+``, ``-``, ``@`` or a control character is a formula to Excel and
@@ -24,6 +26,8 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime
+
+from fpdf import FPDF
 
 #: The header row, and the order the fields are written in.
 COLUMNS = (
@@ -56,8 +60,12 @@ def neutralise(value: str) -> str:
     return f"'{value}" if value.startswith(FORMULA_LEAD) else value
 
 
-def _cell(value: object) -> str:
-    """One value, as it is written into the file."""
+def _cell(value: object, guard: bool = True) -> str:
+    """One value, as it is written into the file.
+
+    ``guard=False`` for the PDF, which nothing executes: an apostrophe there would
+    only be the value, altered.
+    """
     if value is None:
         # An empty cell, not "None" and not a dash. See the module docstring.
         return ""
@@ -69,7 +77,7 @@ def _cell(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, float):
         return f"{value:.4f}"
-    return neutralise(str(value))
+    return neutralise(str(value)) if guard else str(value)
 
 
 def alerts_csv(rows: list[dict]) -> str:
@@ -90,7 +98,42 @@ def alerts_csv(rows: list[dict]) -> str:
     return buffer.getvalue()
 
 
-def filename(now: datetime, truncated: bool) -> str:
+#: Column widths in the PDF, in millimetres, in COLUMNS order. They add up to the
+#: width of a landscape A4 page inside its margins.
+PDF_WIDTHS = (15, 42, 17, 38, 18, 30, 30, 23, 15, 30, 19)
+
+
+def _latin1(text: str) -> str:
+    """What the PDF's built-in font can draw. Anything else becomes a ``?``, rather
+    than failing the whole export over one hostname."""
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
+def alerts_pdf(rows: list[dict], filters: dict[str, str | None], now: datetime) -> bytes:
+    """The same rows as the CSV, as a printable table under the filters that chose them."""
+    pdf = FPDF(orientation="landscape", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.set_margins(10, 10)
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 8, "NetSentinel alert export", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", size=9)
+    used = ", ".join(f"{k}={v}" for k, v in filters.items() if v) or "none"
+    pdf.cell(0, 5, _latin1(f"Filters: {used}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, f"Generated: {now.isoformat()}  |  Rows: {len(rows)}",
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", size=7)
+    with pdf.table(col_widths=PDF_WIDTHS, text_align="LEFT", line_height=4) as table:
+        table.row(COLUMNS)
+        for row in rows:
+            table.row([_latin1(_cell(row.get(column), guard=False)) for column in COLUMNS])
+    return bytes(pdf.output())
+
+
+def filename(now: datetime, truncated: bool, extension: str = "csv") -> str:
     """What the browser saves the file as.
 
     The truncation travels in the name rather than only in a response header,
@@ -100,4 +143,4 @@ def filename(now: datetime, truncated: bool) -> str:
     """
     stamp = now.strftime("%Y%m%d-%H%M%S")
     suffix = "-truncated" if truncated else ""
-    return f"netsentinel-alerts-{stamp}{suffix}.csv"
+    return f"netsentinel-alerts-{stamp}{suffix}.{extension}"

@@ -11,6 +11,8 @@ dependencies = [
     # The Greenbone importer reads a file it cannot vouch for; see services/vulns.py.
     "defusedxml>=0.7",
     "fastapi>=0.115",
+    # The alert export's PDF. Pure Python, and what it needs is already locked.
+    "fpdf2>=2.7",
     # Outbound HTTP: MISP attribute sync and the Keep webhook.
     "httpx>=0.27",
     "psycopg[binary]>=3.2",

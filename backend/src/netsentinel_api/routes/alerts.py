@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
@@ -47,12 +47,14 @@ from netsentinel_api.services.cases import (
     case_title,
     client_from,
 )
-from netsentinel_api.services.export import alerts_csv, filename
+from netsentinel_api.services.export import alerts_csv, alerts_pdf, filename
 from netsentinel_api.services.search import (
     AddressQuery,
     TechniqueQuery,
+    TimeRange,
     Unsearchable,
     parse as parse_search,
+    parse_range,
 )
 from netsentinel_api.services.response import (
     AlreadyProposed,
@@ -114,6 +116,20 @@ def _searched(query: str | None) -> AddressQuery | TechniqueQuery | None:
         ) from exc
 
 
+#: What the from/to parameters accept.
+TIME_HELP = "ISO 8601, e.g. 2026-09-20T10:00:00Z; a time with no zone is UTC"
+
+
+def _window(start: str | None, end: str | None) -> TimeRange | None:
+    """Read the time range, refused the way the search box is."""
+    try:
+        return parse_range(start, end)
+    except Unsearchable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
     alerts: AlertRepoDep,
@@ -121,6 +137,12 @@ def list_alerts(
     status_filter: Annotated[AlertStatus | None, Query(alias="status")] = None,
     severity: Annotated[Severity | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=60, description=SEARCH_HELP)] = None,
+    start: Annotated[
+        str | None, Query(alias="from", max_length=40, description=TIME_HELP)
+    ] = None,
+    end: Annotated[
+        str | None, Query(alias="to", max_length=40, description=TIME_HELP)
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Alert]:
@@ -128,6 +150,7 @@ def list_alerts(
         status=status_filter,
         severity=severity,
         search=_searched(q),
+        window=_window(start, end),
         limit=limit,
         offset=offset,
     )
@@ -153,9 +176,17 @@ def export_alerts(
     status_filter: Annotated[AlertStatus | None, Query(alias="status")] = None,
     severity: Annotated[Severity | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=60, description=SEARCH_HELP)] = None,
+    start: Annotated[
+        str | None, Query(alias="from", max_length=40, description=TIME_HELP)
+    ] = None,
+    end: Annotated[
+        str | None, Query(alias="to", max_length=40, description=TIME_HELP)
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_EXPORT_ROWS)] = MAX_EXPORT_ROWS,
+    file_format: Annotated[Literal["csv", "pdf"], Query(alias="format")] = "csv",
 ) -> Response:
-    """The feed as a CSV file, with the risk score and the model beside each row.
+    """The feed as a CSV file, with the risk score and the model beside each row, or
+    the same rows as a PDF table for a reader who will print it.
 
     The filters are the feed's filters, so what comes out is what the analyst was
     looking at. An export that silently differs from the screen it was taken from is
@@ -171,8 +202,9 @@ def export_alerts(
     happened rather than a change to what was read, so this stays a GET.
     """
     search = _searched(q)
+    window = _window(start, end)
     rows = alerts.for_export(
-        status=status_filter, severity=severity, search=search, limit=limit
+        status=status_filter, severity=severity, search=search, window=window, limit=limit
     )
 
     # The repository fetches one more than the cap precisely so this can tell a
@@ -180,27 +212,35 @@ def export_alerts(
     truncated = len(rows) > limit
     rows = rows[:limit]
 
+    # Recorded so the audit row says which alerts left, not just how many. "1,412
+    # rows" answers nothing on its own. The PDF prints the same, under its title.
+    used = {
+        "status": status_filter.value if status_filter else None,
+        "severity": severity.value if severity else None,
+        "search": str(search) if search is not None else None,
+        "from": window.start.isoformat() if window and window.start else None,
+        "to": window.end.isoformat() if window and window.end else None,
+    }
     session.add(
         AuditLog(
             user_id=user.user_id,  # type: ignore[attr-defined]
             action="alerts.exported",
             entity="alerts",
             details={
-                "rows": len(rows),
-                "truncated": truncated,
-                "status": status_filter.value if status_filter else None,
-                "severity": severity.value if severity else None,
-                # Recorded so the audit row says which alerts left, not just how
-                # many. "1,412 rows" answers nothing on its own.
-                "search": str(search) if search is not None else None,
+                "rows": len(rows), "truncated": truncated, **used, "format": file_format
             },
         )
     )
 
-    name = filename(datetime.now(timezone.utc), truncated)
+    now = datetime.now(timezone.utc)
+    name = filename(now, truncated, file_format)
+    if file_format == "pdf":
+        content, media_type = alerts_pdf(rows, used, now), "application/pdf"
+    else:
+        content, media_type = alerts_csv(rows), "text/csv; charset=utf-8"
     return Response(
-        content=alerts_csv(rows),
-        media_type="text/csv; charset=utf-8",
+        content=content,
+        media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{name}"',
             # For the dashboard, which warns before the file is even opened. The

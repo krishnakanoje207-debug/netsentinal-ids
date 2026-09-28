@@ -163,7 +163,7 @@ class FakeAlertRepo:
         self.alerts = alerts
         self.summaries = summaries if summaries is not None else []
 
-    def _filtered(self, status, severity, search=None) -> list[Alert]:
+    def _filtered(self, status, severity, search=None, window=None) -> list[Alert]:
         rows = self.alerts
         if status is not None:
             rows = [a for a in rows if a.status == status]
@@ -171,10 +171,17 @@ class FakeAlertRepo:
             rows = [a for a in rows if a.severity == severity]
         if search is not None:
             rows = [a for a in rows if _matches(a, search)]
+        if window is not None:
+            rows = [
+                a for a in rows
+                if (window.start is None or a.created_at >= window.start)
+                and (window.end is None or a.created_at <= window.end)
+            ]
         return rows
 
-    def list(self, *, status=None, severity=None, search=None, limit=50, offset=0):
-        return self._filtered(status, severity, search)[offset : offset + limit]
+    def list(self, *, status=None, severity=None, search=None, window=None, limit=50,
+             offset=0):
+        return self._filtered(status, severity, search, window)[offset : offset + limit]
 
     def summary(self, top: int = 5) -> dict:
         from collections import Counter
@@ -204,7 +211,7 @@ class FakeAlertRepo:
         )
 
     def for_export(
-        self, *, status=None, severity=None, search=None, limit=10_000
+        self, *, status=None, severity=None, search=None, window=None, limit=10_000
     ) -> list[dict]:
         """Flattened the way the real join flattens it, including the extra row.
 
@@ -214,7 +221,7 @@ class FakeAlertRepo:
         untestable and the truncation notice permanently false.
         """
         rows = []
-        for alert in self._filtered(status, severity, search)[: limit + 1]:
+        for alert in self._filtered(status, severity, search, window)[: limit + 1]:
             detection = alert.detection
             rows.append(
                 {

@@ -9,18 +9,21 @@ or the literal being compared as text without needing a server to catch it.
 from __future__ import annotations
 
 import ipaddress
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
 from netsentinel_api.db.models import Alert
-from netsentinel_api.db.repositories import _matching
+from netsentinel_api.db.repositories import _matching, _within
 from netsentinel_api.services.search import (
     AddressQuery,
     TechniqueQuery,
+    TimeRange,
     Unsearchable,
     parse,
+    parse_range,
 )
 
 
@@ -194,3 +197,106 @@ def test_the_audit_row_says_which_alerts_left(client, auth_header, session):
     entry = next(e for e in session.audit_entries() if e.action == "alerts.exported")
     # "1,412 rows" answers nothing on its own.
     assert entry.details["search"] == "203.0.113.0/24"
+
+
+# --- the time range --------------------------------------------------------
+# The fixture alert was raised at 2026-09-20T10:00:00Z.
+
+def test_a_time_with_a_zone_is_read_as_given():
+    window = parse_range("2026-09-20T12:00:00+02:00", None)
+
+    assert window == TimeRange(datetime(2026, 9, 20, 10, tzinfo=timezone.utc), None)
+
+
+def test_a_time_with_no_zone_is_read_as_utc():
+    # The zone every alert is stored and exported in, not the server's.
+    window = parse_range(None, "2026-09-20T10:00")
+
+    assert window.end == datetime(2026, 9, 20, 10, tzinfo=timezone.utc)
+
+
+def test_an_empty_range_narrows_nothing():
+    assert parse_range(None, None) is None
+    assert parse_range("", "  ") is None
+
+
+def test_the_range_is_on_created_at_and_inclusive():
+    window = parse_range("2026-09-20T09:00:00Z", "2026-09-20T11:00:00Z")
+    sql = str(_within(select(Alert), window).compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+    # On the column itself, so ix_alerts_created_at serves it.
+    assert "alerts.created_at >= '2026-09-20 09:00:00+00:00'" in sql
+    assert "alerts.created_at <= '2026-09-20 11:00:00+00:00'" in sql
+
+
+def test_no_range_narrows_nothing_in_sql():
+    assert "WHERE" not in str(_within(select(Alert), None))
+
+
+def test_the_feed_can_be_narrowed_to_a_time_range(client, auth_header):
+    inside = client.get("/api/v1/alerts?from=2026-09-20T09:00:00Z&to=2026-09-20T11:00:00Z",
+                        headers=auth_header)
+    assert [row["alert_id"] for row in inside.json()] == [100]
+
+    before = client.get("/api/v1/alerts?to=2026-09-20T09:59:59Z", headers=auth_header)
+    assert before.json() == []
+
+    after = client.get("/api/v1/alerts?from=2026-09-20T10:00:01Z", headers=auth_header)
+    assert after.json() == []
+
+
+def test_the_bounds_are_inclusive(client, auth_header):
+    exact = "from=2026-09-20T10:00:00Z&to=2026-09-20T10:00:00Z"
+    assert len(client.get(f"/api/v1/alerts?{exact}", headers=auth_header).json()) == 1
+
+
+def test_an_unreadable_time_is_refused_with_a_sentence(client, auth_header):
+    response = client.get("/api/v1/alerts?from=yesterday", headers=auth_header)
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "'yesterday'" in detail
+    assert "ISO 8601" in detail
+
+
+def test_a_range_that_ends_before_it_starts_is_refused(client, auth_header):
+    response = client.get("/api/v1/alerts?from=2026-09-21T00:00:00Z&to=2026-09-20T00:00:00Z",
+                          headers=auth_header)
+
+    # Refused rather than answered with an empty list nobody can tell from "quiet".
+    assert response.status_code == 422
+    assert "starts" in response.json()["detail"]
+
+
+def test_the_range_composes_with_the_search(client, auth_header):
+    found = client.get("/api/v1/alerts?q=T1046&from=2026-09-20T00:00:00Z", headers=auth_header)
+    assert len(found.json()) == 1
+
+    missed = client.get("/api/v1/alerts?q=T1046&from=2026-09-21T00:00:00Z", headers=auth_header)
+    assert missed.json() == []
+
+
+def test_the_export_honours_the_time_range(client, auth_header):
+    import csv
+    import io
+
+    found = client.get("/api/v1/alerts/export?from=2026-09-20T00:00:00Z", headers=auth_header)
+    assert len(list(csv.DictReader(io.StringIO(found.text)))) == 1
+
+    missed = client.get("/api/v1/alerts/export?to=2026-09-19T00:00:00Z", headers=auth_header)
+    assert list(csv.DictReader(io.StringIO(missed.text))) == []
+
+
+def test_a_bad_range_refuses_the_export_too(client, auth_header):
+    response = client.get("/api/v1/alerts/export?format=pdf&to=soon", headers=auth_header)
+
+    assert response.status_code == 422
+
+
+def test_the_audit_row_says_which_time_range_left(client, auth_header, session):
+    client.get("/api/v1/alerts/export?from=2026-09-20T00:00:00Z", headers=auth_header)
+
+    entry = next(e for e in session.audit_entries() if e.action == "alerts.exported")
+    assert entry.details["from"] == "2026-09-20T00:00:00+00:00"
+    assert entry.details["to"] is None
