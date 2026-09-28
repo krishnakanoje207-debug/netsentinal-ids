@@ -87,6 +87,8 @@ class _FlowState:
     ttl_max: int = 0
     splt_len: list[int] = field(default_factory=list)
     splt_iat: list[float] = field(default_factory=list)
+    fin_fwd: bool = False
+    fin_bwd: bool = False
     closed: bool = False
 
     def add_packet(self, ts: float, length: int, is_forward: bool, ttl: int,
@@ -121,9 +123,18 @@ class _FlowState:
             for name, bit in _TCP_FLAGS:
                 if tcp_flags & bit:
                     self.flags[name] += 1
-            # A FIN or RST ends the conversation; the tracker flushes it next sweep.
-            if tcp_flags & (dpkt.tcp.TH_FIN | dpkt.tcp.TH_RST):
+            # A RST ends the conversation at once. A FIN only half-closes it: the
+            # peer's FIN and the final ACK still follow, and closing on the first
+            # FIN turned those two packets into one-packet phantom flows. So the
+            # flow ends on the packet after both sides have sent a FIN (the last
+            # ACK); the idle timeout covers a teardown that never completes.
+            if tcp_flags & dpkt.tcp.TH_RST or (self.fin_fwd and self.fin_bwd):
                 self.closed = True
+            if tcp_flags & dpkt.tcp.TH_FIN:
+                if is_forward:
+                    self.fin_fwd = True
+                else:
+                    self.fin_bwd = True
 
         self.ts_last = ts
 

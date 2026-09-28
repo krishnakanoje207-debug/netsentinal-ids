@@ -7,7 +7,8 @@ byte-identical vectors from the same packets.
 
 from __future__ import annotations
 
-from synthetic import EXPECTED_FLOWS, TCP_DPORT, TCP_SPORT, UDP_DPORT
+import dpkt
+from synthetic import EXPECTED_FLOWS, TCP_DPORT, TCP_SPORT, UDP_DPORT, _tcp, _to_client, _to_server
 
 from netsentinel_core.features.contract import FEATURE_DIM, SPLT_N, TIER_B_FEATURES
 from netsentinel_core.features.extractor import FlowTracker, extract_from_pcap
@@ -90,15 +91,45 @@ def test_udp_and_icmp_are_tracked(pcap_path):
     assert icmp[0].key.src_port == 0
 
 
-def test_fin_closes_the_flow_before_flush(frames):
-    """The TCP flow must be emitted by update(), not held back until flush()."""
+def _teardown(frames):
+    """The fixture's TCP conversation plus the rest of a four-way close: after the
+    client's FIN, the server's FIN-ACK and the client's final ACK."""
+    fin_ack = dpkt.tcp.TH_FIN | dpkt.tcp.TH_ACK
+    return frames + [
+        (1000.070, _to_client(_tcp(TCP_DPORT, TCP_SPORT, fin_ack))),
+        (1000.080, _to_server(_tcp(TCP_SPORT, TCP_DPORT, dpkt.tcp.TH_ACK))),
+    ]
+
+
+def test_full_teardown_closes_the_flow_before_flush(frames):
+    """The TCP flow must be emitted by update() once the close completes."""
     tracker = FlowTracker()
     emitted = []
-    for ts, frame in frames:
+    for ts, frame in _teardown(frames):
         emitted.extend(tracker.update(ts, frame))
     assert any(f.key.dst_port == TCP_DPORT for f in emitted), (
-        "FIN should have expired the TCP flow during streaming"
+        "a completed FIN handshake should have expired the TCP flow during streaming"
     )
+
+
+def test_teardown_packets_stay_in_their_flow(frames):
+    """Closing on the first FIN split the peer's FIN and the final ACK into
+    one-packet flows of their own - two phantoms per connection, which Tier A
+    scored like probes with no reply."""
+    tcp = [f for f in _run_live(_teardown(frames)) if f.key.proto == 6]
+    assert len(tcp) == 1, f"teardown split into {len(tcp)} flows"
+    assert tcp[0].scalars["in_pkts"] == 5
+    assert tcp[0].scalars["out_pkts"] == 3
+    assert tcp[0].scalars["tcp_fin_count"] == 2
+
+
+def test_rst_closes_the_flow_at_once():
+    tracker = FlowTracker()
+    tracker.update(1000.0, _to_server(_tcp(TCP_SPORT, TCP_DPORT, dpkt.tcp.TH_SYN)))
+    emitted = tracker.update(
+        1000.01, _to_client(_tcp(TCP_DPORT, TCP_SPORT, dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK))
+    )
+    assert len(emitted) == 1 and emitted[0].scalars["out_pkts"] == 1
 
 
 def test_every_flow_produces_a_full_vector(pcap_path):
