@@ -350,6 +350,7 @@ services:
       # Outside /etc/suricata: the image's entrypoint chowns that whole directory and
       # exits when it meets a read-only file there.
       - ./suricata/netsentinel.yaml:/etc/netsentinel/suricata.yaml:ro
+      - ./suricata/lab.rules:/etc/netsentinel/lab.rules:ro
     mem_limit: 1g
     restart: unless-stopped
 

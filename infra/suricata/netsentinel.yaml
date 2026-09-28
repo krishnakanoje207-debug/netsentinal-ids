@@ -47,6 +47,12 @@ vars:
     TEREDO_PORTS: 3544
     SIP_PORTS: "[5060, 5061]"
 
+# A list, so merged by position: the first entry restates the stock one (ET Open,
+# from default-rule-path) and the second adds the lab's rules, mounted beside this file.
+rule-files:
+  - suricata.rules
+  - /etc/netsentinel/lab.rules
+
 app-layer:
   protocols:
     tls:

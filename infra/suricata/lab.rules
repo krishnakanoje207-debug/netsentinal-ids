@@ -1,0 +1,7 @@
+# The lab's own rules, loaded after ET Open (netsentinel.yaml, rule-files).
+#
+# ET's SSH brute-force rules name port 22 outright rather than $SSH_PORTS, and
+# victim-ssh listens on 2222, so hydra's run against it raised no signature at all.
+# These are ET 2001219 and 2006546 unchanged except for the port and a local sid.
+alert tcp $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (msg:"NETSENTINEL LAB Potential SSH Scan (ET 2001219 on SSH_PORTS)"; flow:to_server; flags:S,12; threshold: type both, track by_src, count 5, seconds 120; classtype:attempted-recon; sid:9100001; rev:1;)
+alert ssh $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (msg:"NETSENTINEL LAB LibSSH Based Frequent SSH Connections Likely BruteForce Attack (ET 2006546 on SSH_PORTS)"; flow:established,to_server; content:"SSH-"; content:"libssh"; within:20; threshold: type both, count 5, seconds 30, track by_src; classtype:attempted-admin; sid:9100002; rev:1;)
