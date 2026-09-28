@@ -453,10 +453,16 @@ services:
       - --family-card=/artefacts/family/model_card.json
       - --sensor-id=${WRITER_SENSOR_ID:-1}
       - --brokers=redpanda:9092
-    environment: &pipeline-db
-      NETSENTINEL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD}@postgres:5432/${NETSENTINEL_DB:-netsentinel}
-      # Required by the API settings these processes load, though they sign nothing.
-      NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+    environment:
+      <<: &pipeline-db
+        NETSENTINEL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-netsentinel}:${POSTGRES_PASSWORD}@postgres:5432/${NETSENTINEL_DB:-netsentinel}
+        # Required by the API settings these processes load, though they sign nothing.
+        NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+      # The writer is what forwards each stored alert to Keep; without these it logs
+      # "Keep is not configured" and stores alerts only. Keep is in the intel profile,
+      # and a forward that fails leaves the alert stored.
+      NETSENTINEL_KEEP_URL: http://keep:8080
+      NETSENTINEL_KEEP_API_KEY: ${KEEP_API_KEY:-}
     volumes:
       - ../artefacts:/artefacts:ro
     depends_on:
