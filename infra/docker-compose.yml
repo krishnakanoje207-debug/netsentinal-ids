@@ -26,10 +26,10 @@
 # 0.45 GB, app 0.6 GB beyond storage. About 9.3 GB; with hids (3 GB) that is the
 # always-on core, 12.3 GB.
 #
-# intel (2.9 GB), case (1.6 GB) and scan (4.3 GB once its one-shot containers exit)
+# intel (2.9 GB), case (1.6 GB) and scan (5.3 GB once its one-shot containers exit)
 # are separate profiles and take turns. Core + case is 13.7 GB. Core + intel is
 # 15.0 GB, which leaves about 1 GB for the OS: too tight to leave running, so for the
-# demo stop hids or dashboards alongside it. Core + scan (16.4 GB) does not fit;
+# demo stop hids or dashboards alongside it. Core + scan (17.4 GB) does not fit;
 # scan needs hids stopped. None of the three produces
 # detections: threat intelligence enriches alerts, IRIS holds the cases, Greenbone
 # runs in a window. The detection path runs with all three stopped.
@@ -1109,7 +1109,10 @@ services:
         condition: service_healthy
       report-formats:
         condition: service_healthy
-    mem_limit: 1g
+    # Loading the feed's VTs into its database peaks above 1 GB: at 1g the kernel
+    # killed gvmd partway through every attempt, the VT count stayed at 0, and the
+    # scan configs that wait on it never appeared.
+    mem_limit: 2g
     restart: unless-stopped
 
   # Writes openvas.conf and the log config into the shared volume, then exits.

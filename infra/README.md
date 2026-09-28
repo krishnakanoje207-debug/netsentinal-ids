@@ -26,15 +26,15 @@ Budget, as the sum of each profile's memory caps:
 | **core** | everything above | **12.3 GB** |
 | `intel` | MISP, MariaDB, Redis, Keep | 2.9 GB |
 | `case` | DFIR-IRIS app, worker, PostgreSQL, RabbitMQ, nginx | 1.6 GB |
-| `scan` | Greenbone gvmd, ospd-openvas, openvasd, Redis, PostgreSQL, feeds | 4.3 GB |
+| `scan` | Greenbone gvmd, ospd-openvas, openvasd, Redis, PostgreSQL, feeds | 5.3 GB |
 
 The `pipeline` profile moved the core from 10.4 GB to 12.1 GB, and the responder to
 12.3 GB, and the rotation with them. Core plus `case` is 13.9 GB and fits. Core plus
 `intel` is 15.2 GB, which leaves under 1 GB for the OS: too little to run unattended, so
-for the demo stop `dashboards` or `hids` while `intel` is up. Core plus `scan` is 16.6 GB
+for the demo stop `dashboards` or `hids` while `intel` is up. Core plus `scan` is 17.6 GB
 and does not fit at all;
 stop `hids` for the scan window. None of the three rotating profiles produces
-detections, so the detection path never waits on them. `scan`'s 4.3 GB excludes three
+detections, so the detection path never waits on them. `scan`'s 5.3 GB excludes three
 one-shot containers that exit once their setup is done.
 
 **On an 8 GB VM** (the only size the student subscription allowed) the caps no longer
@@ -544,7 +544,7 @@ daily feed images, so when `up` fails with `not found` on a digest, bump it to w
 `docker buildx imagetools inspect <image>:latest` reports. `ospd-openvas` also joins the lab bridge,
 because Docker keeps bridges apart and a scanner outside it would find nothing.
 
-It needs 4.3 GB, so **stop `intel` first**:
+It needs 5.3 GB (gvmd alone 2 GB while it loads the feed), so **stop `intel` first**:
 
 ```bash
 docker compose --profile intel down
