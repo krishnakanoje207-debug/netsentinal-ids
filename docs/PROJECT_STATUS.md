@@ -27,7 +27,7 @@ Updated 27 September 2026.
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
 | Tier D on the lab's own traffic | The benchmark-calibrated models called the lab's plain HTTP 0.99 anomalous (12.1% of benign flows alerted). Re-baselined on 1857 lab benign flows: 0.0% on 1190 held-out ones, the scan still 100% detected; in shadow | `artefacts/tier_d_ae_lab/model_card.json` |
-| Automated tests | 976 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 978 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
