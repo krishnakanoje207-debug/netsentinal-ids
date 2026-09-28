@@ -34,6 +34,7 @@ import {
   isWatchingOnly,
   tierName,
 } from '../lib/glossary'
+import { InputFeatures } from './InputFeatures'
 import { ShapChart } from './ShapChart'
 
 /** Triage moves, named for what the analyst means rather than the status they set. */
@@ -265,6 +266,9 @@ export function AlertDetail() {
             ) : (
               <>
                 <ShapChart contributions={explanation.feature_contributions} />
+                <div className="mt-6 border-t border-line pt-5">
+                  <InputFeatures features={explanation.features} />
+                </div>
                 <div className="mt-6 border-t border-line pt-5">
                   <h3 className="text-sm font-bold text-ink-dim">What each model said</h3>
                   <ul className="mt-3 grid gap-3 sm:grid-cols-2">

@@ -71,6 +71,8 @@
  * @property {Record<string, number>} feature_contributions
  * @property {string[]} top_features strongest absolute contribution first
  * @property {boolean} shadow true when the verdict was logged but not acted on
+ * @property {Record<string, number> | null} features the input values the verdict was
+ *   computed from; null for a detection stored before they were recorded
  */
 
 /**
