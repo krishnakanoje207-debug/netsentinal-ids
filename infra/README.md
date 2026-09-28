@@ -324,6 +324,13 @@ docker compose --profile app up -d                       # recreate the API with
 docker compose exec api netsentinel-sync-intel --since 7d
 ```
 
+Keep needs no key of its own: it runs with `AUTH_TYPE=NO_AUTH` on the backplane, and the
+detection writer posts every stored alert to its generic webhook (`/alerts/event`) with
+`KEEP_API_KEY` as the header. Keep folds alerts with one fingerprint (source, addresses,
+technique) into one. The writer reads the address only when it starts, so recreate it after
+`intel` first comes up; while Keep is stopped each forward fails fast, is logged, and the
+alert stays stored.
+
 ## Response: CrowdSec and the nftables bouncer
 
 The `response` profile runs the CrowdSec **Local API only** — `DISABLE_AGENT` is set,
