@@ -172,7 +172,7 @@ The live lab: attacker 172.30.0.100, victim-web 172.30.0.10 (nginx), victim-ssh
 
 ### Defects found only against the real servers
 
-Each of these passed the unit tests and the fakes. All 11 are fixed and committed.
+Each of these passed the unit tests and the fakes. All 12 are fixed and committed.
 
 | Component | Defect |
 |---|---|
@@ -187,6 +187,7 @@ Each of these passed the unit tests and the fakes. All 11 are fixed and committe
 | Flow and Tier C sinks | every insert HTTP 400: JSONEachRow refuses an unquoted decimal timestamp; now integer milliseconds. The unit tests had checked only the row builder, never a real server |
 | MISP | redirected all HTTP to https on 443, which nothing could reach |
 | Keep | restarted 40+ times: its named volume belonged to root, and Keep runs as uid 999 |
+| Sensor | ended a TCP flow on the first FIN, so the peer's FIN-ACK and the final ACK became one-packet flows of their own, two per connection, which Tier A scored like probes that got no reply; a flow now ends once both sides have sent a FIN, or at once on a RST |
 
 Also: IRIS's nginx could not read its private key (it needed owner 33), and the responder,
 which executes approved actions, had never been run on the VM; it is now a Compose service.

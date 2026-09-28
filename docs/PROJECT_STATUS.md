@@ -35,7 +35,7 @@ The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle 
 and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
 Azure for Students offered no 16 GB size. Measured there, everything but MISP and
 Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
-profiles"). The first live run found eleven defects that the tests against fakes had not,
+profiles"). The first live run found twelve defects that the tests against fakes had not,
 all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |
@@ -76,7 +76,8 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Enrol the laptop's Wazuh agent with Sysmon through the SSH tunnel | F3 on Windows | The Wazuh agent installed on the laptop |
-| 2 | Promote the lab-baselined Tier D models once the shadow report on live traffic agrees | Fewer false alarms live | A few hours of live lab traffic |
+| 2 | Redeploy the sensor with the TCP teardown fix, re-baseline both lab Tier D cards on the flows it produces, and re-measure the 12.1% to 0.0% result | The current lab cards were fitted on flows that included the teardown phantoms | The VM reachable again |
+| 3 | Promote the lab-baselined Tier D models once the shadow report on live traffic agrees | Fewer false alarms live | A few hours of live lab traffic |
 
 **Attack-family accuracy (investigated 26 September, left as it is).** Backdoor, DoS and
 Analysis stay weak (test F1 0.05-0.37), and flow features cannot fix it. On the same
