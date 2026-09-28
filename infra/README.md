@@ -539,7 +539,9 @@ importer needs. `services/vulns.py` reads a report that `gvm-cli` fetched over t
 socket, so the web UI chain (`gsa`, `gsad`, `gvm-config`, `nginx`) is dropped and the
 scanner, its feeds and `gvm-tools` stay. Greenbone publishes only moving tags, so each
 image is pinned by digest; the feed images carry the NVT and SCAP data themselves, and
-a fresher feed is a deliberate digest bump. `ospd-openvas` also joins the lab bridge,
+a fresher feed is a deliberate digest bump. The registry drops old digests of the
+daily feed images, so when `up` fails with `not found` on a digest, bump it to what
+`docker buildx imagetools inspect <image>:latest` reports. `ospd-openvas` also joins the lab bridge,
 because Docker keeps bridges apart and a scanner outside it would find nothing.
 
 It needs 4.3 GB, so **stop `intel` first**:

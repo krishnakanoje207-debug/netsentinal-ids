@@ -975,7 +975,7 @@ services:
   # Docker keeps bridges apart, and a scanner on its own network would find nothing.
 
   vulnerability-tests:
-    image: registry.community.greenbone.net/community/vulnerability-tests:latest@sha256:335eb5c772bbdcddc1c03e542b1af57bc03cfe7cdac2e48cad99ea2bfbc76396
+    image: registry.community.greenbone.net/community/vulnerability-tests:latest@sha256:4a53236ffb2f0f17e4d3319e8cfebb8c00e5ddb248ca837adea88488c1c0a4b8
     profiles: [scan]
     environment:
       FEED_RELEASE: "24.10"
@@ -1047,7 +1047,7 @@ services:
     mem_limit: 64m
 
   gpg-data:
-    image: registry.community.greenbone.net/community/gpg-data:latest@sha256:3d82a9d944295ed06381ca6bccd112025f8e2be4f9f3f8b8ea4c2275b6758b2a
+    image: registry.community.greenbone.net/community/gpg-data:latest@sha256:aa6954b978ce1f7320ec508b91ca39e3632632533fca9e425bd74296a369389c
     profiles: [scan]
     volumes:
       - gvm-gpg-data:/mnt
