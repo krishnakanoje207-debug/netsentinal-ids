@@ -45,10 +45,10 @@ all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the de
 | Redpanda (F5) | VM | **Running**: topics created by the init job; sensor, writer and sinks on it | |
 | ClickHouse, Vector, Grafana (F5, F19) | VM | **Running**: all four tables filling live; Grafana's ClickHouse datasource healthy | |
 | Sensor, scorers, writers as one pipeline (F10) | VM | **Running**: sensor (Tiers A, B, D, and the two lab-baselined Tier D cards in shadow), Tier C window scorer, detection writer, flow sinks, Suricata importer | |
-| MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: MISP answers the API over the backplane, Keep healthy | MISP's API key is made in its UI before the first sync |
-| DFIR-IRIS (F15) | VM | **Running**: the API is wired to it and trusts its certificate | |
+| MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: Keep accepted forwarded alerts and de-duplicated them by fingerprint (28 Sep); MISP answers the API over the backplane | MISP's API key is made in its UI, so its sync has not run live |
+| DFIR-IRIS (F15) | VM | **Running**: the API's case client opened a case on it (28 Sep) | |
 | CrowdSec + nftables (F16) | VM | **Running**: a ban reached the kernel's nftables set and was lifted; the responder that executes approved actions is a service | |
-| Greenbone/OpenVAS (F17) | VM, scan window | Compose `scan` profile; importer built and tested; findings and the date of each host's last scan shown on the Estate page | Runs in its own window on the VM |
+| Greenbone/OpenVAS (F17) | VM, scan window | **Run** in its window (28 Sep): the lab scanned in 11 minutes, 44 results, none with a CVE; scan dates on the Estate page | Runs in its own window on the VM |
 | Asset inventory | Assumed by F16/F17 | **Built**: `netsentinel-import-assets` from a CSV; the demo imports the dataset's ten servers | |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
 | Live alert feed (F18) | Dashboard | **Running**: a PostgreSQL trigger announces each stored alert and the API pushes it over the WebSocket | |
