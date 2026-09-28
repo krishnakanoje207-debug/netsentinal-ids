@@ -45,7 +45,7 @@ from typing import Any, Callable, Mapping
 from netsentinel_api.db.models import Alert, AlertStatus, Detection, IoC, Severity
 from netsentinel_api.services.intel import find, link
 from netsentinel_api.services.soar import Forwarder
-from netsentinel_core.features.contract import FEATURE_DIM
+from netsentinel_core.features.contract import FEATURE_DIM, FEATURE_ORDER
 from sqlalchemy.orm import Session
 
 from netsentinel_writer.consumer import Consumer
@@ -204,6 +204,10 @@ class DetectionWriter:
             risk_score=risk_score,
             model_scores=model_scores,
             shap_values=self._explainer.explain(flow),
+            # The whole contract vector, SPLT included, not only what the explaining
+            # tier read: Tier B scores the packet sequence, and a verdict is traceable
+            # only if every input any tier saw is kept with it.
+            features={name: float(flow[name]) for name in FEATURE_ORDER if name in flow},
             shadow=shadow,
         )
         session.add(detection)

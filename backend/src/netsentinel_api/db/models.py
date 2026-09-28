@@ -270,6 +270,9 @@ class Detection(Base):
     # NOT NULL is the point: M2's class diagram composes a Detection with exactly
     # one Explanation, so an unexplained verdict must be unrepresentable.
     shap_values: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # The contract feature values the verdict was computed from, by name. Null only
+    # on rows written before 0007, which cannot be back-filled honestly.
+    features: Mapped[dict | None] = mapped_column(JSONB)
     shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

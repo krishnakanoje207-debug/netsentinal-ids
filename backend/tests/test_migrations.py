@@ -111,6 +111,18 @@ def test_new_alerts_are_announced_on_the_channel_the_api_listens_on(upgrade_sql)
     assert "DROP TRIGGER IF EXISTS alerts_notify_created ON alerts" in buffer.getvalue()
 
 
+def test_detections_keep_their_input_features(upgrade_sql):
+    """0007: nullable, because rows written before it cannot be back-filled."""
+    assert "ALTER TABLE detections ADD COLUMN features JSONB" in upgrade_sql
+    assert "features JSONB NOT NULL" not in upgrade_sql
+
+    buffer = io.StringIO()
+    config = Config(str(BACKEND / "alembic.ini"), output_buffer=buffer)
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    command.downgrade(config, "0007:0006", sql=True)
+    assert "ALTER TABLE detections DROP COLUMN features" in buffer.getvalue()
+
+
 def test_named_check_constraints_survive_the_migration(upgrade_sql):
     for name in (
         "ck_risk_score_range",

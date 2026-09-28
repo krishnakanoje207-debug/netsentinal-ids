@@ -158,6 +158,11 @@ class ExplanationOut(BaseModel):
     shadow: bool = Field(
         description="true when the verdict was logged but not acted on"
     )
+    features: dict[str, float] | None = Field(
+        default=None,
+        description="the input feature values the verdict was computed from; null for "
+        "a detection stored before they were recorded",
+    )
 
 
 class AlertDetailOut(AlertOut):

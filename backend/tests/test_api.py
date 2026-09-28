@@ -274,6 +274,18 @@ def test_alert_detail_ranks_features_by_absolute_contribution(client, auth_heade
     assert explanation["shadow"] is False
 
 
+def test_alert_detail_includes_the_input_features(client, auth_header, detection):
+    detection.features = {"duration_ms": 12.5, "in_pkts": 3.0}
+    explanation = client.get(f"{V1}/alerts/100", headers=auth_header).json()["explanation"]
+    assert explanation["features"] == {"duration_ms": 12.5, "in_pkts": 3.0}
+
+
+def test_a_legacy_detection_says_its_features_were_not_recorded(client, auth_header):
+    """Rows written before 0007 have none, and the API must not invent them."""
+    explanation = client.get(f"{V1}/alerts/100", headers=auth_header).json()["explanation"]
+    assert explanation["features"] is None
+
+
 def test_alert_detail_includes_linked_iocs(client, auth_header):
     response = client.get(f"{V1}/alerts/100", headers=auth_header)
     assert response.json()["ioc_values"] == ["203.0.113.9"]

@@ -23,7 +23,7 @@ from netsentinel_api.db.models import (
     IoCType,
     Severity,
 )
-from netsentinel_core.features.contract import TIER_A_FEATURES
+from netsentinel_core.features.contract import FEATURE_ORDER, TIER_A_FEATURES
 from netsentinel_writer.consumer import ReplayConsumer
 from netsentinel_writer.writer import (
     ContractMismatch,
@@ -93,6 +93,17 @@ def test_a_decided_flow_becomes_an_explained_detection(writer, session, make_pay
     assert detection.shadow is False
     assert set(detection.shap_values) == set(TIER_A_FEATURES)
     assert writer.stats.detections == 1
+
+
+def test_a_detection_keeps_the_input_values_it_was_scored_on(
+    writer, session, make_flow, make_payload
+):
+    """Every contract feature, SPLT included, under its own name; no metadata."""
+    values = {name: float(index) + 0.5 for index, name in enumerate(FEATURE_ORDER)}
+    detection = writer.handle(session, make_payload(flow=make_flow(**values)))
+
+    assert detection.features == values
+    assert "src_ip" not in detection.features
 
 
 def test_an_alerting_verdict_raises_an_alert(writer, session, make_payload):

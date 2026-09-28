@@ -91,6 +91,7 @@ def _explanation(detection: Detection | None) -> ExplanationOut | None:
         feature_contributions=contributions,
         top_features=ranked[:TOP_FEATURE_COUNT],
         shadow=detection.shadow,
+        features=detection.features,
     )
 
 
