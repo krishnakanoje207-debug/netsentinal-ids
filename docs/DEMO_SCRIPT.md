@@ -183,7 +183,7 @@ And for a dark room, the same station after dark."
 
 **Say:** "On a temporal test split the Tier A model reaches PR-AUC 1.0000 with a 0.05%
 false-positive rate; the anomaly autoencoder catches 98.5% of attacks at 0.8% false
-alarms, in 0.13 milliseconds a flow. 978 Python and 133 dashboard tests pass. What it
+alarms, in 0.13 milliseconds a flow. 1,062 Python and 155 dashboard tests pass. What it
 does not claim: moved to other networks' traffic the same model drops to 0.74 and 0.05,
 which is why every model must earn its place in shadow mode; the attack-family model
 that decides how harmful an attack is gets only 57% macro-F1, so most alerts carry an

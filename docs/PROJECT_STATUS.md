@@ -27,7 +27,7 @@ Updated 27 September 2026.
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
 | Tier D on the lab's own traffic | The benchmark-calibrated models called the lab's plain HTTP 0.99 anomalous (12.1% of benign flows alerted). Re-baselined on 1857 lab benign flows: 0.0% on 1190 held-out ones, the scan still 100% detected; in shadow | `artefacts/tier_d_ae_lab/model_card.json` |
-| Automated tests | 978 Python + 133 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 1,062 Python + 155 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -35,7 +35,7 @@ The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle 
 and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
 Azure for Students offered no 16 GB size. Measured there, everything but MISP and
 Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
-profiles"). The first live run found twelve defects that the tests against fakes had not,
+profiles"). The live runs found sixteen defects that the tests against fakes had not,
 all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |

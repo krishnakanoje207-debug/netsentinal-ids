@@ -9,9 +9,9 @@ beside this file. Section 7 records the first run on the cloud VM, on 27 Septemb
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 978 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 1062 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
-| Dashboard (React components, API client, stream) | 133 | all pass | `cd frontend; npx vitest run` |
+| Dashboard (React components, API client, stream) | 155 | all pass | `cd frontend; npx vitest run` |
 
 Test counts are from 27 September, after the Tier D re-baselining tool and its 11 tests
 were added; coverage was last measured on 24 September.
