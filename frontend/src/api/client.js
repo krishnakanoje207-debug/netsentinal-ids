@@ -254,6 +254,48 @@ export const api = {
   promoteModel: (token, modelId, since) =>
     request(`/models/${modelId}/promote`, { token, method: 'POST', json: { since } }),
 
+  /** @returns {Promise<import('./types').Role[]>} */
+  roles: (token) => request('/admin/roles', { token }),
+
+  /** @returns {Promise<import('./types').Account[]>} */
+  users: (token) => request('/admin/users', { token }),
+
+  /** @returns {Promise<import('./types').Account>} */
+  createUser: (token, account) => request('/admin/users', { token, method: 'POST', json: account }),
+
+  /**
+   * Change a role or enable/disable an account; a field left out is left alone.
+   *
+   * @param {{role?: string, is_active?: boolean}} change
+   * @returns {Promise<import('./types').Account>}
+   */
+  updateUser: (token, userId, change) =>
+    request(`/admin/users/${userId}`, { token, method: 'PATCH', json: change }),
+
+  /** @returns {Promise<import('./types').Sensor[]>} */
+  sensors: (token) => request('/admin/sensors', { token }),
+
+  /** @returns {Promise<import('./types').Sensor>} */
+  setSensorRevoked: (token, sensorId, revoked) =>
+    request(`/admin/sensors/${sensorId}`, { token, method: 'PATCH', json: { revoked } }),
+
+  /**
+   * The audit trail, newest first. `from` and `to` are a time picker's value, sent as
+   * UTC instants as the feed's are.
+   *
+   * @param {{actor?: string, action?: string, from?: string, to?: string, offset?: number}} params
+   * @returns {Promise<import('./types').AuditEntry[]>}
+   */
+  audit: (token, params = {}, limit = 50) => {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (params.actor) query.set('actor', params.actor)
+    if (params.action) query.set('action', params.action)
+    if (params.from) query.set('from', new Date(params.from).toISOString())
+    if (params.to) query.set('to', new Date(params.to).toISOString())
+    if (params.offset) query.set('offset', String(params.offset))
+    return request(`/admin/audit?${query}`, { token })
+  },
+
   /** @returns {Promise<import('./types').ResponseAction>} */
   decide: (token, actionId, decision, comment) =>
     request(`/actions/${actionId}/decision`, {

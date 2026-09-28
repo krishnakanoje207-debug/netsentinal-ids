@@ -194,6 +194,49 @@
  */
 
 /**
+ * GET /admin/roles
+ *
+ * @typedef {object} Role
+ * @property {string} name
+ * @property {string[]} permissions
+ */
+
+/**
+ * An account on the admin page.
+ *
+ * @typedef {object} Account
+ * @property {number} user_id
+ * @property {string} username
+ * @property {string} email
+ * @property {boolean} is_active
+ * @property {string | null} role
+ * @property {string | null} created_at
+ */
+
+/**
+ * @typedef {object} Sensor
+ * @property {number} sensor_id
+ * @property {'suricata' | 'zeek' | 'early_flow' | 'wazuh_agent' | 'openvas'} type
+ * @property {string} hostname the inventory host it runs on
+ * @property {'online' | 'offline' | 'degraded'} status
+ * @property {string | null} last_seen
+ * @property {boolean} revoked the writer refuses to ingest for a revoked sensor
+ */
+
+/**
+ * One audit_log row.
+ *
+ * @typedef {object} AuditEntry
+ * @property {number} log_id
+ * @property {string} ts
+ * @property {number | null} user_id
+ * @property {string | null} username null for a system action
+ * @property {string} action
+ * @property {string} entity
+ * @property {Record<string, unknown>} details
+ */
+
+/**
  * @typedef {object} Health
  * @property {string} status
  * @property {string} version
@@ -214,4 +257,7 @@ export const PERMISSIONS = {
   modelsRead: 'models:read',
   modelsDeploy: 'models:deploy',
   assetsRead: 'assets:read',
+  usersManage: 'users:manage',
+  sensorsManage: 'sensors:manage',
+  auditRead: 'audit:read',
 }

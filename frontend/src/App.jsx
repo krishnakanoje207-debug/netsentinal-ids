@@ -7,7 +7,7 @@ import { PERMISSIONS } from './api/types'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { LoginPage } from './auth/LoginPage'
 import { HoverCard } from './components/HoverCard'
-import { Brain, HardDrives, House, ListBullets, Scales, SignOut } from './components/icons'
+import { Brain, HardDrives, House, ListBullets, Scales, SignOut, UserGear } from './components/icons'
 import { Mark } from './components/Mark'
 import { StationClock } from './components/StationClock'
 import { ROLES, roleName } from './lib/glossary'
@@ -25,6 +25,7 @@ const AlertDetail = named(() => import('./alerts/AlertDetail'), 'AlertDetail')
 const ApprovalQueue = named(() => import('./actions/ApprovalQueue'), 'ApprovalQueue')
 const ModelsPage = named(() => import('./models/ModelsPage'), 'ModelsPage')
 const EstatePage = named(() => import('./estate/EstatePage'), 'EstatePage')
+const AdminPage = named(() => import('./admin/AdminPage'), 'AdminPage')
 
 export function createQueryClient() {
   return new QueryClient({
@@ -133,6 +134,9 @@ function Shell({ children }) {
             <PageSign to="/approvals" icon={Scales}>Approvals</PageSign>
             {can(PERMISSIONS.assetsRead) && <PageSign to="/estate" icon={HardDrives}>Estate</PageSign>}
             {can(PERMISSIONS.modelsRead) && <PageSign to="/models" icon={Brain}>Models</PageSign>}
+            {(can(PERMISSIONS.usersManage) || can(PERMISSIONS.sensorsManage) || can(PERMISSIONS.auditRead)) && (
+              <PageSign to="/admin" icon={UserGear}>Admin</PageSign>
+            )}
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
@@ -194,6 +198,7 @@ function Authenticated() {
             <Route path="/approvals" element={<ApprovalQueue />} />
             <Route path="/estate" element={<EstatePage onFilter={setFilters} />} />
             <Route path="/models" element={<ModelsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           </Suspense>
