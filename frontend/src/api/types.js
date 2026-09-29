@@ -82,6 +82,7 @@
  * @typedef {Alert & {
  *   explanation: Explanation | null,
  *   ioc_values: string[],
+ *   corroborated_by_alert_id: number | null,
  * }} AlertDetail
  */
 

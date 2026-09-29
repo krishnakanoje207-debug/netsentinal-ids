@@ -346,6 +346,21 @@ export function AlertDetail() {
               </ul>
             </Panel>
           )}
+
+          {alert.corroborated_by_alert_id != null && (
+            <Panel
+              title="Confirmed by a signature"
+              description="A Suricata rule matched traffic between the same two addresses at the same time, so this alert was raised one severity level."
+            >
+              <Link
+                to={`/alerts/${alert.corroborated_by_alert_id}`}
+                viewTransition
+                className="font-semibold text-accent hover:underline"
+              >
+                Signature alert {alert.corroborated_by_alert_id}
+              </Link>
+            </Panel>
+          )}
         </div>
 
         <aside className="space-y-6 lg:col-span-4">

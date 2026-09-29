@@ -23,6 +23,7 @@ const ALERT = {
   created_at: '2026-09-23T11:38:05Z',
   detection_id: 7,
   ioc_values: [],
+  corroborated_by_alert_id: null,
   explanation: {
     risk_score: 0.994,
     model_scores: { tier_a: 0.99, tier_d: 0.96 },
@@ -103,6 +104,19 @@ describe('AlertDetail actions', () => {
       await screen.findByRole('button', { name: /Propose blocking 175.45.176.0/ }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Confirm attack/ })).not.toBeInTheDocument()
+  })
+
+  it('names the signature alert that confirmed this one, as a link', async () => {
+    renderAs('viewer', { ...ALERT, corroborated_by_alert_id: 250 })
+    const link = await screen.findByRole('link', { name: 'Signature alert 250' })
+    expect(link).toHaveAttribute('href', '/alerts/250')
+    expect(screen.getByText('Confirmed by a signature')).toBeInTheDocument()
+  })
+
+  it('shows no signature panel when no rule agreed', async () => {
+    renderAs('viewer')
+    await screen.findByText('Your account can read this alert but not act on it.')
+    expect(screen.queryByText('Confirmed by a signature')).not.toBeInTheDocument()
   })
 
   it('tells a viewer it can read but not act, instead of showing nothing', async () => {
