@@ -2,7 +2,7 @@
 
 Where NetSentinel-AI stands against the locked plan (Research Comparison and 15-Day
 Execution Plan v1.0), what remains, and why some planned tools are not running yet.
-Updated 27 September 2026.
+Updated 29 September 2026.
 
 ## Measured today
 
@@ -26,7 +26,7 @@ Updated 27 September 2026.
 | Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
-| Tier D on the lab's own traffic | The benchmark-calibrated models called the lab's plain HTTP 0.99 anomalous (12.1% of benign flows alerted). Re-baselined on 1857 lab benign flows: 0.0% on 1190 held-out ones, the scan still 100% detected; in shadow | `artefacts/tier_d_ae_lab/model_card.json` |
+| Tier D on the lab's own traffic | The 11-12% of benign lab flows that alerted before the TCP teardown fix were all one-packet phantoms; after it, 0 of 28,738 benign flows alert with any Tier D card. Re-baselined on 21,631 post-fix flows (29 Sep): 0.84-0.89% flagged alone on 7,107 held-out ones; not promoted, since either would lose SSH brute-force (and, for the autoencoder, DNS tunnel) flows the fused rule catches today; in shadow | `docs/testing/TEST_REPORT.md`, section 9 |
 | Automated tests | 1,062 Python + 155 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
@@ -76,8 +76,11 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Enrol the laptop's Wazuh agent with Sysmon through the SSH tunnel | F3 on Windows | The Wazuh agent installed on the laptop |
-| 2 | Redeploy the sensor with the TCP teardown fix, re-baseline both lab Tier D cards on the flows it produces, and re-measure the 12.1% to 0.0% result | The current lab cards were fitted on flows that included the teardown phantoms | The VM reachable again |
-| 3 | Promote the lab-baselined Tier D models once the shadow report on live traffic agrees | Fewer false alarms live | A few hours of live lab traffic |
+
+Done 29 September: the sensor on the VM runs the teardown fix, both lab Tier D cards were refitted
+on the flows it produces, and the result was re-measured (`docs/testing/TEST_REPORT.md`, section 9).
+Promoting them was weighed and declined on that evidence: it would cost detections and remove no
+false alarm. They stay in shadow.
 
 **Attack-family accuracy (investigated 26 September, left as it is).** Backdoor, DoS and
 Analysis stay weak (test F1 0.05-0.37), and flow features cannot fix it. On the same
