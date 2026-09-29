@@ -27,7 +27,7 @@ Updated 29 September 2026.
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
 | Tier D on the lab's own traffic | The 11-12% of benign lab flows that alerted before the TCP teardown fix were all one-packet phantoms; after it, 0 of 28,738 benign flows alert with any Tier D card. Re-baselined on 21,631 post-fix flows (29 Sep): 0.84-0.89% flagged alone on 7,107 held-out ones; not promoted, since either would lose SSH brute-force (and, for the autoencoder, DNS tunnel) flows the fused rule catches today; in shadow | `docs/testing/TEST_REPORT.md`, section 9 |
-| Automated tests | 1,062 Python + 155 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 1,064 Python + 155 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 
@@ -35,7 +35,7 @@ The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle 
 and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
 Azure for Students offered no 16 GB size. Measured there, everything but MISP and
 Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
-profiles"). The live runs found sixteen defects that the tests against fakes had not,
+profiles"). The live runs found eighteen defects that the tests against fakes had not,
 all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |
@@ -48,6 +48,7 @@ all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the de
 | MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: Keep accepted forwarded alerts and de-duplicated them by fingerprint (28 Sep); MISP answers the API over the backplane | MISP's API key is made in its UI, so its sync has not run live |
 | DFIR-IRIS (F15) | VM | **Running**: the API's case client opened a case on it (28 Sep) | |
 | CrowdSec + nftables (F16) | VM | **Running**: a ban reached the kernel's nftables set and was lifted; the responder that executes approved actions is a service | |
+| Wazuh Active Response (F16) | VM | **Run** (29 Sep): an approved process kill and account lock carried out on the VM's agent by the responder, and the lock undone | Isolation not run live: it would cut the SSH session driving the test |
 | Greenbone/OpenVAS (F17) | VM, scan window | **Run** in its window (28 Sep): the lab scanned in 11 minutes, 44 results, none with a CVE; scan dates on the Estate page | Runs in its own window on the VM |
 | Asset inventory | Assumed by F16/F17 | **Built**: `netsentinel-import-assets` from a CSV; the demo imports the dataset's ten servers | |
 | Ollama Copilot (F20) | Laptop GPU | **Running**: llama3.2:3b on the GTX 1650; summaries on the alert page | Replies that invent a measurement are rejected |
