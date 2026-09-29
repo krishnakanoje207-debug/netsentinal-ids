@@ -315,14 +315,30 @@ so the repository stays the source of truth.
 ## intel: MISP
 
 The API reaches MISP as `http://misp` on the backplane. Its key is made in MISP, not
-here: sign in at `http://127.0.0.1:8081` through the tunnel (`MISP_ADMIN_EMAIL` /
+here: sign in at `http://localhost:8081` through the tunnel (`MISP_ADMIN_EMAIL` /
 `MISP_ADMIN_PASSWORD`), create an automation key, and put it in `.env` as
 `NETSENTINEL_MISP_API_KEY`. Blank, the sync refuses to run and nothing else notices.
+Use `localhost`, not `127.0.0.1`: MISP's session cookie is marked secure and its
+`baseurl` is `http://localhost:8081`, and browsers accept a secure cookie over plain
+HTTP only on `localhost`, so on the address the login form fails its CSRF check.
 
 ```bash
 docker compose --profile app up -d                       # recreate the API with the key
+sh misp/warninglists.sh                                  # see below
 docker compose exec api netsentinel-sync-intel --since 7d
 ```
+
+**Warninglists.** The sync asks MISP to enforce them, and MISP ships them loaded but
+disabled, so until `misp/warninglists.sh` runs that request filters nothing. The script
+enables all of them except the lists of rented hosting (AWS, GCP, Azure, OVH, and the
+"VPN providers and datacenters" pair), which mark where C2 servers are run, not what is
+harmless: enabled, they dropped every address in abuse.ch's Feodo Tracker list.
+
+**A feed to start with.** On the VM, MISP carries abuse.ch's Feodo Tracker botnet C2
+list as a CSV feed (`https://feodotracker.abuse.ch/downloads/ipblocklist.csv`, value
+column 2, published on fetch). The plain-text version of the same list is worse: MISP's
+free-text parser turns its comment header into indicators for `abuse.ch` and the
+tracker's own URL.
 
 Keep needs no key of its own: it runs with `AUTH_TYPE=NO_AUTH` on the backplane, and the
 detection writer posts every stored alert to its generic webhook (`/alerts/event`) with
