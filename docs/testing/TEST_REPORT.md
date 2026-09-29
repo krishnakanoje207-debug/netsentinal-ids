@@ -9,7 +9,7 @@ beside this file. Section 7 records the first run on the cloud VM, on 27 Septemb
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 1062 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 1064 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
 | Dashboard (React components, API client, stream) | 155 | all pass | `cd frontend; npx vitest run` |
 
@@ -123,7 +123,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | FR-13 | Local LLM summary, read-only, validated | Met | section 4 |
 | FR-14 | MISP enrichment | Partial | tested against fakes; MISP 2.5.17 answers on the VM, from the host and from the API container |
 | FR-15 | Keep, DFIR-IRIS | Met | live on the VM (section 8): Keep accepted the forwarder's alerts and folded two with one fingerprint into one, once the webhook path was fixed; the API's IRIS client opened case 2 |
-| FR-16 | Approve/reject; block only after approval | Met (gate) / Partial (enforcement) | CrowdSec tested against fakes; on the VM a test ban appeared in the nftables set and was removed when lifted; the responder is now a Compose service |
+| FR-16 | Approve/reject; block only after approval | Met (gate, host actions) / Partial (isolation) | on the VM (section 10) a process kill and an account lock, each proposed and approved by two different accounts, were carried out by the responder through Wazuh, and the lock undone; isolation is tested against fakes only; a CrowdSec ban reached the nftables set and was lifted |
 | FR-17 | OpenVAS findings per asset | Met | on the VM (section 8) Greenbone scanned the lab: 44 results, none with a CVE since the images are current, so none stored; the scan date recorded per covered host and shown on the Estate page; the importer is tested on findings with CVEs |
 | FR-18 | Live alerts, details, SHAP, model metrics | Met | dashboard; alerts pushed over the WebSocket as they are stored (section 1) |
 | FR-19 | Search and export | Met | address / network / technique search and a from/to time range (ISO 8601; a reversed or unreadable range is refused with a sentence); export as CSV or PDF with the same filters, audited |
@@ -172,7 +172,7 @@ The live lab: attacker 172.30.0.100, victim-web 172.30.0.10 (nginx), victim-ssh
 
 ### Defects found only against the real servers
 
-Each of these passed the unit tests and the fakes. All 16 are fixed and committed.
+Each of these passed the unit tests and the fakes. All 18 are fixed and committed.
 
 | Component | Defect |
 |---|---|
@@ -192,6 +192,8 @@ Each of these passed the unit tests and the fakes. All 16 are fixed and committe
 | Suricata | ET's SSH brute-force rules name port 22 outright rather than `$SSH_PORTS`, and victim-ssh listens on 2222, so hydra raised no signature; `infra/suricata/lab.rules` carries the two rules on `$SSH_PORTS` |
 | Keep | every forward would have been refused, 400 "Provider netsentinel not found": Keep reads `/alerts/event/<x>` as one of its own provider types. The generic `/alerts/event` accepts the same body |
 | Detection writer | compose never passed it Keep's address and key, so it logged "Keep is not configured" and forwarded nothing |
+| Responder | compose never passed it the Wazuh API's address or account, so it served `block_ip` alone and approved host actions waited in the queue |
+| Wazuh API | its self-signed certificate names only `localhost`, so the responder, dialling `wazuh.manager` with verification on, failed TLS on the first host action; `infra/wazuh/api-cert.sh` reissues it for that name and the responder trusts that certificate alone |
 
 Also: IRIS's nginx could not read its private key (it needed owner 33), and the responder,
 which executes approved actions, had never been run on the VM; it is now a Compose service.
@@ -314,3 +316,23 @@ promoted.** Tier A and the benchmark autoencoder still decide; both new cards sc
 shadow on the VM (models 7 and 8), where the shadow report can compare them on traffic
 the lab has not seen yet.
 
+## 10. Wazuh Active Response, live (29 September 2026)
+
+Host actions had been tested only against a fake manager, and the first live attempt
+found the two defects above. With them fixed, three actions were proposed as the
+administrator and approved by a separate SOC analyst account, through the gate's own
+functions (`propose`, `record_decision`), on the VM's own Wazuh agent (001). The
+responder carried each out through the manager's API, checking its certificate.
+
+| Action | Target | What the host showed | Recorded |
+|---|---|---|---|
+| 1 `kill_process` (before the responder was rebuilt) | a `sleep` of a throwaway account | nothing: the TLS check refused the manager | `failed`, with the certificate error |
+| 2 `kill_process` | the same process | gone; the agent logged `action=2 alert=47920 killed pid` | `executed` |
+| 3 `disable_account` | the throwaway account | `passwd -S` from P to L | `executed` |
+| 3, undone | the same account | back to P; the agent logged `unlocked` | `rolled_back` |
+
+The audit log holds each step under the account that took it: proposed by the
+administrator, approved and undo requested by the analyst, executed and rolled back by
+the responder. `isolate_host` was not run: on the VM it would cut the SSH session the
+test is driven through. The throwaway account was deleted afterwards and the analyst
+account, which has no usable password, deactivated.
