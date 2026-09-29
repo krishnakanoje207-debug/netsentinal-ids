@@ -107,7 +107,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
 | O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow: no false alarm on 28,738 benign flows, and none of the 66 attack flows long enough for it detected (section 12) |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
-| O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; on the live lab, one false alert from the benign client in 1.37 days (29,640 flows), raised by a sensor restart (section 11); one benign host and under two days, so not yet a multi-day, multi-host run |
+| O6 | False positives per host-day in a shadow run | Partial | measured on the live lab for every model (section 15): the alerting path 0.69 per host-day, one alert, from a sensor restart, and 0 without restarts; Suricata 0; one benign host over 1.46 days, so a narrow base |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
 | FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Met (Suricata, Zeek, Wazuh) / Partial (Sysmon) | on the VM, Suricata 8 and Zeek 8 both fingerprinted a TLS exchange with JA4 and the Zeek JA4 reached ClickHouse; a Wazuh agent with auditd sent 299 host alerts; Sysmon is configured (`hids` profile), not run (section 7) |
@@ -419,3 +419,38 @@ and the Admin page, the time-range search and PDF export, the stored input featu
 the writer's Keep settings had never been copied to it, because changes were deployed
 file by file. Every tracked file is now copied from the commit (`git archive`), and the
 database is at 0008.
+
+## 15. False positives per host-day, every model (29 September 2026)
+
+From the TCP teardown fix (06:21 UTC on 28 September) to 17:19 UTC on 29 September,
+1.457 days, the only benign traffic was the client 172.30.0.2 to nginx: 31,423 flows,
+so 1.457 host-days (the server end of the same flows is not counted twice; victim-ssh
+had no benign traffic). Every other flow touched the scanner, an attacker address or
+the replayed Feodo address. Live alerts were counted from PostgreSQL; the models whose
+scores were not stored were re-scored on the exported flows, and the re-scored fusion
+matched the stored risk score on all 31,423 flows (largest difference 1.5e-10).
+
+| Model or rule | Mode | False positives | Per host-day | Held out, 29 Sep 07:00 on (9,232 flows) |
+|---|---|---|---|---|
+| Fusion, Tier A + autoencoder 1.1.0 | active | 1 (the restart) | 0.69; 0 without restarts | 1 |
+| Suricata signatures | active | 0 | 0 | 0 |
+| Tier B 1.2.0 | shadow | 0 (highest score 0.0016) | 0 | 0 |
+| Isolation forest 1.0.2 | shadow | 2 (both restart flows) | 1.37; 0 without restarts | 1 |
+| Autoencoder 1.3.0-lab | shadow | 305 | 209 | 89 |
+| Isolation forest 1.2.0-lab | shadow | 275 | 189 | 82 |
+| Autoencoder 1.1.0 alone | active part | 31,423 (every flow) | | 9,232 |
+
+Restarts are the only cause of a benign alert on the alerting path. Both sensor starts
+in the window emitted a one-packet benign flow: the one at 15:22 on 29 September alerted
+(section 11), and the one at 06:21 on 28 September scored 0.0013 under the threshold.
+Every other benign flow is 7 packets in and 5 out.
+
+The fusion has almost no margin on this lab. The benchmark autoencoder scores every lab
+flow 0.990 to 0.991, just over its own 0.99 threshold, so it adds a constant rather than
+information, and the fused rule alerts when Tier A reaches about 0.0046, almost exactly
+Tier A's own threshold. The lab-fitted cards flag about 1% of benign flows by design
+(their threshold is the lab's 99th percentile), about 200 a day at this traffic rate:
+the held-out rate matches the fitted one, so it is the percentile, not overfitting, and
+it rules out promoting them at these thresholds, as section 9 found on recall. With one
+event, the 95% interval on the alerting path's rate is wide, about 0.02 to 3.8 per
+host-day, and the base is one very regular workload.
