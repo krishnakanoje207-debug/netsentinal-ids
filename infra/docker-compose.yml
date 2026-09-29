@@ -171,12 +171,24 @@ services:
       # is created in MISP's own UI, so it is blank until someone has done that.
       NETSENTINEL_MISP_URL: http://misp
       NETSENTINEL_MISP_API_KEY: ${NETSENTINEL_MISP_API_KEY:-}
+      # Wazuh's API, for the host actions: isolate, kill a process, disable an
+      # account. Its certificate is self-signed for localhost only, so
+      # wazuh/api-cert.sh reissues it for wazuh.manager and exports the public half,
+      # and the responder checks the manager against that file alone, not through
+      # SSL_CERT_FILE above. Set with the password; the responder refuses to start
+      # while the file is missing.
+      NETSENTINEL_WAZUH_URL: https://wazuh.manager:55000
+      NETSENTINEL_WAZUH_USER: wazuh-wui
+      NETSENTINEL_WAZUH_PASSWORD: ${WAZUH_API_PASSWORD:-}
+      NETSENTINEL_WAZUH_CA_FILE: ${WAZUH_API_PASSWORD:+/etc/netsentinel/wazuh/api-ca.crt}
     volumes: &api-volumes
       # The directory rather than iris.pem itself: a missing file would be created
       # as an empty directory on the host, and then block the openssl command that
       # makes the certificate. The key beside it is owned by nginx's user, 33, and
       # unreadable to this one.
       - ./iris/certificates:/etc/netsentinel/iris:ro
+      # A directory for the same reason; it holds the certificate only, never a key.
+      - ./wazuh/api-tls:/etc/netsentinel/wazuh:ro
     depends_on:
       postgres:
         condition: service_healthy

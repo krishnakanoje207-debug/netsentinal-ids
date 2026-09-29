@@ -482,17 +482,21 @@ restored something. `enforcers_from` offers Wazuh only the action types in that 
 so an action type with no command waits in the queue rather than being sent to an
 agent that would ignore it.
 
-Point the responder at the manager's API:
+Compose points the API and the responder at `https://wazuh.manager:55000` as
+`wazuh-wui` with `WAZUH_API_PASSWORD`. The manager's own API certificate is
+self-signed and names only `localhost`, so the responder could only stop checking it
+or fail. Reissue it once, after `hids` is up, and recreate the responder:
 
 ```bash
-export NETSENTINEL_WAZUH_URL="https://127.0.0.1:55000"
-export NETSENTINEL_WAZUH_USER="wazuh-wui"
-export NETSENTINEL_WAZUH_PASSWORD="<WAZUH_API_PASSWORD>"
+sh wazuh/api-cert.sh                               # names wazuh.manager; exports the public half
+docker compose --profile response up -d responder  # "responder ready for block_ip, disable_account, isolate_host, kill_process"
 ```
 
-The API's certificate is self-signed by the manager (in the `wazuh_api_configuration`
-volume, `ssl/server.crt`). Trust it rather than setting
-`NETSENTINEL_WAZUH_VERIFY_TLS=false`: this channel isolates hosts.
+The script writes `wazuh/api-tls/api-ca.crt` (gitignored, never the key), which
+compose mounts as `NETSENTINEL_WAZUH_CA_FILE`; the responder trusts that certificate
+for the manager and nothing else, and does not start while it is missing. Do not set
+`NETSENTINEL_WAZUH_VERIFY_TLS=false` instead: this channel isolates hosts. Rerun the
+script when the certificate expires (365 days).
 
 ## case: DFIR-IRIS
 
