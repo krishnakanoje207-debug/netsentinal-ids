@@ -5,3 +5,10 @@
 # These are ET 2001219 and 2006546 unchanged except for the port and a local sid.
 alert tcp $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (msg:"NETSENTINEL LAB Potential SSH Scan (ET 2001219 on SSH_PORTS)"; flow:to_server; flags:S,12; threshold: type both, track by_src, count 5, seconds 120; classtype:attempted-recon; sid:9100001; rev:1;)
 alert ssh $EXTERNAL_NET any -> $HOME_NET $SSH_PORTS (msg:"NETSENTINEL LAB LibSSH Based Frequent SSH Connections Likely BruteForce Attack (ET 2006546 on SSH_PORTS)"; flow:established,to_server; content:"SSH-"; content:"libssh"; within:20; threshold: type both, count 5, seconds 30, track by_src; classtype:attempted-admin; sid:9100002; rev:1;)
+
+# An HTTP flood: many ordinary requests from one source. Each flow is a normal request
+# and response, so no flow model can see it, and on 29 September 300 requests in a second
+# raised nothing at all. One alert per source per 10 s window once it passes 100
+# requests; the lab's benign client makes about one every four seconds. A real site's
+# browsers can burst past this, so the count is a lab setting, not a default.
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"NETSENTINEL LAB HTTP request flood from one source (over 100 requests in 10 s)"; flow:established,to_server; http.uri; content:"/"; startswith; threshold: type both, track by_src, count 100, seconds 10; classtype:attempted-dos; metadata: mitre_technique_id T1499.002; sid:9100003; rev:1;)
