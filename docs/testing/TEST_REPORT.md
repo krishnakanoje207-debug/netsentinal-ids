@@ -107,7 +107,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
 | O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
-| O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; no multi-day shadow run yet; on the live lab, Tier D re-baselining took fused false alerts on held-out benign flows from 12.1% to 0.0% (section 7) |
+| O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; on the live lab, one false alert from the benign client in 1.37 days (29,640 flows), raised by a sensor restart (section 11); one benign host and under two days, so not yet a multi-day, multi-host run |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
 | FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Met (Suricata, Zeek, Wazuh) / Partial (Sysmon) | on the VM, Suricata 8 and Zeek 8 both fingerprinted a TLS exchange with JA4 and the Zeek JA4 reached ClickHouse; a Wazuh agent with auditd sent 299 host alerts; Sysmon is configured (`hids` profile), not run (section 7) |
@@ -336,3 +336,18 @@ administrator, approved and undo requested by the analyst, executed and rolled b
 the responder. `isolate_host` was not run: on the VM it would cut the SSH session the
 test is driven through. The throwaway account was deleted afterwards and the analyst
 account, which has no usable password, deactivated.
+
+## 11. False alerts per host-day on the live lab (29 September 2026)
+
+From the end of the scripted attacks (06:53 UTC on 28 September) to 15:52 UTC on 29
+September, 1.37 days, the benign client 172.30.0.2 sent 29,640 flows to the web server.
+It raised one ML alert (low), which is 0.7 per host-day. The alert came at 15:22:05, as
+the sensor was restarted to load the section 9 cards: on SIGTERM the sensor emits every
+flow still open, so a connection cut short looks like a fragment, and Tier A scored this
+one 0.011 against its 0.0047 threshold. Emitting open flows at shutdown is deliberate,
+since an attack under way when the sensor stops must still be reported; the cost is at
+most a handful of low alerts per restart. Outside that restart there were none.
+
+Every other alert involving the benign hosts in the window was traffic with an
+attacker: replies from the web server to the Greenbone scanner (.3) and to the DNS
+exfiltration host (.103), and the client's own traffic while Greenbone scanned it.
