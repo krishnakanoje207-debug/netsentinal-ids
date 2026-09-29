@@ -479,3 +479,11 @@ rule here measures. Tier B's one hit left no trace in PostgreSQL, because it is 
 shadow and Tier A did not flag that flow: shadow verdicts are kept only on flows that
 alert. So on this lab Tier B costs no false alarms and adds almost no detection; a rate
 or volume detector across flows is the gap the flood exposes.
+
+The flood gap was closed with a lab Suricata rule (`infra/suricata/lab.rules`, sid
+9100003): one alert per source per 10 s once it passes 100 HTTP requests, as T1499.002.
+The same 300-request flood rerun at 17:39 raised it within the second. Nine of the
+flood's flows also drew low Tier A alerts this time, and the signature raised all nine
+to medium (section 14). The benign client's rate is about one request every four
+seconds. The rule file is mounted as a single file, so the first reload after `git pull`
+read the old copy; a restart loaded it (53,003 rules, none failed).

@@ -84,6 +84,13 @@ docker compose --profile lab up -d
 docker compose --profile sensors run --rm --entrypoint suricata-update suricata
 docker compose --profile sensors up -d --build  # --build: Zeek bakes in JA4+
 
+# suricata/lab.rules holds the lab's own rules (SSH brute force on port 2222, an HTTP
+# flood). It is mounted as a single file, and git replaces a file rather than editing
+# it, so after a pull that changes it the container still sees the old one and
+# "suricatasc -c reload-rules" reloads that. Restart instead, and check the count:
+docker compose --profile sensors restart suricata
+docker compose exec suricata grep "rules successfully loaded" /var/log/suricata/suricata.log | tail -1
+
 docker compose --profile storage --profile ingest up -d
 
 # the API migrates PostgreSQL on start; the writer and importer need that schema,
