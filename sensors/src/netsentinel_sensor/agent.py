@@ -82,6 +82,9 @@ class Stats:
     decided: int = 0
     undecided: int = 0
     alerts: int = 0
+    # Flows the sensor itself cut short, at a stop or a start: scored and published,
+    # never alerted on. See SensorAgent._cut_short.
+    cut_short: int = 0
     started_at: float = field(default_factory=time.monotonic)
 
     def as_dict(self) -> dict[str, float]:
@@ -92,6 +95,7 @@ class Stats:
             "decided": self.decided,
             "undecided": self.undecided,
             "alerts": self.alerts,
+            "cut_short": self.cut_short,
             "packets_per_second": round(self.packets / elapsed, 1),
             "flows_per_second": round(self.flows / elapsed, 2),
         }
@@ -112,13 +116,17 @@ def model_index(models: Iterable) -> list[dict[str, str]]:
 
 
 def flow_payload(
-    features: FlowFeatures, verdict, sensor_name: str, models: Iterable = ()
+    features: FlowFeatures, verdict, sensor_name: str, models: Iterable = (),
+    cut_short: bool = False,
 ) -> dict:
     """The message published for one scored flow.
 
     Carries the feature vector as well as the scores. The SHAP writer downstream needs the
     exact values that produced the verdict, and re-deriving them from packets would be
     both wasteful and a second place for the contract to drift.
+
+    ``cut_short`` marks a flow the sensor saw only part of because it was starting or
+    stopping; its scores are kept, but it is not an alert.
     """
     row = features.as_row()
     row["sensor"] = sensor_name
@@ -133,7 +141,8 @@ def flow_payload(
             "decided_by": verdict.decided_by,
             "shadow": verdict.shadow,
             "undecided": verdict.is_undecided,
-            "is_alert": verdict.is_alert,
+            "is_alert": verdict.is_alert and not cut_short,
+            "cut_short": cut_short,
         },
         # The scoring set travels with the message. The topic is retained for replay, so a
         # consumer reading it months later must not have to guess which models were loaded
@@ -159,6 +168,9 @@ class SensorAgent:
         self.tracker = tracker or FlowTracker()
         self.stats = Stats()
         self._stopping = False
+        # Timestamp of the first packet: flows seen soon after it may have begun before.
+        self._capture_start: float | None = None
+        self._last_ts: float | None = None
         # Built once: the loaded set does not change while the agent runs.
         self._models = model_index(scorer.models)
 
@@ -166,19 +178,45 @@ class SensorAgent:
         """Ask the loop to finish after the current packet."""
         self._stopping = True
 
-    def _emit(self, flows: Iterable[FlowFeatures]) -> None:
+    def _cut_short(self, features: FlowFeatures, stopping: bool) -> bool:
+        """Whether the sensor, not the network, ended or began this flow.
+
+        Two cases, both seen live as the only false alerts on benign traffic: a
+        connection a few seconds old when the sensor was stopped, flushed as one packet,
+        and a connection already under way when it started, first seen mid-stream. A
+        lone packet reads to Tier A like a probe that got no reply.
+
+        A flow older than the idle timeout at a stop is left alone: a long-lived
+        connection is the one that must still alert. The start case needs TCP with no
+        SYN at all, so a probe that opens a connection is never excused; a NULL, FIN or
+        Xmas probe in the first seconds of capture is, and is still stored.
+        """
+        window = self.tracker.idle_timeout
+        if stopping and self._last_ts is not None and self._last_ts - features.ts_start < window:
+            return True
+        return (
+            self._capture_start is not None
+            and features.ts_start - self._capture_start < window
+            and features.scalars.get("proto") == 6
+            and features.scalars.get("tcp_syn_count", 0) == 0
+        )
+
+    def _emit(self, flows: Iterable[FlowFeatures], stopping: bool = False) -> None:
         for features in flows:
             self.stats.flows += 1
             verdict = self.scorer.score(features)
+            cut_short = self._cut_short(features, stopping)
             if verdict.is_undecided:
                 self.stats.undecided += 1
             else:
                 self.stats.decided += 1
-            if verdict.is_alert:
+            if cut_short:
+                self.stats.cut_short += 1
+            elif verdict.is_alert:
                 self.stats.alerts += 1
             self.publisher.publish(
                 str(features.key),
-                flow_payload(features, verdict, self.sensor_name, self._models),
+                flow_payload(features, verdict, self.sensor_name, self._models, cut_short),
             )
 
     def run(self, packets: Iterator[tuple[float, bytes]]) -> Stats:
@@ -187,6 +225,9 @@ class SensorAgent:
         try:
             for timestamp, frame in packets:
                 self.stats.packets += 1
+                if self._capture_start is None:
+                    self._capture_start = timestamp
+                self._last_ts = timestamp
                 self._emit(self.tracker.update(timestamp, frame))
 
                 if time.monotonic() >= next_report:
@@ -197,8 +238,9 @@ class SensorAgent:
                     break
         finally:
             # Flows still open at shutdown are real flows; dropping them would silently
-            # lose the long-lived connections, which are the interesting ones.
-            self._emit(self.tracker.flush())
+            # lose the long-lived connections, which are the interesting ones. Only a
+            # stop cuts flows short; a capture file that simply ends has shown them whole.
+            self._emit(self.tracker.flush(), stopping=self._stopping)
             self.publisher.flush()
         return self.stats
 

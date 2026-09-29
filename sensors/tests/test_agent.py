@@ -8,6 +8,7 @@ quietly record nothing at all.
 
 from __future__ import annotations
 
+import dpkt
 import pytest
 
 from netsentinel_core.features.contract import FEATURE_ORDER, SCALAR_FIELDS, TIER_B_FEATURES
@@ -118,6 +119,71 @@ def test_open_flows_are_emitted_at_shutdown(scorer, publisher, open_flow_frames)
 
     assert stats.flows == 1, "the open flow should be flushed on exit"
     assert publisher.flushed >= 1
+
+
+def _stopped_after(agent, packets):
+    """Feed ``packets``, calling stop() as the last one is read, as SIGTERM does."""
+    def stream():
+        for index, packet in enumerate(packets):
+            if index == len(packets) - 1:
+                agent.stop()
+            yield packet
+    return agent.run(stream())
+
+
+def test_a_young_flow_cut_by_a_stop_is_published_but_not_an_alert(scorer, publisher, tcp_frame):
+    """Live, the one false alert on benign traffic was a connection flushed as one packet."""
+    agent = SensorAgent(scorer, publisher)
+    stats = _stopped_after(agent, [(1000.0, tcp_frame(dpkt.tcp.TH_SYN))])
+
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["cut_short"] is True
+    assert payload["verdict"]["is_alert"] is False
+    assert payload["verdict"]["risk_score"] == 0.8, "still scored"
+    assert (stats.cut_short, stats.alerts) == (1, 0)
+
+
+def test_a_long_lived_flow_open_at_a_stop_still_alerts(scorer, publisher, tcp_frame):
+    agent = SensorAgent(scorer, publisher)
+    _stopped_after(agent, [
+        (1000.0, tcp_frame(dpkt.tcp.TH_SYN)),
+        (1010.0, tcp_frame(dpkt.tcp.TH_ACK)),
+        (1020.0, tcp_frame(dpkt.tcp.TH_ACK)),
+    ])
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["cut_short"] is False
+    assert payload["verdict"]["is_alert"] is True
+
+
+def test_a_capture_that_simply_ends_cuts_nothing_short(scorer, publisher, open_flow_frames):
+    agent = SensorAgent(scorer, publisher)
+    agent.run(iter(open_flow_frames))
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["is_alert"] is True
+
+
+def test_a_connection_already_under_way_at_start_is_not_an_alert(scorer, publisher, tcp_frame):
+    """No SYN, first seen in the first seconds: it began before the sensor did."""
+    agent = SensorAgent(scorer, publisher)
+    agent.run(iter([
+        (1000.0, tcp_frame(dpkt.tcp.TH_ACK)),
+        (1000.1, tcp_frame(dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK, to_server=False)),
+    ]))
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["cut_short"] is True
+    assert payload["verdict"]["is_alert"] is False
+
+
+def test_the_same_flow_later_in_the_capture_alerts(scorer, publisher, tcp_frame):
+    """A probe with no SYN (a FIN or NULL scan) is excused only at the very start."""
+    agent = SensorAgent(scorer, publisher)
+    agent.run(iter([
+        (1000.0, tcp_frame(dpkt.tcp.TH_SYN, sport=40000)),
+        (1000.1, tcp_frame(dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK, to_server=False, sport=40000)),
+        (1030.0, tcp_frame(dpkt.tcp.TH_ACK)),
+        (1030.1, tcp_frame(dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK, to_server=False)),
+    ]))
+    assert [payload["verdict"]["is_alert"] for _k, payload in publisher.published] == [True, True]
 
 
 def test_stop_ends_the_loop_early(scorer, publisher, frames):

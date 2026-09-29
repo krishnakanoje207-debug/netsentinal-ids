@@ -151,6 +151,18 @@ def open_flow_frames() -> list[tuple[float, bytes]]:
     ]
 
 
+@pytest.fixture(scope="session")
+def tcp_frame():
+    """Build one TCP frame of the test connection: ``tcp_frame(flags, to_server=True)``."""
+
+    def build(flags: int, to_server: bool = True, sport: int = TCP_SPORT) -> bytes:
+        if to_server:
+            return _to_server(_tcp(sport, TCP_DPORT, flags))
+        return _to_client(_tcp(TCP_DPORT, sport, flags))
+
+    return build
+
+
 @pytest.fixture
 def scorer() -> StubScorer:
     return StubScorer()
