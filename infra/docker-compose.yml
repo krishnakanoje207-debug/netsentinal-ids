@@ -646,7 +646,11 @@ services:
   misp-redis:
     image: redis:7-alpine
     profiles: [intel]
-    command: redis-server --save "" --maxmemory 128mb --maxmemory-policy allkeys-lru
+    # MISP authenticates to Redis whether or not it is asked to: unset, its image
+    # uses the password "redispassword". A Redis with none refuses that AUTH, every
+    # session read fails, and each form MISP serves trips its own CSRF check. So
+    # both sides get one; set MISP_REDIS_PASSWORD in .env to choose it.
+    command: redis-server --save "" --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${MISP_REDIS_PASSWORD:-redispassword}
     mem_limit: 192m
     networks: [backplane]
     restart: unless-stopped
@@ -668,6 +672,7 @@ services:
       MYSQL_USER: misp
       MYSQL_PASSWORD: ${MISP_DB_PASSWORD:?set MISP_DB_PASSWORD in .env}
       REDIS_HOST: misp-redis
+      REDIS_PASSWORD: ${MISP_REDIS_PASSWORD:-redispassword}
       # Only port 80 is published and tunnelled, and the image otherwise answers every
       # HTTP request with a redirect to https on 443, which nothing here can reach.
       DISABLE_SSL_REDIRECT: "true"
