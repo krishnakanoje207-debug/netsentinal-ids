@@ -105,7 +105,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | O1 | Telemetry visible within 10 s | Met | on the VM, 10 tagged HTTP requests were queryable in ClickHouse within 8.9 s at worst: Suricata median 4.7 s, Zeek 5.8 s, the sensor's flow record 5.1 s (section 7, `live/telemetry_latency.csv`) |
 | O2 | Signature detection of scan, brute force, web attack | Met | on the VM (section 8): ET SCAN signatures on the nmap scan, SQL injection, XSS, traversal and sqlmap signatures on the web attack, and the two lab SSH rules on the brute force (ET's own name port 22 only) |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
-| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow: no false alarm on 28,738 benign flows, and none of the 66 attack flows long enough for it detected (section 12) |
+| O4 | Early-flow scoring, < 5 ms per flow | Met | Tier B scores the first 20 packets in process on the VM's live traffic, in shadow: 0.42 ms p50 and 0.65 ms p99 a flow on a laptop CPU; it flagged the one scan flow long enough to score (0.99) and no benign flow, and misses what is not in its training classes (sections 12 and 16) |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
 | O6 | False positives per host-day in a shadow run | Partial | measured on the live lab for every model (section 15): the alerting path 0.69 per host-day, one alert, from a sensor restart, and 0 without restarts; Suricata 0; one benign host over 1.46 days, so a narrow base |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
@@ -454,3 +454,28 @@ the held-out rate matches the fitted one, so it is the percentile, not overfitti
 it rules out promoting them at these thresholds, as section 9 found on recall. With one
 event, the 95% interval on the alerting path's rate is wide, about 0.02 to 3.8 per
 host-day, and the base is one very regular workload.
+
+## 16. Tier B on attacks shaped like its training classes (29 September 2026)
+
+Section 12 found Tier B silent on the lab's scripted attacks, none of which is one of
+the classes it was trained on (CIC-IDS2017 PortScan, DDoS, Bot). Three scenarios closer
+to those were run from 172.30.0.100 with what the attacker image has (nmap, wget), and
+the flows scored offline exactly as the sensor scores them.
+
+| Scenario | Flows | Long enough for Tier B (>= 4 packets) | Tier B flagged | Tier A alerts | Suricata |
+|---|---|---|---|---|---|
+| Connect scan with service probes, 200 ports on two hosts (`nmap -sT -sV`) | 401 | 2 | 1 (0.99) | 166 | 8 |
+| HTTP flood: 300 requests in about a second | 304 | 300 | 0 | 0 | 0 |
+| Beacon: 20 small requests 3 s apart | 26 | 20 | 0 | 2 | 0 |
+| Benign client, same minutes | 34 | 34 | 0 | 0 | 0 |
+
+399 of the scan's flows are a SYN and a reset against closed ports, on which Tier B
+abstains. Of the two it could score, it flagged the bare handshake to an open port
+(0.99) and cleared the service probe that exchanged real HTTP (0.00). The flood's and
+the beacon's flows are each an ordinary 12-packet request and response, the same shape
+as the benign client's, so a model that reads one flow's packets cannot see them; the
+flood drew no alert from anything, because volume across flows is not what any tier or
+rule here measures. Tier B's one hit left no trace in PostgreSQL, because it is in
+shadow and Tier A did not flag that flow: shadow verdicts are kept only on flows that
+alert. So on this lab Tier B costs no false alarms and adds almost no detection; a rate
+or volume detector across flows is the gap the flood exposes.
