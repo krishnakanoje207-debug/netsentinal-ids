@@ -280,3 +280,37 @@ two alerts with one fingerprint became one Keep alert, as de-duplication intends
 provider path it used before was refused (defect above). Against the live IRIS, the API's
 case client opened case 2 for an nmap alert.
 
+## 9. Tier D re-baselined on the fixed sensor's flows (29 September 2026)
+
+The lab cards of section 7 were fitted on flows from before the teardown fix, a third of
+them phantoms. They were refitted on the benign client's flows (172.30.0.2 to nginx port
+80) from the day after the fix, 07:00 UTC 28 September to 07:00 UTC 29 September, 21,631
+flows, as `tier_d_autoencoder 1.3.0-lab` and `tier_d_isolation_forest 1.2.0-lab`. They were
+evaluated on the 7,107 flows after that and on the 1,426 flows the scripted attackers
+(172.30.0.100 to .107) sent after the fix. Each Tier D card was tried as the active one
+beside Tier A, with the sensor's fusion rule, on flows exported from ClickHouse.
+
+**The false alarms were the phantoms.** In the last hour before the fix, 407 of 3,564
+benign flows (11.4%) raised a fused alert, and all 407 were one-packet flows. After the
+fix Tier A scores none of the 28,738 benign flows over its threshold, so the fused false
+alert rate is 0% with every Tier D card, the benchmark one included. The benchmark
+autoencoder still calls every lab flow anomalous; the refitted cards flag 0.84% and 0.89%
+of the held-out ones, within the 1% they were fitted for.
+
+| Attacker | Flows | Tier A alone | Fused with the active autoencoder 1.1.0 | with 1.3.0-lab | with the forest 1.2.0-lab |
+|---|---|---|---|---|---|
+| nmap (.100) | 1308 | 1301 | 1301 | 1301 | 1301 |
+| SSH brute force (.101, .107) | 10 | 6 | 6 | 2 | 2 |
+| Web attacks (.102) | 9 | 1 | 1 | 1 | 1 |
+| DNS exfiltration (.103) | 50 | 50 | 50 | 20 | 50 |
+| HTTP exfiltration, beacon, other (.104-.106) | 49 | 1 | 1 | 1 | 1 |
+| Held-out benign | 7,107 | 0 | 0 | 0 | 0 |
+
+On its own the refitted forest flags 95.0% of the attack flows; the one fitted before the
+fix flagged none. Even so, promoting either lab card would lose four SSH brute-force flows,
+and the autoencoder thirty of the DNS tunnel's, for no fewer false alarms: a lab card
+believes the lab's normal, and a short login burst looks much like it. **Neither was
+promoted.** Tier A and the benchmark autoencoder still decide; both new cards score in
+shadow on the VM (models 7 and 8), where the shadow report can compare them on traffic
+the lab has not seen yet.
+
