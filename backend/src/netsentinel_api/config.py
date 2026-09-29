@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # as MISP: install the certificate, do not stop checking it - this channel
     # isolates hosts and disables accounts.
     wazuh_verify_tls: bool = True
+    # The certificate to trust for it, in place of the system store: the manager's
+    # own, issued for the name this system dials (infra/wazuh/api-cert.sh). It
+    # narrows what is trusted; it never turns the check off.
+    wazuh_ca_file: str | None = None
 
     # Flow counts for the dashboard's activity strip, read from ClickHouse
     # network_flows. Optional like the rest: unset, the strip shows alerts and no

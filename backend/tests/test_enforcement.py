@@ -392,6 +392,37 @@ def test_wazuh_serves_the_host_actions():
     assert all(isinstance(p, WazuhEnforcer) for p in points.values())
 
 
+def test_a_wazuh_ca_file_is_what_the_manager_is_checked_against():
+    """The manager's certificate is self-signed; trusting it must not mean trusting all."""
+    import ssl
+
+    import certifi
+
+    points = enforcers_from(
+        _settings(
+            wazuh_url="https://wazuh.manager:55000",
+            wazuh_user="wazuh-wui",
+            wazuh_password="a-wazuh-password",
+            wazuh_ca_file=certifi.where(),
+        )
+    )
+    verify = points[ActionType.isolate_host]._verify_tls
+    assert isinstance(verify, ssl.SSLContext)
+    assert verify.verify_mode == ssl.CERT_REQUIRED and verify.check_hostname
+
+
+def test_a_missing_wazuh_ca_file_fails_at_start_not_in_an_incident(tmp_path):
+    with pytest.raises(EnforcementError, match="api-cert.sh"):
+        enforcers_from(
+            _settings(
+                wazuh_url="https://wazuh.manager:55000",
+                wazuh_user="wazuh-wui",
+                wazuh_password="a-wazuh-password",
+                wazuh_ca_file=str(tmp_path / "absent.crt"),
+            )
+        )
+
+
 def test_half_configured_crowdsec_is_not_wired():
     """A URL without credentials would fail at the first login, in an incident."""
     assert enforcers_from(_settings(crowdsec_url="http://localhost:8080")) == {}

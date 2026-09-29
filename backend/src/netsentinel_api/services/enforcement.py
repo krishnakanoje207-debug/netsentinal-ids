@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import ssl
 from datetime import datetime, timezone
+from pathlib import Path
 
 from netsentinel_api.config import Settings
 from netsentinel_api.db.models import ActionType, ResponseAction
@@ -317,7 +319,7 @@ class WazuhEnforcer:
         url: str,
         user: str,
         password: str,
-        verify_tls: bool = True,
+        verify_tls: bool | ssl.SSLContext = True,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
     ) -> None:
         self._url = url.rstrip("/")
@@ -421,11 +423,21 @@ def enforcers_from(settings: Settings) -> dict[ActionType, object]:
         )
 
     if settings.wazuh_url and settings.wazuh_user and settings.wazuh_password:
+        if settings.wazuh_ca_file and not Path(settings.wazuh_ca_file).is_file():
+            # Said now, at start, rather than as a TLS error on the first isolation.
+            raise EnforcementError(
+                f"NETSENTINEL_WAZUH_CA_FILE names {settings.wazuh_ca_file}, which does "
+                "not exist; issue it with infra/wazuh/api-cert.sh"
+            )
         wazuh = WazuhEnforcer(
             settings.wazuh_url,
             settings.wazuh_user,
             settings.wazuh_password.get_secret_value(),
-            verify_tls=settings.wazuh_verify_tls,
+            verify_tls=(
+                ssl.create_default_context(cafile=settings.wazuh_ca_file)
+                if settings.wazuh_ca_file
+                else settings.wazuh_verify_tls
+            ),
         )
         for action_type in WAZUH_COMMANDS:
             points[action_type] = wazuh
