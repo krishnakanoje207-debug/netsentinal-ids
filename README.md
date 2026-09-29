@@ -363,6 +363,10 @@ the same alert can legitimately be written twice.
 export NETSENTINEL_CROWDSEC_URL="http://127.0.0.1:8080"
 export NETSENTINEL_CROWDSEC_MACHINE_ID="netsentinel-api"
 export NETSENTINEL_CROWDSEC_PASSWORD="..."
+export NETSENTINEL_WAZUH_URL="https://wazuh.manager:55000"   # host actions
+export NETSENTINEL_WAZUH_USER="wazuh-wui"
+export NETSENTINEL_WAZUH_PASSWORD="..."
+export NETSENTINEL_WAZUH_CA_FILE="infra/wazuh/api-tls/api-ca.crt"   # infra/wazuh/api-cert.sh
 uv run netsentinel-respond --interval 10   # execute what analysts have approved
 ```
 
