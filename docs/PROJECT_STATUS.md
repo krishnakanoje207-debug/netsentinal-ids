@@ -35,7 +35,7 @@ The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle 
 and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
 Azure for Students offered no 16 GB size. Measured there, everything but MISP and
 Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
-profiles"). The live runs found eighteen defects that the tests against fakes had not,
+profiles"). The live runs found twenty defects that the tests against fakes had not,
 all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
 
 | Planned | In the plan as | Status | Why |
@@ -45,7 +45,7 @@ all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the de
 | Redpanda (F5) | VM | **Running**: topics created by the init job; sensor, writer and sinks on it | |
 | ClickHouse, Vector, Grafana (F5, F19) | VM | **Running**: all four tables filling live; Grafana's ClickHouse datasource healthy | |
 | Sensor, scorers, writers as one pipeline (F10) | VM | **Running**: sensor (Tiers A, B, D, and the two lab-baselined Tier D cards in shadow), Tier C window scorer, detection writer, flow sinks, Suricata importer | |
-| MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: Keep accepted forwarded alerts and de-duplicated them by fingerprint (28 Sep); MISP answers the API over the backplane | MISP's API key is made in its UI, so its sync has not run live |
+| MISP, Keep (F13, F14) | VM, intel profile | **Run** in its window: Keep accepted forwarded alerts and de-duplicated them by fingerprint (28 Sep); MISP synced abuse.ch's Feodo Tracker C2 list and 300 alerts from a replayed scan out of one of its addresses were linked to it (29 Sep) | Takes turns with Greenbone on the 8 GB VM |
 | DFIR-IRIS (F15) | VM | **Running**: the API's case client opened a case on it (28 Sep) | |
 | CrowdSec + nftables (F16) | VM | **Running**: a ban reached the kernel's nftables set and was lifted; the responder that executes approved actions is a service | |
 | Wazuh Active Response (F16) | VM | **Run** (29 Sep): an approved process kill and account lock carried out on the VM's agent by the responder, and the lock undone | Isolation not run live: it would cut the SSH session driving the test |
