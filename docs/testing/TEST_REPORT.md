@@ -121,7 +121,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | FR-11 | Shadow / active, switchable | Met | promotion gate, CLI and dashboard |
 | FR-12 | SHAP on every detection | Met | database constraint |
 | FR-13 | Local LLM summary, read-only, validated | Met | section 4 |
-| FR-14 | MISP enrichment | Partial | tested against fakes; MISP 2.5.17 answers on the VM, from the host and from the API container |
+| FR-14 | MISP enrichment | Met | live on the VM (section 13): abuse.ch's Feodo Tracker list synced from MISP; 300 alerts from a replayed scan out of one of its addresses were each linked to the indicator; the warninglists kept 8.8.8.8 and a lab address out |
 | FR-15 | Keep, DFIR-IRIS | Met | live on the VM (section 8): Keep accepted the forwarder's alerts and folded two with one fingerprint into one, once the webhook path was fixed; the API's IRIS client opened case 2 |
 | FR-16 | Approve/reject; block only after approval | Met (gate, host actions) / Partial (isolation) | on the VM (section 10) a process kill and an account lock, each proposed and approved by two different accounts, were carried out by the responder through Wazuh, and the lock undone; isolation is tested against fakes only; a CrowdSec ban reached the nftables set and was lifted |
 | FR-17 | OpenVAS findings per asset | Met | on the VM (section 8) Greenbone scanned the lab: 44 results, none with a CVE since the images are current, so none stored; the scan date recorded per covered host and shown on the Estate page; the importer is tested on findings with CVEs |
@@ -172,7 +172,7 @@ The live lab: attacker 172.30.0.100, victim-web 172.30.0.10 (nginx), victim-ssh
 
 ### Defects found only against the real servers
 
-Each of these passed the unit tests and the fakes. All 18 are fixed and committed.
+Each of these passed the unit tests and the fakes. All 20 are fixed and committed.
 
 | Component | Defect |
 |---|---|
@@ -194,6 +194,8 @@ Each of these passed the unit tests and the fakes. All 18 are fixed and committe
 | Detection writer | compose never passed it Keep's address and key, so it logged "Keep is not configured" and forwarded nothing |
 | Responder | compose never passed it the Wazuh API's address or account, so it served `block_ip` alone and approved host actions waited in the queue |
 | Wazuh API | its self-signed certificate names only `localhost`, so the responder, dialling `wazuh.manager` with verification on, failed TLS on the first host action; `infra/wazuh/api-cert.sh` reissues it for that name and the responder trusts that certificate alone |
+| MISP | every form, the login included, failed its CSRF check: the image authenticates to Redis with "redispassword" when none is set, `misp-redis` had no password, and every PHP session read failed; both now use `MISP_REDIS_PASSWORD` |
+| MISP | warninglists ship loaded but disabled, so the sync's `enforceWarninglist` filtered nothing; `infra/misp/warninglists.sh` enables them, except the cloud and datacenter lists, which dropped every Feodo Tracker C2 address when enabled |
 
 Also: IRIS's nginx could not read its private key (it needed owner 33), and the responder,
 which executes approved actions, had never been run on the VM; it is now a Compose service.
@@ -370,3 +372,26 @@ PortScan, DDoS and Bot captures, and none of these is one of those; a lab this s
 cannot supply a fair training set of its own, since the model would be tested on the
 flows it learned. So on this lab Tier B costs no false alarms and adds no detections;
 it stays in shadow. Scoring the whole batch took 0.08 to 0.24 ms a flow.
+
+## 13. MISP, live (29 September 2026)
+
+With an automation key made in MISP's UI, the intel sync ran against the live MISP
+2.5.17 for the first time. The feed was abuse.ch's Feodo Tracker botnet C2 list, loaded
+into MISP as a CSV feed and published: five addresses on the day.
+
+| Check | Result |
+|---|---|
+| First sync | 5 fetched, 5 added to `iocs` |
+| Second sync | 5 fetched, 0 added, 5 skipped: re-running is harmless |
+| A published event naming 8.8.8.8 and 172.30.0.100, both `to_ids` | neither fetched: the public-resolver and RFC 1918 warninglists dropped them |
+| A 300-port SYN scan from 162.243.103.246 (a Feodo address), replayed onto the lab bridge | 300 ML alerts, every one linked to the MISP indicator (event 2) |
+
+The replay was a crafted capture of SYNs and the victim's resets, sent onto the bridge
+with `lab/replay/tcpreplay.sh`; a host firewall rule dropped anything forwarded towards
+the real address while it ran. No alert's severity was raised: an intel match raises
+severity only for an indicator MISP rates high threat, and this feed's event carries no
+threat level, so the matches are shown and linked but leave the severity as the models
+set it. Two defects came first, both above: the login failing its CSRF check, and the
+warninglists not being enforced at all. Enabling every warninglist fixed the second but
+dropped all five C2 addresses, since three datacenter lists cover where they are
+hosted, so those lists are left off.
