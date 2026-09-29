@@ -111,7 +111,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
 | O8 | Zero licence cost | Met | all free / academic; JA4+ and NF datasets are academic-use |
 | FR-01..03 | Suricata, Zeek + JA4, Wazuh + Sysmon | Met (Suricata, Zeek, Wazuh) / Partial (Sysmon) | on the VM, Suricata 8 and Zeek 8 both fingerprinted a TLS exchange with JA4 and the Zeek JA4 reached ClickHouse; a Wazuh agent with auditd sent 299 host alerts; Sysmon is configured (`hids` profile), not run (section 7) |
-| FR-04 | Early-flow features | Partial | extractor + offline/live parity test |
+| FR-04 | Early-flow features | Met | extractor + offline/live parity test; on the VM the sensor computes them for every lab flow (the first 20 packet lengths and gaps of 29,640 benign client flows in ClickHouse), and Tier B scores them in process (section 12) |
 | FR-05 | Bus + ClickHouse | Met | Redpanda and ClickHouse ran live on the VM; `network_flows`, `tier_c_scores`, `suricata_events` and `zeek_logs` all fill; the sinks' inserts had been refused by the real server until fixed (section 7) |
 | FR-06 | Tier A calibrated | Met | Brier 0.00008 |
 | FR-07 | Tier B | Met (offline) | trained on CIC-IDS2017 captures: PR-AUC 0.996, recall 0.977 at 0.69% FPR; in the pipeline sensor in shadow |
