@@ -123,6 +123,18 @@ def test_detections_keep_their_input_features(upgrade_sql):
     assert "ALTER TABLE detections DROP COLUMN features" in buffer.getvalue()
 
 
+def test_alerts_name_the_signature_that_corroborated_them(upgrade_sql):
+    """0008: nullable, and losing the signature row must not delete the alert."""
+    assert "ALTER TABLE alerts ADD COLUMN corroborated_by_alert_id INTEGER" in upgrade_sql
+    assert "ON DELETE SET NULL" in upgrade_sql
+
+    buffer = io.StringIO()
+    config = Config(str(BACKEND / "alembic.ini"), output_buffer=buffer)
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    command.downgrade(config, "0008:0007", sql=True)
+    assert "ALTER TABLE alerts DROP COLUMN corroborated_by_alert_id" in buffer.getvalue()
+
+
 def test_named_check_constraints_survive_the_migration(upgrade_sql):
     for name in (
         "ck_risk_score_range",

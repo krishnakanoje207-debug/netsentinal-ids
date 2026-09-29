@@ -322,6 +322,11 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # The Suricata alert that fired between the same addresses at the same time, which
+    # raised this one's severity a band (services.signatures.corroborate). Set once.
+    corroborated_by_alert_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alerts.alert_id", ondelete="SET NULL")
+    )
 
     detection: Mapped[Detection | None] = relationship()
     iocs: Mapped[list[IoC]] = relationship(secondary="alert_iocs", back_populates="alerts")

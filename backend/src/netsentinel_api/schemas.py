@@ -168,6 +168,11 @@ class ExplanationOut(BaseModel):
 class AlertDetailOut(AlertOut):
     explanation: ExplanationOut | None = None
     ioc_values: list[str] = Field(default_factory=list)
+    corroborated_by_alert_id: int | None = Field(
+        default=None,
+        description="the Suricata alert that fired between the same addresses at the "
+        "same time and raised this one's severity a band; null when none has",
+    )
 
 
 class AlertStatusUpdate(BaseModel):

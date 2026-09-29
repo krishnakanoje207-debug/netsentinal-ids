@@ -291,6 +291,17 @@ def test_alert_detail_includes_linked_iocs(client, auth_header):
     assert response.json()["ioc_values"] == ["203.0.113.9"]
 
 
+def test_alert_detail_names_the_signature_that_corroborated_it(client, auth_header, alert):
+    alert.corroborated_by_alert_id = 250
+    response = client.get(f"{V1}/alerts/100", headers=auth_header)
+    assert response.json()["corroborated_by_alert_id"] == 250
+
+
+def test_an_uncorroborated_alert_says_so(client, auth_header):
+    response = client.get(f"{V1}/alerts/100", headers=auth_header)
+    assert response.json()["corroborated_by_alert_id"] is None
+
+
 def test_missing_alert_is_a_404(client, auth_header):
     assert client.get(f"{V1}/alerts/999", headers=auth_header).status_code == 404
 

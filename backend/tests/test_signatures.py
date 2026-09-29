@@ -9,12 +9,18 @@ wrong.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from netsentinel_api.db.models import Alert, AuditLog, Severity
-from netsentinel_api.services.signatures import parse_eve, sync
+from netsentinel_api.services.signatures import (
+    CORROBORATION_WINDOW,
+    corroborate,
+    parse_eve,
+    raise_corroborated,
+    sync,
+)
 from netsentinel_api.sync_suricata import run
 
 AT = datetime(2026, 9, 24, 4, 20, 43, 130707, tzinfo=timezone.utc)
@@ -198,3 +204,74 @@ def test_the_import_is_audited(tmp_path):
     audit, = [row for row in session.added if isinstance(row, AuditLog)]
     assert audit.action == "alerts.imported"
     assert audit.details == {"alerts": 2, "skipped": 1, "added": 1, "malformed": 0}
+
+
+# --- corroboration (FR-10) -------------------------------------------------
+
+def _model(alert_id=1, severity=Severity.medium, src="172.30.0.3", dst="172.30.0.10",
+           at=AT, detection_id=7, corroborated_by=None) -> Alert:
+    return Alert(alert_id=alert_id, source="early_flow", severity=severity, src_ip=src,
+                 dst_ip=dst, created_at=at, detection_id=detection_id,
+                 corroborated_by_alert_id=corroborated_by)
+
+
+def _signature(alert_id=100, src="172.30.0.3", dst="172.30.0.10", at=AT) -> Alert:
+    return Alert(alert_id=alert_id, source="suricata", severity=Severity.high,
+                 src_ip=src, dst_ip=dst, created_at=at)
+
+
+def test_a_signature_between_the_same_addresses_corroborates_a_model_alert():
+    alert, signature = _model(), _signature(at=AT - timedelta(seconds=90))
+    assert corroborate([alert], [signature]) == [(alert, signature)]
+
+
+def test_a_signature_on_the_reply_corroborates_too():
+    """A response rule names the server as the source; it is still the same exchange."""
+    alert = _model()
+    signature = _signature(src="172.30.0.10", dst="172.30.0.3")
+    assert corroborate([alert], [signature]) == [(alert, signature)]
+
+
+def test_a_signature_outside_the_window_or_between_other_hosts_does_not():
+    alert = _model()
+    late = _signature(at=AT + CORROBORATION_WINDOW + timedelta(seconds=1))
+    elsewhere = _signature(alert_id=101, dst="172.30.0.11")
+    assert corroborate([alert], [late, elsewhere]) == []
+
+
+def test_another_model_alert_is_not_a_signature():
+    alert, other = _model(alert_id=1), _model(alert_id=2)
+    assert corroborate([alert], [other]) == []
+
+
+def test_the_nearest_signature_is_the_one_named():
+    alert = _model()
+    far = _signature(alert_id=100, at=AT - timedelta(seconds=120))
+    near = _signature(alert_id=101, at=AT + timedelta(seconds=3))
+    assert corroborate([alert], [far, near]) == [(alert, near)]
+
+
+def test_an_alert_is_raised_once_and_only_with_a_detection_behind_it():
+    """The link is what stops the next pass raising it again."""
+    done = _model(alert_id=1, corroborated_by=99)
+    signature_only = _model(alert_id=2, detection_id=None)
+    assert corroborate([done, signature_only], [_signature()]) == []
+
+
+def test_corroboration_raises_a_band_names_the_signature_and_is_audited():
+    alert, signature = _model(severity=Severity.medium), _signature()
+    session = StubSession()
+
+    assert raise_corroborated(session, [(alert, signature)]) == 1
+
+    assert alert.severity is Severity.high
+    assert alert.corroborated_by_alert_id == 100
+    audit, = session.added
+    assert audit.action == "alert.corroborated" and audit.entity == "alert:1"
+    assert audit.details == {"signature_alert_id": 100, "from": "medium", "to": "high"}
+
+
+def test_a_critical_alert_stays_critical():
+    alert = _model(severity=Severity.critical)
+    raise_corroborated(StubSession(), [(alert, _signature())])
+    assert alert.severity is Severity.critical

@@ -18,18 +18,25 @@ act on.
 The table has no column for the signature itself, so the rule name and sid are not
 stored. What is kept is what the schema has room for: when, between whom, how bad,
 and the ATT&CK technique when the rule's metadata names one.
+
+**Corroboration** is the signature half of FR-10's fusion. A model alert and a rule
+match between the same two addresses at the same time are two independent methods
+agreeing, one on the flow's shape and one on its content, and the model alert is
+raised a band for it, once, as an intelligence match raises it. The signature alert
+stays in the feed as its own row; the model alert names it.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterable
 
-from netsentinel_api.db.models import Alert, Severity
+from netsentinel_api.db.models import Alert, AuditLog, Severity
+from netsentinel_api.services.intel import escalate
 from netsentinel_api.services.vulns import normalise_ip
 
 SOURCE = "suricata"
@@ -184,3 +191,74 @@ def sync(session, found: Iterable[SignatureAlert], existing: Iterable[Alert]) ->
         )
         added += 1
     return added
+
+
+# --- corroboration ---------------------------------------------------------
+
+#: How far apart a rule match and a model alert on the same flow can be. A rule fires
+#: on a packet; the model alert is written when the flow ends, up to the sensor's
+#: active timeout (120 s) plus its idle timeout (15 s) later, and delivery adds seconds.
+CORROBORATION_WINDOW = timedelta(seconds=150)
+
+
+def corroborate(
+    model_alerts: Iterable[Alert],
+    signature_alerts: Iterable[Alert],
+    window: timedelta = CORROBORATION_WINDOW,
+) -> list[tuple[Alert, Alert]]:
+    """Pair each model alert with the nearest signature alert between the same two
+    addresses, in either direction, within ``window``.
+
+    Either direction, because a rule can fire on the reply: ET's web rules match the
+    request, but a response rule names the server as the source. An alert already
+    corroborated, or with no detection behind it, is left alone.
+    """
+    by_pair: dict[frozenset, list[Alert]] = defaultdict(list)
+    for signature in signature_alerts:
+        # Only a rule match counts: two model alerts agreeing are one method twice.
+        if signature.source == SOURCE and signature.src_ip and signature.dst_ip:
+            by_pair[_pair(signature)].append(signature)
+
+    pairs = []
+    for alert in model_alerts:
+        if alert.detection_id is None or alert.corroborated_by_alert_id is not None:
+            continue
+        if not (alert.src_ip and alert.dst_ip):
+            continue
+        near = [
+            signature
+            for signature in by_pair.get(_pair(alert), ())
+            if abs(signature.created_at - alert.created_at) <= window
+        ]
+        if near:
+            pairs.append(
+                (alert, min(near, key=lambda s: abs(s.created_at - alert.created_at)))
+            )
+    return pairs
+
+
+def raise_corroborated(session, pairs: Iterable[tuple[Alert, Alert]]) -> int:
+    """Raise each model alert a band, record the signature that did it, and audit it."""
+    raised = 0
+    for alert, signature in pairs:
+        before = alert.severity
+        alert.severity = escalate(before)
+        alert.corroborated_by_alert_id = signature.alert_id
+        session.add(
+            AuditLog(
+                user_id=None,  # the import pass decided it; nobody is logged in
+                action="alert.corroborated",
+                entity=f"alert:{alert.alert_id}",
+                details={
+                    "signature_alert_id": signature.alert_id,
+                    "from": before.value,
+                    "to": alert.severity.value,
+                },
+            )
+        )
+        raised += 1
+    return raised
+
+
+def _pair(alert: Alert) -> frozenset:
+    return frozenset({_ip(str(alert.src_ip)), _ip(str(alert.dst_ip))})
