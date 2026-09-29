@@ -105,7 +105,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | O1 | Telemetry visible within 10 s | Met | on the VM, 10 tagged HTTP requests were queryable in ClickHouse within 8.9 s at worst: Suricata median 4.7 s, Zeek 5.8 s, the sensor's flow record 5.1 s (section 7, `live/telemetry_latency.csv`) |
 | O2 | Signature detection of scan, brute force, web attack | Met | on the VM (section 8): ET SCAN signatures on the nmap scan, SQL injection, XSS, traversal and sqlmap signatures on the web attack, and the two lab SSH rules on the brute force (ET's own name port 22 only) |
 | O3 | Multi-tier ML, PR-AUC >= 0.90, macro-F1, cross-dataset | Partial | A 1.000, B 0.996, C 0.994, D 0.987 (autoencoder); family macro-F1 0.57; cross-dataset 0.74 / 0.05 reported |
-| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow |
+| O4 | Early-flow scoring, < 5 ms per flow | Met (offline) / Partial (live) | Tier B scores the first 20 packets in 0.67 ms p99 and is wired into the pipeline sensor in shadow; the demo's NetFlow replay carries no packets; on the VM the sensor runs it in process on live lab traffic, in shadow: no false alarm on 28,738 benign flows, and none of the 76 attack flows long enough for it detected (section 12) |
 | O5 | Every ML alert explained, with plain language | Met | SHAP is NOT NULL on every detection; plain sentence on every alert; LLM summary where valid |
 | O6 | False positives per host-day in a shadow run | Partial | measured on the Models page; on the live lab, one false alert from the benign client in 1.37 days (29,640 flows), raised by a sensor restart (section 11); one benign host and under two days, so not yet a multi-day, multi-host run |
 | O7 | No automated block without approval; audited | Met | section 4; gate tests; audit log |
@@ -351,3 +351,21 @@ most a handful of low alerts per restart. Outside that restart there were none.
 Every other alert involving the benign hosts in the window was traffic with an
 attacker: replies from the web server to the Greenbone scanner (.3) and to the DNS
 exfiltration host (.103), and the client's own traffic while Greenbone scanned it.
+
+## 12. Tier B on the live lab's flows (29 September 2026)
+
+Tier B 1.2.0 was scored, as the sensor scores it, on the flows of sections 9 and 11,
+which carry the first 20 packet lengths and gaps.
+
+| Flows | Count | Long enough to score (>= 4 packets) | Flagged |
+|---|---|---|---|
+| Benign client, 28-29 September | 28,738 | 28,738 | 0 |
+| Scripted attacks after the teardown fix | 1,426 | 76 | 0 |
+
+Of the attack flows, nmap's 1,308 are one or two packets, so Tier B abstains on all but
+8, and the DNS tunnel's 50 are single datagrams. The 68 it could score (SSH brute force,
+web attacks, the 8 MB POST, the beacon) it called benign. It was trained on CIC-IDS2017's
+PortScan, DDoS and Bot captures, and none of these is one of those; a lab this small
+cannot supply a fair training set of its own, since the model would be tested on the
+flows it learned. So on this lab Tier B costs no false alarms and adds no detections;
+it stays in shadow. Scoring the whole batch took 0.08 to 0.24 ms a flow.
