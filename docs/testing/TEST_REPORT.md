@@ -9,9 +9,9 @@ beside this file. Section 7 records the first run on the cloud VM, on 27 Septemb
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 1064 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 1075 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
-| Dashboard (React components, API client, stream) | 155 | all pass | `cd frontend; npx vitest run` |
+| Dashboard (React components, API client, stream) | 157 | all pass | `cd frontend; npx vitest run` |
 
 Test counts are from 27 September, after the Tier D re-baselining tool and its 11 tests
 were added; coverage was last measured on 24 September.
@@ -117,7 +117,7 @@ results come from the 8 GB cloud VM (section 7; setup in `docs/CLOUD_VM.md`, mem
 | FR-07 | Tier B | Met (offline) | trained on CIC-IDS2017 captures: PR-AUC 0.996, recall 0.977 at 0.69% FPR; in the pipeline sensor in shadow |
 | FR-08 | Tier C | Met (offline) | PR-AUC 0.994; held-out attacker 0.978-0.996; scored in shadow over flow windows by the pipeline's Tier C scorer |
 | FR-09 | Tier D | Met | autoencoder trained on benign flows only, served in the demo: PR-AUC 0.987, recall 0.985 at 0.80% FPR, p99 0.13 ms; the Isolation Forest scores beside it in shadow |
-| FR-10 | Fusion with signatures and intel | Partial | A+D fused; intel raises severity; Suricata runs on the VM and its events are imported |
+| FR-10 | Fusion with signatures and intel | Met | A+D fused into one risk score; an intel match and a signature between the same addresses within 150 s each raise the alert a band; live on the VM (section 14): 401 model alerts raised by ET Open matches |
 | FR-11 | Shadow / active, switchable | Met | promotion gate, CLI and dashboard |
 | FR-12 | SHAP on every detection | Met | database constraint |
 | FR-13 | Local LLM summary, read-only, validated | Met | section 4 |
@@ -395,3 +395,27 @@ set it. Two defects came first, both above: the login failing its CSRF check, an
 warninglists not being enforced at all. Enabling every warninglist fixed the second but
 dropped all five C2 addresses, since three datacenter lists cover where they are
 hosted, so those lists are left off.
+
+## 14. Signatures fused with the models, live (29 September 2026)
+
+The Suricata import pass now compares each model alert of the last hour with the
+signature alerts between the same two addresses, either way round, within 150 s (the
+sensor's active and idle timeouts plus delivery), and raises the model alert one band,
+once, naming the signature alert (`alerts.corroborated_by_alert_id`, migration 0008,
+shown on the alert page). The first passes on the VM:
+
+| Traffic | Model alerts | Raised | By the ET Open rule |
+|---|---|---|---|
+| The section 13 replay from a Feodo Tracker address | 300 | 300: 162 high to critical, 58 medium to high, 80 low to medium | `ET CNC Feodo Tracker Reported CnC Server`, on the web server's replies to that address |
+| An nmap `-sS -sV` scan of 100 ports from .100 | 101 | 101: 60 high to critical, 37 medium to high, 4 low to medium | `ET SCAN` rules for database ports and the Nmap user agent |
+
+The replay is where all three sources met: the models scored the scan, MISP's feed
+named the address and Suricata's rule named it too. `ET INFO` matches in the same
+seconds were skipped, as context. One match raises every model alert between that pair
+within the window, so every probe of a scan is raised, not only the one the rule saw.
+
+Deploying this found the VM behind the repository: its database was at migration 0005,
+and the Admin page, the time-range search and PDF export, the stored input features and
+the writer's Keep settings had never been copied to it, because changes were deployed
+file by file. Every tracked file is now copied from the commit (`git archive`), and the
+database is at 0008.
