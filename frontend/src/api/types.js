@@ -104,6 +104,7 @@
  * @property {ActionStatus} status
  * @property {string | null} executed_at
  * @property {Approval | null} approval
+ * @property {boolean} undoable whether a rollback can be asked for at all
  */
 
 /** @typedef {'A' | 'B' | 'C' | 'D'} ModelTier */

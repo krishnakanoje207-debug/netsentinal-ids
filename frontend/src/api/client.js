@@ -217,6 +217,23 @@ export const api = {
       json: { action_type: actionType, ...(target ? { target } : {}) },
     }),
 
+  /**
+   * Every action proposed against this alert, newest first, including the rejected,
+   * lifted and failed ones.
+   *
+   * @returns {Promise<import('./types').ResponseAction[]>}
+   */
+  alertActions: (token, alertId) => request(`/alerts/${alertId}/actions`, { token }),
+
+  /**
+   * Ask for an executed action to be lifted. This queues the request; the block stays
+   * in force until the responder lifts it and marks the action rolled back.
+   *
+   * @returns {Promise<import('./types').ResponseAction>}
+   */
+  requestRollback: (token, actionId, reason) =>
+    request(`/actions/${actionId}/rollback`, { token, method: 'POST', json: { reason } }),
+
   /** Open an incident (and a DFIR-IRIS case, when one is configured) for this alert. */
   escalate: (token, alertId) =>
     request(`/alerts/${alertId}/escalate`, { token, method: 'POST', json: {} }),

@@ -102,6 +102,24 @@ describe('request', () => {
     expect(String(init.body)).toContain('username=analyst')
   })
 
+  it("reads an alert's actions from the alert's own path", async () => {
+    vi.mocked(fetch).mockResolvedValue(respond(200, [], true))
+    await api.alertActions('t', 42)
+
+    const [url] = vi.mocked(fetch).mock.calls[0]
+    expect(String(url)).toBe('/api/v1/alerts/42/actions')
+  })
+
+  it('posts a rollback with the reason the API requires', async () => {
+    vi.mocked(fetch).mockResolvedValue(respond(200, { status: 'rollback_requested' }, true))
+    await api.requestRollback('t', 7, 'blocked a partner')
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0]
+    expect(String(url)).toBe('/api/v1/actions/7/rollback')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ reason: 'blocked a partner' })
+  })
+
   it('never puts credentials in the URL', async () => {
     vi.mocked(fetch).mockResolvedValue(respond(200, { access_token: 't' }, true))
     await api.login('analyst', 'secret')
