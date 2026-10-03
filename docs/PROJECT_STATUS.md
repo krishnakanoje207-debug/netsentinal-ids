@@ -27,7 +27,7 @@ Updated 29 September 2026.
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
 | Tier D on the lab's own traffic | The 11-12% of benign lab flows that alerted before the TCP teardown fix were all one-packet phantoms; after it, 0 of 28,738 benign flows alert with any Tier D card. Re-baselined on 21,631 post-fix flows (29 Sep): 0.84-0.89% flagged alone on 7,107 held-out ones; not promoted, since either would lose SSH brute-force (and, for the autoencoder, DNS tunnel) flows the fused rule catches today; in shadow | `docs/testing/TEST_REPORT.md`, section 9 |
-| Automated tests | 1,085 Python + 165 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
+| Automated tests | 1,107 Python + 165 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
 ## Planned tools: built, running, or not
 

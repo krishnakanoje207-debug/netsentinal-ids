@@ -121,7 +121,7 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 ## 8. The automated suites
 
 ```powershell
-uv run --no-sync pytest -q          # 1085 Python tests, no database needed
+uv run --no-sync pytest -q          # 1107 Python tests, no database needed
 cd frontend; npx vitest run         # 165 dashboard tests
 ```
 
