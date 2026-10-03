@@ -79,6 +79,13 @@ executors carry it out and call `mark_executed`. So the button says *Approve*, a
 card says in words that the executor acts afterwards. A button labelled "Block now"
 would describe something that has not happened.
 
+**Asking to lift is not lifting.** The alert page lists every response proposed on
+that alert, rejected, lifted and failed ones included, since that is where the next
+analyst reads what was already tried. An executed action that the API marks
+`undoable` can be asked to be lifted, with a reason the API requires; the request
+moves it to `rollback_requested` and the page keeps calling the block in force until
+the responder reports it `rolled_back`.
+
 **A rejection needs a reason.** The API enforces it with a 422. The submit button stays
 disabled until a comment is written, so the rule is visible before the round trip
 rather than arriving as an error after it.
