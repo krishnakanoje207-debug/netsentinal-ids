@@ -237,3 +237,15 @@ def test_a_file_publisher_writes_what_the_writer_replays(scorer, pcap_path, expe
         payloads = [json.loads(line) for line in handle if line.strip()]
     assert len(payloads) == expected_flows
     assert {"flow", "verdict", "models", "contract"} <= set(payloads[0])
+
+
+def test_a_file_publisher_line_is_readable_as_soon_as_it_is_published(tmp_path):
+    """A reader following the file as it grows must not wait for a flush or a close."""
+    from netsentinel_sensor.publisher import FilePublisher
+
+    out = tmp_path / "flows.jsonl"
+    publisher = FilePublisher(str(out))
+    publisher.publish("key", {"flow": {"flow_id": "key"}})
+
+    assert out.read_text(encoding="utf-8") == '{"flow":{"flow_id":"key"}}\n'
+    publisher.close()

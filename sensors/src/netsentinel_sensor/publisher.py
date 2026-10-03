@@ -56,12 +56,18 @@ class FilePublisher:
 
     For a machine that cannot run Redpanda, such as a Windows laptop scoring its own
     capture: the writer then replays the file as it would consume the topic.
+
+    Line-buffered, so each flow reaches the file as it is published: a reader following
+    the file as it grows sees every line promptly, instead of waiting for a buffer to
+    fill on a quiet link.
     """
 
     def __init__(self, path: str) -> None:
-        self._handle = open(path, "w", encoding="utf-8")
+        self._handle = open(path, "w", encoding="utf-8", buffering=1)
 
     def publish(self, key: str, payload: dict[str, Any]) -> None:
+        # One write per line, which line buffering flushes whole: a reader can see a
+        # line part-written only while this call is under way.
         self._handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
     def flush(self) -> None:
