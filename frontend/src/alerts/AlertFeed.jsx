@@ -88,14 +88,14 @@ export function SearchBox({ value, onSearch }) {
  */
 export function TimeRange({ from, to, onChange }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:flex-nowrap">
       <input
         type="datetime-local"
         value={from}
         max={to || undefined}
         onChange={(event) => onChange({ from: event.target.value, to })}
         aria-label="Alerts raised from"
-        className="control data"
+        className="control data min-w-0 flex-1 basis-44 sm:flex-none sm:basis-auto"
       />
       <span className="text-sm text-ink-dim">to</span>
       <input
@@ -104,7 +104,7 @@ export function TimeRange({ from, to, onChange }) {
         min={from || undefined}
         onChange={(event) => onChange({ from, to: event.target.value })}
         aria-label="Alerts raised until"
-        className="control data"
+        className="control data min-w-0 flex-1 basis-44 sm:flex-none sm:basis-auto"
       />
     </div>
   )
