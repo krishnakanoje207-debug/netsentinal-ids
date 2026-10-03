@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, computed_field
 
 from netsentinel_api.db.models import (
     ActionStatus,
@@ -25,6 +25,7 @@ from netsentinel_api.db.models import (
     SensorType,
     Severity,
 )
+from netsentinel_api.services.enforcement import can_undo
 
 
 def _as_text(value: object) -> object:
@@ -248,6 +249,14 @@ class ActionOut(BaseModel):
     status: ActionStatus
     executed_at: datetime | None
     approval: ApprovalOut | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def undoable(self) -> bool:
+        """Whether a rollback could be asked for, from the same rule the route
+        enforces, so the dashboard offers the button only where it can work and
+        never keeps a second copy of which types have an undo."""
+        return can_undo(self.action_type)
 
 
 class ProposeActionIn(BaseModel):

@@ -318,6 +318,22 @@ class ActionRepository:
             .where(Alert.alert_id == action.alert_id)
         )
 
+    def for_alert(self, alert_id: int) -> list[ResponseAction]:
+        """Everything proposed against one alert, newest first, whatever became of it.
+
+        Unlike the two queues, this keeps the rejected, rolled-back and failed
+        actions: the alert page is where an analyst reads what was already tried,
+        and a block that was refused or lifted is part of that history.
+        """
+        return list(
+            self._session.scalars(
+                select(ResponseAction)
+                .options(joinedload(ResponseAction.approval))
+                .where(ResponseAction.alert_id == alert_id)
+                .order_by(ResponseAction.action_id.desc())
+            )
+        )
+
     def pending(self, limit: int = 50) -> list[ResponseAction]:
         """The approval queue the analyst works through."""
         from netsentinel_api.db.models import ActionStatus

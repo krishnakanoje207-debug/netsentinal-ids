@@ -283,6 +283,10 @@ class FakeActionRepo:
         return [a for a in self.actions
                 if a.status == ActionStatus.pending_approval][:limit]
 
+    def for_alert(self, alert_id: int) -> list[ResponseAction]:
+        return sorted((a for a in self.actions if a.alert_id == alert_id),
+                      key=lambda a: a.action_id, reverse=True)
+
 
 class FakeModelRepo:
     """The registry plus the verdicts it would be judged on.

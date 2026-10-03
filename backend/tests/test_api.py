@@ -617,6 +617,43 @@ def test_proposing_against_a_missing_alert_is_a_404(client, admin_header):
     assert response.status_code == 404
 
 
+# --- an alert's actions ------------------------------------------------------
+
+def test_an_alerts_actions_are_listed_with_whether_they_can_be_undone(
+    client, viewer_header, action
+):
+    """A viewer may read it: whether a block is still in force is not a secret."""
+    action.status = ActionStatus.executed
+    response = client.get(f"{V1}/alerts/100/actions", headers=viewer_header)
+    assert response.status_code == 200
+    [row] = response.json()
+    assert row["action_id"] == 500
+    assert row["status"] == "executed"
+    assert row["undoable"] is True
+
+
+def test_a_killed_process_is_listed_as_not_undoable(client, auth_header, action):
+    action.action_type = ActionType.kill_process
+    [row] = client.get(f"{V1}/alerts/100/actions", headers=auth_header).json()
+    assert row["undoable"] is False
+
+
+def test_an_alert_nothing_was_proposed_on_lists_no_actions(client, auth_header, action):
+    action.alert_id = 101
+    response = client.get(f"{V1}/alerts/100/actions", headers=auth_header)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_the_actions_of_a_missing_alert_are_a_404(client, auth_header):
+    """Not an empty list, which would read as "nothing was done"."""
+    assert client.get(f"{V1}/alerts/999/actions", headers=auth_header).status_code == 404
+
+
+def test_an_alerts_actions_need_a_signed_in_reader(client):
+    assert client.get(f"{V1}/alerts/100/actions").status_code == 401
+
+
 # --- the rollback endpoint -------------------------------------------------
 
 def test_rolling_back_queues_the_undo(client, auth_header, action, session):

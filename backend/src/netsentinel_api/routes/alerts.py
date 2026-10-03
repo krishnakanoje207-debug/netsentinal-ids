@@ -21,6 +21,7 @@ from netsentinel_api.db.models import (
 )
 from netsentinel_api.db.repositories import MAX_EXPORT_ROWS
 from netsentinel_api.deps import (
+    ActionRepoDep,
     AlertRepoDep,
     AssetRepoDep,
     SessionDep,
@@ -385,6 +386,24 @@ def escalate(
         )
     )
     return incident
+
+
+@router.get("/{alert_id}/actions", response_model=list[ActionOut])
+def list_actions(
+    alert_id: int,
+    alerts: AlertRepoDep,
+    actions: ActionRepoDep,
+    _: Annotated[object, Depends(require(ALERTS_READ))],
+) -> list[ResponseAction]:
+    """What has been proposed against this alert and what became of each proposal.
+
+    Readable by anyone who can read the alert: a viewer who sees a block was
+    approved is entitled to see whether it is still in force. A missing alert is a
+    404 rather than an empty list, which would read as "nothing was done".
+    """
+    if alerts.get(alert_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
+    return actions.for_alert(alert_id)
 
 
 @router.post(
