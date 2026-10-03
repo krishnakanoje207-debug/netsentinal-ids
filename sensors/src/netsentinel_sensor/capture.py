@@ -19,8 +19,9 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 import dpkt
 
@@ -50,6 +51,71 @@ def from_pcap_file(path: str | Path) -> Iterator[tuple[float, bytes]]:
             except (ValueError, dpkt.dpkt.UnpackError) as exc:
                 raise CaptureError(f"{path} is not a pcap or pcapng file") from exc
         yield from reader
+
+
+#: What a capture window may be called. A window still being written ends in ``.part``,
+#: so it is not one of these until the capture loop renames it.
+CAPTURE_SUFFIXES = (".pcap", ".pcapng")
+
+#: Created in the folder by the capture loop after its last window: the capture is over.
+STOP_FILE = "stop"
+
+
+def from_pcap_dir(
+    directory: str | Path,
+    should_stop: Callable[[], bool],
+    poll_seconds: float = 1.0,
+    sleep: Callable[[float], None] = time.sleep,
+    keep: bool = False,
+    on_stop_file: Callable[[], None] = lambda: None,
+) -> Iterator[tuple[float, bytes]]:
+    """Yield (timestamp, frame) from each capture window dropped into ``directory``.
+
+    Windows' pktmon can only capture to a file, so continuous capture there is a loop
+    writing consecutive windows into a folder. Read as one stream, in name order, the
+    flow tracker downstream keeps its state across them: a connection that spans two
+    windows stays one flow.
+
+    A window is deleted once read, unless ``keep``: it holds the host's real traffic,
+    and a sensor that runs for days must not fill the disk. When no window is waiting
+    this sleeps and looks again, until ``should_stop()``; or until the capture loop has
+    left a ``stop`` file and every window is read, when ``on_stop_file`` is called -
+    the capture ended mid-connection, so that is a stop, not the end of a file. The
+    ``stop`` file is left for the capture loop, which removes it when it starts again.
+    """
+    directory = Path(directory)
+    read: set[Path] = set()
+    while not should_stop():
+        # Looked for before the listing, not after: the capture loop renames its last
+        # window and only then creates the stop file, so seen in this order no window
+        # can appear between the two looks and be left unread.
+        stop_file = (directory / STOP_FILE).exists()
+        ready = sorted(
+            path for path in directory.iterdir()
+            if path.suffix in CAPTURE_SUFFIXES and path not in read
+        )
+        if not ready:
+            if stop_file:
+                on_stop_file()
+                return
+            sleep(poll_seconds)
+            continue
+        path = ready[0]
+        try:
+            # If the agent stops part way through, the generator is closed here and the
+            # window is not deleted: it was not fully read.
+            yield from from_pcap_file(path)
+        except CaptureError as exc:
+            # One bad file must not end a stream meant to run for days. Renamed rather
+            # than skipped in place, so it is not retried on every poll.
+            set_aside = path.with_name(path.name + ".bad")
+            logger.error("%s; set aside as %s", exc, set_aside.name)
+            path.replace(set_aside)
+            continue
+        if keep:
+            read.add(path)
+        else:
+            path.unlink()
 
 
 def from_interface(

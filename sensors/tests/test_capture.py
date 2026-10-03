@@ -122,3 +122,102 @@ def test_the_same_bytes_later_are_a_new_packet():
 
     packets = [(1.0, b"a"), (1.5, b"a"), (3.0, b"a")]
     assert list(drop_repeats(iter(packets))) == packets
+
+
+# A folder of capture windows, as Windows' pktmon loop writes them.
+
+
+def test_windows_are_read_in_name_order_until_the_stop_file(tmp_path, frames, write_window):
+    """Every window is drained before the stop file is honoured, and each is deleted."""
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    write_window(tmp_path / "window-000002.pcapng", frames[3:])
+    write_window(tmp_path / "window-000001.pcapng", frames[:3])
+    (tmp_path / "stop").touch()
+    stopped = []
+
+    read = list(from_pcap_dir(
+        tmp_path, should_stop=lambda: False, sleep=pytest.fail,
+        on_stop_file=lambda: stopped.append(True),
+    ))
+
+    assert [ts for ts, _frame in read] == pytest.approx([ts for ts, _frame in frames])
+    assert stopped == [True]
+    # The windows held real traffic and are gone; the stop file is the capture loop's.
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["stop"]
+
+
+def test_a_window_still_being_written_waits_for_its_rename(tmp_path, frames, write_window):
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    part = write_window(tmp_path / "window-000001.pcapng.part", frames)
+    naps = []
+
+    def sleep(seconds):
+        # First nap: the capture loop finishes the window. Second: it ends.
+        naps.append(seconds)
+        if len(naps) == 1:
+            part.rename(tmp_path / "window-000001.pcapng")
+        else:
+            (tmp_path / "stop").touch()
+
+    read = list(from_pcap_dir(tmp_path, should_stop=lambda: False, poll_seconds=0.5, sleep=sleep))
+
+    assert len(read) == len(frames)
+    assert naps == [0.5, 0.5]
+
+
+def test_keep_leaves_each_window_and_reads_it_once(tmp_path, frames, write_window):
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    write_window(tmp_path / "window-000001.pcapng", frames)
+    (tmp_path / "stop").touch()
+
+    read = list(from_pcap_dir(tmp_path, should_stop=lambda: False, sleep=pytest.fail, keep=True))
+
+    assert len(read) == len(frames)
+    assert (tmp_path / "window-000001.pcapng").exists()
+
+
+def test_a_file_that_is_not_a_capture_is_set_aside(tmp_path, frames, write_window):
+    """One bad window must not end a stream meant to run for days, nor be retried."""
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    (tmp_path / "window-000001.pcapng").write_text("not a capture", encoding="utf-8")
+    write_window(tmp_path / "window-000002.pcapng", frames)
+    (tmp_path / "stop").touch()
+
+    read = list(from_pcap_dir(tmp_path, should_stop=lambda: False, sleep=pytest.fail))
+
+    assert len(read) == len(frames)
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "stop", "window-000001.pcapng.bad",
+    ]
+
+
+def test_a_stop_while_waiting_ends_the_stream(tmp_path):
+    """Ctrl+C with no window waiting must not leave the sensor polling forever."""
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    stop = []
+    stopped_by_file = []
+    read = list(from_pcap_dir(
+        tmp_path, should_stop=lambda: bool(stop), sleep=lambda _s: stop.append(True),
+        on_stop_file=lambda: stopped_by_file.append(True),
+    ))
+
+    assert read == []
+    assert stop == [True], "noticed at the first look after the nap"
+    assert stopped_by_file == []
+
+
+def test_a_window_read_part_way_is_not_deleted(tmp_path, frames, write_window):
+    """A stop mid-window closes the stream there; the rest of that window is not lost."""
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    window = write_window(tmp_path / "window-000001.pcapng", frames)
+    stream = from_pcap_dir(tmp_path, should_stop=lambda: False, sleep=pytest.fail)
+    next(stream)
+    stream.close()
+
+    assert window.exists()

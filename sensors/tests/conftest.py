@@ -96,6 +96,23 @@ def pcap_path(frames, tmp_path_factory) -> str:
     return str(path)
 
 
+@pytest.fixture(scope="session")
+def write_window():
+    """Write packets as one pcapng capture window: ``write_window(path, packets)``.
+
+    pcapng because that is what pktmon's capture loop drops into the folder.
+    """
+
+    def write(path, packets: list[tuple[float, bytes]]):
+        with open(path, "wb") as handle:
+            writer = dpkt.pcapng.Writer(handle)
+            for timestamp, frame in packets:
+                writer.writepkt(frame, ts=timestamp)
+        return path
+
+    return write
+
+
 @dataclass(frozen=True)
 class StubModel:
     """Just the identity fields the agent reads off a LoadedModel."""
