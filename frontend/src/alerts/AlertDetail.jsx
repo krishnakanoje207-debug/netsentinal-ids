@@ -14,19 +14,26 @@
  *
  * Both would be easy to render as a blank panel, and a blank panel reads as "nothing to
  * worry about".
+ *
+ * The response history keeps the same discipline: an action is "in force" only once the
+ * responder applied it, and asking for it to be lifted says the request is queued, not
+ * that traffic is flowing again.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
-import { ArrowLeft, CheckCircle, Eye, FolderOpen, Prohibit, XCircle } from '../components/icons'
+import { ArrowCounterClockwise, ArrowLeft, CheckCircle, Eye, FolderOpen, Prohibit, XCircle } from '../components/icons'
 import { RiskScore } from '../components/RiskScore'
 import { SeverityBadge, StatusPill, statusLabel } from '../components/SeverityBadge'
 import {
+  ACTION_NAME,
+  ACTION_STATUS,
   SEVERITY_MEANING,
   STATUS_MEANING,
   featureLabel,
@@ -147,6 +154,178 @@ function Journey({ alert }) {
   )
 }
 
+/** The plate colour per action state: colour only where something is in force or moving. */
+const ACTION_TONE = {
+  pending_approval: 'border-sev-medium text-sev-medium',
+  approved: 'border-sev-medium text-sev-medium',
+  rejected: 'border-line-strong text-ink-dim',
+  executed: 'border-sev-critical text-sev-critical',
+  rollback_requested: 'border-sev-medium text-sev-medium',
+  rolled_back: 'border-line-strong text-ink-dim',
+  failed: 'border-sev-high text-sev-high',
+}
+
+/** States the responder has yet to move on, so the list is worth polling while one is shown. */
+const MOVING = new Set(['pending_approval', 'approved', 'rollback_requested'])
+
+/** @param {string | null} value */
+function when(value) {
+  return value ? new Date(value).toLocaleString() : null
+}
+
+/**
+ * One action and, for an executed one this account may undo, the request to lift it.
+ *
+ * @param {{action: import('../api/types').ResponseAction, canDecide: boolean, alertId: number}} props
+ */
+function ActionRow({ action, canDecide, alertId }) {
+  const { token } = useAuth()
+  const queryClient = useQueryClient()
+  const [asking, setAsking] = useState(false)
+  const [reason, setReason] = useState('')
+  const lift = useMutation({
+    mutationFn: () => api.requestRollback(token, action.action_id, reason.trim()),
+    onSuccess: () => {
+      setAsking(false)
+      void queryClient.invalidateQueries({ queryKey: ['alert-actions', alertId] })
+    },
+  })
+  const state = ACTION_STATUS[action.status] ?? { label: action.status, meaning: '' }
+  const offerLift = canDecide && action.status === 'executed' && action.undoable
+
+  return (
+    <li className="py-4 first:pt-0 last:pb-0" data-testid={`alert-action-${action.action_id}`}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-bold">{ACTION_NAME[action.action_type] ?? action.action_type}</span>
+        <code className="data rounded bg-sunk px-1.5 py-0.5">{action.target}</code>
+        <span
+          className={`ml-auto rounded-[3px] border px-2 py-0.5 text-[0.8125rem] font-semibold ${ACTION_TONE[action.status] ?? 'border-line text-ink-dim'}`}
+        >
+          {state.label}
+        </span>
+      </div>
+      <p className="mt-1 text-[0.875rem] text-ink-dim">{state.meaning}</p>
+      {action.approval && (
+        <p className="mt-1 text-[0.875rem] text-ink-dim">
+          {action.approval.decision === 'approved' ? 'Approved' : 'Rejected'} by account{' '}
+          {action.approval.approver_id}
+          {when(action.approval.decided_at) && ` on ${when(action.approval.decided_at)}`}
+          {action.approval.comment && (
+            <>
+              : <q className="text-ink">{action.approval.comment}</q>
+            </>
+          )}
+        </p>
+      )}
+      {when(action.executed_at) && (
+        <p className="mt-1 text-[0.875rem] text-ink-dim">Applied on {when(action.executed_at)}</p>
+      )}
+      {canDecide && action.status === 'executed' && !action.undoable && (
+        <p className="mt-2 text-[0.875rem] text-ink-faint">This kind of action cannot be undone.</p>
+      )}
+
+      {lift.data && (
+        <p className="mt-2 text-[0.9375rem] font-semibold text-sev-low" role="status">
+          Lift requested. It stays in force until the responder lifts it; this list will then say
+          Lifted.
+        </p>
+      )}
+      {lift.error && (
+        <div className="mt-2">
+          <ErrorNotice error={lift.error} />
+        </div>
+      )}
+
+      {offerLift && !asking && !lift.data && (
+        <button
+          type="button"
+          onClick={() => setAsking(true)}
+          className="control press mt-3 inline-flex h-9 items-center gap-2 text-sm font-semibold"
+        >
+          <ArrowCounterClockwise size={16} weight="bold" aria-hidden="true" />
+          Ask to lift this
+        </button>
+      )}
+      {offerLift && asking && (
+        <form
+          className="mt-3 space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (reason.trim()) lift.mutate()
+          }}
+        >
+          <label className="block">
+            <span className="text-[0.8125rem] font-semibold text-ink-dim">Why should it be lifted? (required)</span>
+            <textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              rows={2}
+              placeholder="What about the original judgement was wrong?"
+              className="mt-1.5 w-full rounded-md border border-line-strong bg-panel p-2.5 text-[0.9375rem] transition-colors duration-150 hover:border-ink-faint"
+              aria-label={`Reason for lifting action ${action.action_id}`}
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={lift.isPending || !reason.trim()}
+              title={reason.trim() ? undefined : 'A lift needs a reason the next analyst can read'}
+              className="press h-9 rounded-md bg-fill-critical px-4 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"
+            >
+              Request the lift
+            </button>
+            <button type="button" onClick={() => setAsking(false)} className="control press h-9 text-sm font-semibold">
+              Cancel
+            </button>
+          </div>
+          <p className="text-[0.8125rem] text-ink-faint">
+            This queues the request. The responder lifts it afterwards, not this button.
+          </p>
+        </form>
+      )}
+    </li>
+  )
+}
+
+/**
+ * Everything proposed against this alert and what became of it.
+ *
+ * @param {{alertId: number, canDecide: boolean}} props
+ */
+function ActionHistory({ alertId, canDecide }) {
+  const { token } = useAuth()
+  const { data, error, isLoading } = useQuery({
+    queryKey: ['alert-actions', alertId],
+    queryFn: () => api.alertActions(token, alertId),
+    enabled: token !== null,
+    // Polled only while the responder still has something to do, so "In force" or
+    // "Lifted" appears without a reload and a settled list costs nothing.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((action) => MOVING.has(action.status)) ? 5000 : false,
+  })
+
+  return (
+    <Panel
+      title="What was done about it"
+      description="Blocks and other responses proposed for this alert, and where each one stands."
+    >
+      {error ? (
+        <ErrorNotice error={error} />
+      ) : isLoading ? (
+        <p className="text-ink-dim">Loading responses...</p>
+      ) : data && data.length > 0 ? (
+        <ul className="divide-y divide-line" data-testid="alert-actions">
+          {data.map((action) => (
+            <ActionRow key={action.action_id} action={action} canDecide={canDecide} alertId={alertId} />
+          ))}
+        </ul>
+      ) : (
+        <p className="text-ink-dim">No response has been proposed for this alert.</p>
+      )}
+    </Panel>
+  )
+}
+
 export function AlertDetail() {
   const { alertId } = useParams()
   const { token, can } = useAuth()
@@ -181,7 +360,10 @@ export function AlertDetail() {
   })
   const propose = useMutation({
     mutationFn: () => api.proposeAction(token, id, 'block_ip'),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['pending-actions'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pending-actions'] })
+      void queryClient.invalidateQueries({ queryKey: ['alert-actions', id] })
+    },
   })
 
   if (isLoading) return <p className="text-ink-dim">Loading alert...</p>
@@ -296,6 +478,8 @@ export function AlertDetail() {
               </>
             )}
           </Panel>
+
+          <ActionHistory alertId={id} canDecide={can(PERMISSIONS.approvalsDecide)} />
 
           <Panel
             title="AI summary"

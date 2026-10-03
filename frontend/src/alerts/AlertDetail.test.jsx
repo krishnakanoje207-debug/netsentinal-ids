@@ -6,6 +6,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -39,10 +40,29 @@ const ROLES = {
   viewer: { role: 'viewer', permissions: ['alerts:read', 'models:read'] },
 }
 
-function renderAs(account, alert = ALERT, summary = null) {
+const EXECUTED_BLOCK = {
+  action_id: 31,
+  alert_id: 7,
+  action_type: 'block_ip',
+  target: '175.45.176.0',
+  status: 'executed',
+  executed_at: '2026-09-23T11:45:00Z',
+  undoable: true,
+  approval: { approval_id: 4, approver_id: 2, decision: 'approved', comment: 'confirmed scan', decided_at: '2026-09-23T11:40:00Z' },
+}
+
+/** @param {{status: number, body: object}} [rollback] what the rollback endpoint answers */
+function renderAs(account, alert = ALERT, summary = null, actions = [], rollback = undefined) {
   const me = { user_id: 1, username: account, email: 'x@example.test', is_active: true, ...ROLES[account] }
   vi.mocked(fetch).mockImplementation(async (input) => {
     const url = String(input)
+    if (url.endsWith('/rollback')) {
+      const { status, body } = rollback ?? { status: 200, body: { ...actions[0], status: 'rollback_requested' } }
+      return { ok: status < 400, status, statusText: String(status), json: async () => body }
+    }
+    if (url.endsWith('/actions')) {
+      return { ok: true, status: 200, statusText: 'OK', json: async () => actions }
+    }
     if (url.endsWith('/summary')) {
       return summary
         ? { ok: true, status: 200, statusText: 'OK', json: async () => summary }
@@ -161,5 +181,66 @@ describe('AlertDetail actions', () => {
   it('says plainly when no summary exists', async () => {
     renderAs('viewer')
     expect(await screen.findByText('No AI summary has been written for this alert yet.')).toBeInTheDocument()
+  })
+
+  it('lists what was done about the alert, in words, with who approved it', async () => {
+    renderAs('viewer', ALERT, null, [EXECUTED_BLOCK])
+    const row = await screen.findByTestId('alert-action-31')
+    expect(row).toHaveTextContent('Block an address')
+    expect(row).toHaveTextContent('In force')
+    expect(row).toHaveTextContent('confirmed scan')
+    // A viewer reads the history but is offered nothing to do with it.
+    expect(screen.queryByRole('button', { name: /Ask to lift/ })).not.toBeInTheDocument()
+  })
+
+  it('says so when nothing was proposed, rather than showing an empty panel', async () => {
+    renderAs('viewer')
+    expect(await screen.findByText('No response has been proposed for this alert.')).toBeInTheDocument()
+  })
+
+  it('offers a lift only on an executed action that can be undone', async () => {
+    renderAs('analyst', ALERT, null, [
+      EXECUTED_BLOCK,
+      { ...EXECUTED_BLOCK, action_id: 32, status: 'pending_approval', executed_at: null, approval: null },
+      { ...EXECUTED_BLOCK, action_id: 33, action_type: 'kill_process', target: 'agent-1', undoable: false },
+    ])
+    await screen.findByTestId('alert-action-33')
+    expect(screen.getAllByRole('button', { name: /Ask to lift/ })).toHaveLength(1)
+    expect(screen.getByTestId('alert-action-33')).toHaveTextContent('This kind of action cannot be undone.')
+  })
+
+  it('does not offer a lift to an account that cannot decide on responses', async () => {
+    renderAs('admin', ALERT, null, [EXECUTED_BLOCK])
+    await screen.findByTestId('alert-action-31')
+    expect(screen.queryByRole('button', { name: /Ask to lift/ })).not.toBeInTheDocument()
+  })
+
+  it('will not send a lift without a reason, and says it is queued once sent', async () => {
+    const user = userEvent.setup()
+    renderAs('analyst', ALERT, null, [EXECUTED_BLOCK])
+    await user.click(await screen.findByRole('button', { name: /Ask to lift/ }))
+    const submit = screen.getByRole('button', { name: 'Request the lift' })
+    expect(submit).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Reason for lifting action 31'), 'blocked a partner')
+    await user.click(submit)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Lift requested. It stays in force until the responder lifts it',
+    )
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/actions/31/rollback'))
+    expect(JSON.parse(call[1].body)).toEqual({ reason: 'blocked a partner' })
+  })
+
+  it("shows the API's sentence when the lift is refused", async () => {
+    const user = userEvent.setup()
+    renderAs('analyst', ALERT, null, [EXECUTED_BLOCK], {
+      status: 422,
+      body: { detail: 'action 31 is rolled_back, so there is nothing to roll back' },
+    })
+    await user.click(await screen.findByRole('button', { name: /Ask to lift/ }))
+    await user.type(screen.getByLabelText('Reason for lifting action 31'), 'wrong host')
+    await user.click(screen.getByRole('button', { name: 'Request the lift' }))
+    expect(await screen.findByText(/nothing to roll back/)).toBeInTheDocument()
   })
 })

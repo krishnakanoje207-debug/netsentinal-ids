@@ -5,6 +5,7 @@
  * thousand icons, and loading all of them for every test run costs seconds for nothing.
  */
 
+export { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 export { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft'
 export { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight'
 export { Brain } from '@phosphor-icons/react/dist/csr/Brain'

@@ -51,6 +51,32 @@ export const STATUS_MEANING = {
   closed_false_positive: 'Confirmed as a false alarm',
 }
 
+/** A response action, named for what it does to the network or the host. */
+export const ACTION_NAME = {
+  block_ip: 'Block an address',
+  isolate_host: 'Isolate a host',
+  kill_process: 'Kill a process',
+  disable_account: 'Disable an account',
+}
+
+/**
+ * Where a response action stands. Worded so no state before `executed` reads as done
+ * and no state before `rolled_back` reads as lifted: the block is in force while a
+ * rollback is only requested.
+ */
+export const ACTION_STATUS = {
+  pending_approval: { label: 'Waiting for approval', meaning: 'Proposed. Nothing has touched the network yet.' },
+  approved: { label: 'Approved, not yet carried out', meaning: 'Authorised. The responder has not applied it yet.' },
+  rejected: { label: 'Rejected', meaning: 'An analyst decided against it. Nothing was done.' },
+  executed: { label: 'In force', meaning: 'The responder applied it and it is in effect now.' },
+  rollback_requested: {
+    label: 'Lift requested',
+    meaning: 'Someone asked for it to be lifted. It stays in force until the responder lifts it.',
+  },
+  rolled_back: { label: 'Lifted', meaning: 'The responder undid it. It is no longer in effect.' },
+  failed: { label: 'Failed', meaning: 'The responder tried to apply it and the enforcement point refused. It is not in effect.' },
+}
+
 /** What each account can do, said the way a person would say it. */
 export const ROLES = {
   soc_analyst: {
