@@ -7,6 +7,9 @@
 
     python -m netsentinel_sensor.agent --pcap capture.pcap --models ... --out flows.jsonl
 
+    python -m netsentinel_sensor.agent --pcap-dir D:/capture --drop-repeats \
+        --models ... --out flows.jsonl
+
     NETSENTINEL_SENSOR_TOKEN=... python -m netsentinel_sensor.agent \
         --interface netsentinel-lab --models ... --registry-url http://127.0.0.1:8010
 
@@ -46,7 +49,12 @@ from netsentinel_core.features.extractor import FlowTracker
 from netsentinel_scoring.engine import FusionScorer
 from netsentinel_scoring.registry import load_model
 
-from netsentinel_sensor.capture import drop_repeats, from_interface, from_pcap_file
+from netsentinel_sensor.capture import (
+    drop_repeats,
+    from_interface,
+    from_pcap_dir,
+    from_pcap_file,
+)
 from netsentinel_sensor.publisher import (
     CollectingPublisher,
     FilePublisher,
@@ -177,6 +185,11 @@ class SensorAgent:
     def stop(self) -> None:
         """Ask the loop to finish after the current packet."""
         self._stopping = True
+
+    @property
+    def stopping(self) -> bool:
+        """Whether stop() was called; a packet source waiting for packets polls this."""
+        return self._stopping
 
     def _cut_short(self, features: FlowFeatures, stopping: bool) -> bool:
         """Whether the sensor, not the network, ended or began this flow.
@@ -350,6 +363,12 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--interface", help="interface to capture from, e.g. netsentinel-lab")
     source.add_argument("--pcap", help="read a capture file instead of a live interface")
+    source.add_argument(
+        "--pcap-dir",
+        help="read capture windows from this folder as one stream, deleting each once "
+        "read, until a file named stop appears; for Windows, where pktmon captures "
+        "only to files",
+    )
     parser.add_argument(
         "--models",
         nargs="+",
@@ -423,7 +442,17 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(signal, signal_name):
             signal.signal(getattr(signal, signal_name), lambda *_: agent.stop())
 
-    packets = from_pcap_file(args.pcap) if args.pcap else from_interface(args.interface)
+    packets: Iterator[tuple[float, bytes]]
+    if args.pcap:
+        packets = from_pcap_file(args.pcap)
+    elif args.pcap_dir:
+        # Polls agent.stopping while it waits for the next window, so a signal ends the
+        # run even when no packet arrives to reach the check in agent.run.
+        packets = from_pcap_dir(
+            args.pcap_dir, should_stop=lambda: agent.stopping, on_stop_file=agent.stop
+        )
+    else:
+        packets = from_interface(args.interface)
     if args.drop_repeats:
         packets = drop_repeats(packets)
     stats = agent.run(packets)

@@ -249,3 +249,82 @@ def test_a_file_publisher_line_is_readable_as_soon_as_it_is_published(tmp_path):
 
     assert out.read_text(encoding="utf-8") == '{"flow":{"flow_id":"key"}}\n'
     publisher.close()
+
+
+# A folder of capture windows: one sensor run reads them as one stream.
+
+
+def _run_on_windows(agent, directory, sleep=None):
+    from netsentinel_sensor.capture import from_pcap_dir
+
+    return agent.run(from_pcap_dir(
+        directory, should_stop=lambda: agent.stopping,
+        sleep=sleep or pytest.fail, on_stop_file=agent.stop,
+    ))
+
+
+def test_a_flow_spanning_two_windows_is_one_flow(scorer, publisher, tcp_frame, write_window, tmp_path):
+    """The tracker carries over; the second or so pktmon loses restarting is just a pause."""
+    write_window(tmp_path / "window-000001.pcapng", [
+        (1000.0, tcp_frame(dpkt.tcp.TH_SYN)),
+        (1000.01, tcp_frame(dpkt.tcp.TH_SYN | dpkt.tcp.TH_ACK, to_server=False)),
+    ])
+    write_window(tmp_path / "window-000002.pcapng", [
+        (1001.2, tcp_frame(dpkt.tcp.TH_ACK)),
+        (1001.3, tcp_frame(dpkt.tcp.TH_RST)),
+    ])
+    (tmp_path / "stop").touch()
+
+    stats = _run_on_windows(SensorAgent(scorer, publisher), tmp_path)
+
+    (_key, payload), = publisher.published
+    assert payload["flow"]["in_pkts"] + payload["flow"]["out_pkts"] == 4
+    assert payload["verdict"]["cut_short"] is False, "closed by RST, not by the stop"
+    assert stats.packets == 4
+
+
+def test_only_the_first_window_is_the_start_of_capture(scorer, publisher, tcp_frame, write_window, tmp_path):
+    """A connection already under way is excused in the first window, not in a later one."""
+    write_window(tmp_path / "window-000001.pcapng", [
+        (1000.0, tcp_frame(dpkt.tcp.TH_ACK, sport=40000)),
+        (1000.1, tcp_frame(dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK, to_server=False, sport=40000)),
+    ])
+    write_window(tmp_path / "window-000002.pcapng", [
+        (1030.0, tcp_frame(dpkt.tcp.TH_ACK)),
+        (1030.1, tcp_frame(dpkt.tcp.TH_RST | dpkt.tcp.TH_ACK, to_server=False)),
+    ])
+    (tmp_path / "stop").touch()
+
+    _run_on_windows(SensorAgent(scorer, publisher), tmp_path)
+
+    assert [
+        (payload["verdict"]["cut_short"], payload["verdict"]["is_alert"])
+        for _k, payload in publisher.published
+    ] == [(True, False), (False, True)]
+
+
+def test_the_stop_file_is_a_stop(scorer, publisher, tcp_frame, write_window, tmp_path):
+    """The capture ended mid-connection, so a young open flow is cut short, not whole."""
+    write_window(tmp_path / "window-000001.pcapng", [(1000.0, tcp_frame(dpkt.tcp.TH_SYN))])
+    (tmp_path / "stop").touch()
+
+    agent = SensorAgent(scorer, publisher)
+    stats = _run_on_windows(agent, tmp_path)
+
+    assert agent.stopping
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["cut_short"] is True
+    assert (stats.cut_short, stats.alerts) == (1, 0)
+    assert (tmp_path / "stop").exists()
+
+
+def test_a_stop_while_waiting_for_a_window_flushes(scorer, publisher, tcp_frame, write_window, tmp_path):
+    """Ctrl+C between windows: no packet arrives to reach the check in run()."""
+    write_window(tmp_path / "window-000001.pcapng", [(1000.0, tcp_frame(dpkt.tcp.TH_SYN))])
+    agent = SensorAgent(scorer, publisher)
+
+    stats = _run_on_windows(agent, tmp_path, sleep=lambda _s: agent.stop())
+
+    (_key, payload), = publisher.published
+    assert payload["verdict"]["cut_short"] is True
+    assert stats.packets == 1
