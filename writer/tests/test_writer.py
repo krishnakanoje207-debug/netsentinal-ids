@@ -8,6 +8,7 @@ stops matching the build.
 from __future__ import annotations
 
 import contextlib
+import json
 import signal
 import sys
 import types
@@ -24,7 +25,7 @@ from netsentinel_api.db.models import (
     Severity,
 )
 from netsentinel_core.features.contract import FEATURE_ORDER, TIER_A_FEATURES
-from netsentinel_writer.consumer import ReplayConsumer
+from netsentinel_writer.consumer import FollowConsumer, ReplayConsumer
 from netsentinel_writer.writer import (
     ContractMismatch,
     DetectionWriter,
@@ -394,6 +395,131 @@ def test_an_unpaced_replay_never_sleeps():
 
     assert len(list(consumer.messages())) == 2
     assert waits == []
+
+
+# --- following a file the sensor is still writing --------------------------
+
+def _follow(path, *steps):
+    """A FollowConsumer whose every wait runs the next step, a change the sensor makes
+    to the file meanwhile, and stops it once the steps run out."""
+    remaining = list(steps)
+
+    def sleep(_seconds):
+        if remaining:
+            remaining.pop(0)()
+        else:
+            consumer.stop()
+
+    consumer = FollowConsumer(path, sleep=sleep)
+    return consumer
+
+
+def _append(path, text):
+    def step():
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(text)
+
+    return step
+
+
+def test_a_followed_file_yields_lines_appended_after_the_start(tmp_path):
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text('{"n": 1}\n', encoding="utf-8")
+    consumer = _follow(flows, _append(flows, '{"n": 2}\n'), _append(flows, '{"n": 3}\n'))
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 2, 3]
+
+
+def test_a_half_written_line_is_held_until_its_newline(tmp_path):
+    """The sensor's write can be read before it has finished."""
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text('{"n": 1}\n{"n": ', encoding="utf-8")
+    consumer = _follow(flows, _append(flows, "2"), _append(flows, "}\n"))
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 2]
+    assert consumer.undecodable == 0
+
+
+def test_a_line_that_is_not_json_is_skipped_not_fatal(tmp_path):
+    """A sensor that crashed mid-line and was restarted leaves one torn line."""
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text('{"n": 1}\n{"n": {"n": 2}\n\n{"n": 3}\n', encoding="utf-8")
+    consumer = _follow(flows)
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 3]
+    assert consumer.undecodable == 1
+
+
+def test_a_rewritten_file_is_read_again_from_the_top(tmp_path):
+    """A restarted sensor opens its output afresh, so the file shrinks."""
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text('{"n": 1}\n{"n": 2}\n', encoding="utf-8")
+    consumer = _follow(flows, lambda: flows.write_text('{"n": 3}\n', encoding="utf-8"))
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 2, 3]
+
+
+def test_the_writer_waits_for_a_file_the_sensor_has_not_created(tmp_path):
+    flows = tmp_path / "flows.jsonl"
+    consumer = _follow(flows, lambda: None, _append(flows, '{"n": 1}\n'))
+
+    assert [payload["n"] for payload in consumer.messages()] == [1]
+
+
+def test_stop_ends_a_follow_that_is_waiting_for_lines(tmp_path):
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text('{"n": 1}\n', encoding="utf-8")
+
+    assert [payload["n"] for payload in _follow(flows).messages()] == [1]
+
+
+def test_stop_ends_a_follow_still_waiting_for_its_file(tmp_path):
+    assert list(_follow(tmp_path / "flows.jsonl").messages()) == []
+
+
+def test_a_done_marker_ends_the_follow_after_the_last_lines(tmp_path):
+    """The launcher's way to end the writer on Windows, where it cannot send Ctrl+C.
+    Lines that landed before the marker are still read; a torn last line is dropped."""
+    flows = tmp_path / "flows.jsonl"
+    done = tmp_path / "flows.jsonl.done"
+    flows.write_text('{"n": 1}\n', encoding="utf-8")
+
+    def sensor_exits(_seconds):
+        assert not done.exists(), "waited after the marker"
+        _append(flows, '{"n": 2}\n{"n": ')()
+        done.write_text("", encoding="utf-8")
+
+    consumer = FollowConsumer(flows, sleep=sensor_exits)
+
+    assert [payload["n"] for payload in consumer.messages()] == [1, 2]
+    assert done.exists()
+
+
+def test_a_done_marker_with_no_file_ends_the_follow(tmp_path):
+    """The sensor exited without scoring a flow."""
+    (tmp_path / "flows.jsonl.done").write_text("", encoding="utf-8")
+    consumer = FollowConsumer(tmp_path / "flows.jsonl", sleep=lambda _s: pytest.fail("waited"))
+
+    assert list(consumer.messages()) == []
+
+
+def test_a_followed_flow_is_stored_before_the_next_one_arrives(
+    writer, session, make_payload, tmp_path
+):
+    """The point of following: the alert is committed, and so reaches the dashboard,
+    while the sensor is still running rather than when the file ends."""
+    flows = tmp_path / "flows.jsonl"
+    flows.write_text(json.dumps(make_payload()) + "\n", encoding="utf-8")
+
+    def second_flow():
+        assert session.commits == 1
+        _append(flows, json.dumps(make_payload()) + "\n")()
+
+    consumer = _follow(flows, second_flow)
+    stats = writer.run(consumer)
+
+    assert stats.alerts == 2
+    assert consumer.commits == 2
 
 
 def test_a_revoked_sensor_is_refused_at_startup():

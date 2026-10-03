@@ -1,8 +1,8 @@
 """Where scored flows come from.
 
-Two consumers, mirroring the sensor's two publishers: Redpanda for the real path and
-a replaying one for the tests, both satisfying the same small protocol so the writer
-has no idea which it is reading.
+Consumers mirroring the sensor's publishers: Redpanda for the real path, a replaying
+one for the tests, and one following the file a sensor without a bus is writing, all
+satisfying the same small protocol so the writer has no idea which it is reading.
 
 Offsets are committed by the caller, after the database transaction, never
 automatically. That is the whole reason auto-commit is off: a commit before the write
@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
-from typing import Any, Callable, Iterator, Protocol
+from pathlib import Path
+from typing import Any, BinaryIO, Callable, Iterator, Protocol
 
 from netsentinel_core.bus import FLOW_TOPIC
 
@@ -62,6 +64,103 @@ class ReplayConsumer:
         self.commits += 1
 
     def close(self) -> None:
+        self.closed = True
+
+
+class FollowConsumer:
+    """Follows a JSON Lines file that a running sensor is still appending to.
+
+    For the laptop that watches its own traffic without Redpanda: the sensor writes
+    each scored flow as a line and flushes it, and this yields the line as soon as it
+    is whole, so the alert reaches the dashboard within a poll of being scored.
+
+    A line without its newline is still being written and is held until the rest
+    arrives. A line that is not JSON is logged and skipped: a sensor that crashed
+    mid-line leaves one, and every line after it is still good. A file shorter than
+    what was already read means the sensor restarted and rewrote it, so reading starts
+    over from the top.
+
+    The stream ends on stop(), or once ``<path>.done`` exists and the file has been
+    read to its end: the launcher creates that marker only after the sensor exited,
+    because on Windows it cannot send the writer a Ctrl+C. The marker is left for the
+    launcher to clear.
+
+    There is no offset to commit, so commit() only counts, as ReplayConsumer's does.
+    A restarted writer reads the file from the top and stores its flows again, which
+    is at-least-once, not loss; restart the sensor with it to start a fresh file.
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        poll_seconds: float = 0.5,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._path = Path(path)
+        self._done = self._path.with_name(self._path.name + ".done")
+        self._poll_seconds = poll_seconds
+        self._sleep = sleep
+        self._stopped = False
+        self.commits = 0
+        self.undecodable = 0
+        self.closed = False
+
+    def messages(self) -> Iterator[dict[str, Any]]:
+        handle = self._wait_for_file()
+        if handle is None:
+            return
+        with handle:
+            pending = b""
+            # Set once the marker is seen; the file is then read once more to its end,
+            # because lines may have landed between the last read and the check.
+            done = False
+            while not self._stopped:
+                line = handle.readline()
+                if line.endswith(b"\n"):
+                    line, pending = pending + line, b""
+                    if line.strip():
+                        try:
+                            yield json.loads(line)
+                        except ValueError as exc:
+                            logger.error("skipping a line that is not valid JSON: %s", exc)
+                            self.undecodable += 1
+                    continue
+                pending += line
+                if done:
+                    if pending.strip():
+                        logger.error("dropping an unfinished last line: %r", pending[:200])
+                    return
+                if os.fstat(handle.fileno()).st_size < handle.tell():
+                    handle.seek(0)
+                    pending = b""
+                    continue
+                if self._done.exists():
+                    done = True
+                    continue
+                self._sleep(self._poll_seconds)
+
+    def _wait_for_file(self) -> BinaryIO | None:
+        """The writer may start before the sensor has written anything."""
+        while not self._stopped:
+            try:
+                # Binary, so a read that stops inside a multi-byte character is held
+                # with the rest of its line rather than failing to decode.
+                return open(self._path, "rb")
+            except FileNotFoundError:
+                if self._done.exists():
+                    return None  # the sensor exited without writing a flow
+                self._sleep(self._poll_seconds)
+        return None
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def stop(self) -> None:
+        """End messages() after the message in flight."""
+        self._stopped = True
+
+    def close(self) -> None:
+        self._stopped = True
         self.closed = True
 
 
