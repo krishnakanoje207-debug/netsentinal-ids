@@ -308,6 +308,7 @@ function ActionHistory({ alertId, canDecide }) {
     <Panel
       title="What was done about it"
       description="Blocks and other responses proposed for this alert, and where each one stands."
+      tour="responses"
     >
       {error ? (
         <ErrorNotice error={error} />

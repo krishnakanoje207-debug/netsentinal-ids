@@ -103,6 +103,15 @@ export const TOUR_STEPS = [
       'Nothing is blocked until an analyst approves it.',
   },
   {
+    id: 'responses',
+    route: ({ firstAlertId }) => (firstAlertId === null ? null : `/alerts/${firstAlertId}`),
+    target: 'responses',
+    title: 'What was done about it',
+    body:
+      'Every block proposed for this alert, and where it stands: waiting, approved, in force or lifted. ' +
+      'It updates by itself while the responder is still working.',
+  },
+  {
     id: 'approvals',
     route: '/approvals',
     target: 'approvals',
