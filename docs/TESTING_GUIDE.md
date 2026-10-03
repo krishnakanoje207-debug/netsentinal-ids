@@ -121,8 +121,8 @@ Run these in a terminal at the project root, with `$env:UV_CACHE_DIR="D:/uv-cach
 ## 8. The automated suites
 
 ```powershell
-uv run --no-sync pytest -q          # 1080 Python tests, no database needed
-cd frontend; npx vitest run         # 157 dashboard tests
+uv run --no-sync pytest -q          # 1085 Python tests, no database needed
+cd frontend; npx vitest run         # 165 dashboard tests
 ```
 
 Both must be all green. A failure is a bug in the code or in the test, and either is

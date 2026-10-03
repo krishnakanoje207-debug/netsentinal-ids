@@ -9,9 +9,9 @@ beside this file. Section 7 records the first run on the cloud VM, on 27 Septemb
 
 | Suite | Tests | Result | Command |
 |---|---|---|---|
-| Python: unit + integration (7 packages) | 1080 | all pass | `uv run pytest` |
+| Python: unit + integration (7 packages) | 1085 | all pass | `uv run pytest` |
 | End-to-end chain (detected, explained, enriched, case, approved, blocked) | included above (`tests/e2e`) | all pass | `uv run pytest tests/e2e` |
-| Dashboard (React components, API client, stream) | 157 | all pass | `cd frontend; npx vitest run` |
+| Dashboard (React components, API client, stream) | 165 | all pass | `cd frontend; npx vitest run` |
 
 Test counts are from 30 September 2026, after the sensor's cut-short tests were added;
 coverage was last measured on 24 September.
