@@ -91,6 +91,29 @@ powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1 -Seconds 30
 powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Native -Database netsentinel_mypc
 ```
 
+To keep watching instead of scoring one capture, add `-Live` (Ctrl+C stops it):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1 -Live
+```
+
+pktmon writes only files, so `local/capture_windows.ps1` (the one elevated part) cuts the
+traffic into windows of `-Window` seconds, 15 by default, and moves each finished one into
+`lab/local/out/live/`. A single long-running sensor reads them with `--pcap-dir` as one
+stream, deleting each as it goes, so a connection that spans two windows is still one
+flow. A single long-running writer follows the scored flows with `--replay --follow`.
+The launcher also starts the dashboard on `netsentinel_mypc`, and each alert reaches it
+about one window after the traffic. A live run keeps that database, its history and its
+accounts between runs; `-Fresh` rebuilds it. Stopping goes in order so nothing captured
+is dropped: the capture publishes its last window, the sensor reads what is left, then
+the writer finishes the file. Port 8010 must be free (stop the Docker stack first),
+because the dashboard's API uses it.
+
+What it does not do: pktmon misses the packets in the second or so it takes to restart
+between windows, so a connection whose handshake fell in that gap is seen mid-stream and
+can alert. A burst of alerts is stored at about ten a second, because each one is
+explained with SHAP before it is written.
+
 Expect most flows to alert. The detectors learned normal traffic from NF-UNSW-NB15,
 whose training split has no benign HTTPS at all, so ordinary browsing is foreign to them.
 The capture holds your real traffic; it stays in `lab/local/out/`, which git ignores.

@@ -6,6 +6,16 @@
 #
 # Then: lab\replay\start_demo.ps1 -Native -Database netsentinel_mypc
 #
+#   powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1 -Live              # until Ctrl+C
+#   powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1 -Live -Window 30
+#
+# -Live watches continuously instead, and starts the dashboard. capture_windows.ps1 cuts
+# the traffic into windows of -Window seconds; one long-running sensor reads them as a
+# single stream, so a connection that spans two windows is still one flow; one
+# long-running writer follows the scored flows, so an alert reaches the open dashboard
+# about a window after the traffic. -Live keeps netsentinel_mypc, its accounts and its
+# history between runs (-Fresh rebuilds it). Ctrl+C stops it all, and the capture first.
+#
 # The full design captures on a Linux sensor and passes flows through Redpanda. Neither
 # runs on this laptop, so this is the same path with two substitutions: Windows' own
 # packet monitor (pktmon) captures, and the scored flows go to a file the writer replays.
@@ -31,7 +41,7 @@
 # other networks the same model scored 0.74 and 0.05 (docs/evaluation/REPORT.md). That is
 # what this run shows, and why every model has to earn its place in shadow mode.
 
-param([int]$Seconds = 120, [string]$Pcap = "")
+param([int]$Seconds = 120, [string]$Pcap = "", [switch]$Live, [int]$Window = 15, [switch]$Fresh)
 
 $ErrorActionPreference = "Continue"
 $root = Resolve-Path "$PSScriptRoot\..\.."
@@ -49,8 +59,10 @@ function Step($name, [scriptblock]$body) {
 
 # --- 1. capture -------------------------------------------------------------------
 
-if (-not $Pcap) {
-    $etl = "$out\capture.etl"
+if ($Live) {
+    # Nothing to capture up front: the windows arrive while the sensor runs (section 4).
+} elseif (-not $Pcap) {
+    $etl ="$out\capture.etl"
     $Pcap = "$out\capture.pcapng"
     Remove-Item $etl, $Pcap -ErrorAction SilentlyContinue
     # NICs only, whole packets. Run in its own elevated window, which closes when done.
@@ -73,8 +85,10 @@ pktmon etl2pcap '$etl' --out '$Pcap' | Out-Null
     Remove-Item $etl -ErrorAction SilentlyContinue
     if (-not (Test-Path $Pcap)) { Write-Host "pktmon produced no capture." -ForegroundColor Red; exit 1 }
 }
-$Pcap = Resolve-Path $Pcap
-Write-Host "capture: $Pcap ($([math]::Round((Get-Item $Pcap).Length / 1MB, 1)) MB)"
+if (-not $Live) {
+    $Pcap = Resolve-Path $Pcap
+    Write-Host "capture: $Pcap ($([math]::Round((Get-Item $Pcap).Length / 1MB, 1)) MB)"
+}
 
 # --- 2. the database --------------------------------------------------------------
 
@@ -95,13 +109,23 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Step "recreate netsentinel_mypc" {
-    & "$pgBin\dropdb.exe" @pg --if-exists --force netsentinel_mypc
-    & "$pgBin\createdb.exe" @pg netsentinel_mypc
+# A continuous watch keeps what it has seen, and the accounts whose passwords are in
+# credentials.txt: demo_users.py writes passwords only for the accounts it creates.
+$exists = (& "$pgBin\psql.exe" @pg -d postgres -Atc "select 1 from pg_database where datname = 'netsentinel_mypc'") -eq "1"
+$reuse = $Live -and $exists -and -not $Fresh
+if ($reuse) {
+    Write-Host "== keeping netsentinel_mypc (-Fresh rebuilds it)"
+} else {
+    Step "recreate netsentinel_mypc" {
+        & "$pgBin\dropdb.exe" @pg --if-exists --force netsentinel_mypc
+        & "$pgBin\createdb.exe" @pg netsentinel_mypc
+    }
 }
 Step "migrate" { Push-Location backend; uv run --no-sync alembic upgrade head; Pop-Location }
-Remove-Item "$out\credentials.txt" -ErrorAction SilentlyContinue
-Step "accounts" { uv run --no-sync python lab/replay/demo_users.py --out "$out\credentials.txt" }
+if (-not $reuse) {
+    Remove-Item "$out\credentials.txt" -ErrorAction SilentlyContinue
+    Step "accounts" { uv run --no-sync python lab/replay/demo_users.py --out "$out\credentials.txt" }
+}
 
 # The estate is this computer: every IPv4 address it holds, so alerts on it link to it.
 $os = (Get-CimInstance Win32_OperatingSystem).Caption
@@ -135,6 +159,91 @@ do {
 if (-not $up) { Stop-Process -Id $api.Id -Force; Write-Host "the registry API did not start" -ForegroundColor Red; exit 1 }
 
 # --- 4. score and write -----------------------------------------------------------
+
+if ($Live) {
+    # Relative paths: Start-Process does not quote arguments, and the repository's path
+    # has spaces in it. The elevated capture starts in System32, so it gets quoted ones.
+    $liveDir = "lab\local\out\live"
+    $flows = "lab\local\out\live-flows.jsonl"
+    # The windows hold real traffic; a run that was killed may have left some behind.
+    Remove-Item -Recurse -Force $liveDir, $flows, "$flows.done" -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $liveDir | Out-Null
+
+    Write-Host "== start the sensor"
+    $sensorProc = Start-Process -PassThru -WindowStyle Hidden -RedirectStandardError "$out\sensor.log" uv -ArgumentList `
+        "run", "--no-sync", "python", "-m", "netsentinel_sensor.agent", "--pcap-dir", $liveDir, "--drop-repeats",
+        "--models", "artefacts/tier_a/model_card.json", "artefacts/tier_d_ae/model_card.json",
+        "artefacts/tier_d/model_card.json", "artefacts/tier_b/model_card.json",
+        "--registry-url", "http://127.0.0.1:$registryPort", "--sensor-name", "this-pc", "--out", $flows
+    # The sensor opens its output only after it has read the registry, so once the file
+    # exists the registry API has done its job.
+    $deadline = (Get-Date).AddSeconds(120)
+    while (-not (Test-Path $flows) -and -not $sensorProc.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+    taskkill /PID $api.Id /T /F *> $null
+    $env:NETSENTINEL_SENSOR_TOKEN = $null
+    if (-not (Test-Path $flows)) {
+        taskkill /PID $sensorProc.Id /T /F *> $null
+        Write-Host "failed: the sensor did not start; see $out\sensor.log" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "== start the writer"
+    $writerProc = Start-Process -PassThru -WindowStyle Hidden -RedirectStandardError "$out\writer.log" uv -ArgumentList `
+        "run", "--no-sync", "netsentinel-writer", "--card", "artefacts/tier_a/model_card.json",
+        "--family-card", "artefacts/family/model_card.json", "--sensor-id", $sensor, "--replay", $flows, "--follow"
+
+    Write-Host "== start the capture ($Window-second windows; Windows will ask for administrator rights)"
+    try {
+        $capture = Start-Process -PassThru -Verb RunAs -WindowStyle Minimized powershell -ArgumentList "-ExecutionPolicy", "Bypass",
+            "-File", "`"$root\lab\local\capture_windows.ps1`"", "-Dir", "`"$root\$liveDir`"", "-Seconds", "$Window"
+    } catch {
+        $capture = $null
+        Write-Host "The capture needs administrator rights, and they were refused." -ForegroundColor Red
+    }
+
+    if ($capture) {
+        if (Get-NetTCPConnection -LocalPort 8010 -State Listen -ErrorAction SilentlyContinue) {
+            # Usually the Docker stack, whose API and database would hide this one.
+            Write-Host "Port 8010 is taken, so the dashboard was not started; stop what holds it, then run:" -ForegroundColor Yellow
+            Write-Host "  powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Native -Database netsentinel_mypc"
+        } else {
+            & "$root\lab\replay\start_demo.ps1" -Native -Database netsentinel_mypc
+            Set-Location $root
+        }
+        Write-Host "Watching. Accounts: $out\credentials.txt. Ctrl+C here stops the watch." -ForegroundColor Green
+    }
+
+    $why = "stopped"
+    try {
+        while ($capture) {
+            Start-Sleep -Seconds 15
+            if ($capture.HasExited) { $why = "the capture window closed"; break }
+            if ($sensorProc.HasExited) { $why = "the sensor stopped; see $out\sensor.log"; break }
+            if ($writerProc.HasExited) { $why = "the writer stopped; see $out\writer.log"; break }
+            $alerts = & "$pgBin\psql.exe" @pg -d netsentinel_mypc -Atc "select count(*) from alerts"
+            $last = Select-String -Path "$out\sensor.log" -Pattern "sensor: " | Select-Object -Last 1
+            $stats = if ($last) { ($last.Line -split "sensor: ", 2)[1] } else { "no window read yet" }
+            Write-Host "$(Get-Date -Format HH:mm:ss)  $alerts alerts stored  $stats"
+        }
+    } finally {
+        # In order, so nothing captured is lost: the capture publishes its last window and
+        # says so, the sensor reads what is left and ends, and only then is the writer told
+        # that the flows file is complete.
+        Write-Host "== stopping ($why)"
+        New-Item -ItemType File -Force "$liveDir\stop-request" | Out-Null
+        if ($capture -and -not $capture.HasExited) { $null = $capture.WaitForExit(($Window + 60) * 1000) }
+        if (-not (Test-Path "$liveDir\stop")) {
+            if ($capture) { Write-Host "The capture did not stop cleanly; run 'pktmon stop' as administrator." -ForegroundColor Yellow }
+            New-Item -ItemType File -Force "$liveDir\stop" | Out-Null
+        }
+        if (-not $sensorProc.WaitForExit(120000)) { taskkill /PID $sensorProc.Id /T /F *> $null }
+        New-Item -ItemType File -Force "$flows.done" | Out-Null
+        if ($writerProc -and -not $writerProc.WaitForExit(120000)) { taskkill /PID $writerProc.Id /T /F *> $null }
+        Remove-Item -Recurse -Force $liveDir -ErrorAction SilentlyContinue
+        Write-Host "Stopped. The alerts stay in netsentinel_mypc; the dashboard windows keep running until closed."
+    }
+    exit 0
+}
 
 Write-Host "== score the capture"
 uv run --no-sync python -m netsentinel_sensor.agent --pcap "$Pcap" --drop-repeats `
