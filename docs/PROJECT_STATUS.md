@@ -66,7 +66,7 @@ all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the de
 Rebuilt on 25 September to the owner's brief: a station information system, light by
 default with a night mode, a station clock whose second hand runs only while the live feed
 is connected, split-flap counts, a departures board of alerts, hover and focus detail
-everywhere, a last-hour strip drawn to scale, and a 13-stop guided tour. Reviewed on 26
+everywhere, a last-hour strip drawn to scale, and a 14-stop guided tour. Reviewed on 26
 September against the real API and database rather than fixtures; the review found and
 fixed: the live feed never pushing, the feed stopping at 50 alerts, shadow models shown by
 their raw identifiers, alert counts drawn almost flat in the last-hour strip, and faint
@@ -77,6 +77,7 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Enrol the laptop's Wazuh agent with Sysmon through the SSH tunnel | F3 on Windows | The Wazuh agent installed on the laptop |
+| 2 | Run the sensor's cut-short fix on the VM and re-measure false alerts at a restart (`TEST_REPORT.md`, section 11) | F10 | SSH to the VM, which the network rule currently refuses |
 
 Done 29 September: the sensor on the VM runs the teardown fix, both lab Tier D cards were refitted
 on the flows it produces, and the result was re-measured (`docs/testing/TEST_REPORT.md`, section 9).
@@ -117,3 +118,5 @@ same two addresses within 150 s (29 September; `docs/testing/TEST_REPORT.md`, se
 ## What I need from you
 
 - For item 1: installing the Wazuh agent on the laptop (it needs administrator rights).
+- For item 2: allowing this laptop's current public address in the VM's SSH rule in the
+  Azure portal; the ISP changes the address every day or two.
