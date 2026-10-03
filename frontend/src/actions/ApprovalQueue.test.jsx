@@ -35,7 +35,7 @@ function setup(canDecide = true) {
 describe('ActionCard', () => {
   it('shows what would be done and to what', () => {
     setup()
-    expect(screen.getByText('Block IP address')).toBeInTheDocument()
+    expect(screen.getByText('Block an address')).toBeInTheDocument()
     expect(screen.getByText('203.0.113.9')).toBeInTheDocument()
   })
 

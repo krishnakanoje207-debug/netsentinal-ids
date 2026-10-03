@@ -27,13 +27,7 @@ import { ErrorNotice } from '../components/ErrorNotice'
 import { HoverCard } from '../components/HoverCard'
 import { Prohibit, Scales } from '../components/icons'
 import { PageHeader } from '../components/PageHeader'
-
-const ACTION_LABEL = {
-  block_ip: 'Block IP address',
-  isolate_host: 'Isolate host',
-  kill_process: 'Kill process',
-  disable_account: 'Disable account',
-}
+import { ACTION_NAME } from '../lib/glossary'
 
 /**
  * @param {{action: import('../api/types').ResponseAction,
@@ -53,7 +47,7 @@ export function ActionCard({ action, onDecide, pending, canDecide }) {
         </span>
         <div className="min-w-0">
           <p className="text-lg font-extrabold tracking-tight">
-            {ACTION_LABEL[action.action_type] ?? action.action_type}
+            {ACTION_NAME[action.action_type] ?? action.action_type}
           </p>
           <p className="mt-1">
             <code className="data rounded bg-sunk px-2 py-1 text-base">{action.target}</code>
