@@ -188,6 +188,14 @@ supply are zero; Tier A reads none of them.
 `--mode active` is typed for the reason `--mode active` is typed at registration: a
 shadow model raises no alerts, and a fresh database has no shadow period to promote on.
 
+`--replay` reads a finished file once. Add `--follow` when a sensor is still writing it,
+as on the laptop that watches its own traffic: the writer then keeps reading, stores
+each flow as its line lands, and the alert reaches the dashboard within a second or
+so. It waits for a file that does not exist yet, holds a half-written line until its
+newline arrives, skips a torn one, and starts over when a restarted sensor rewrites
+the file. It ends on Ctrl+C, or, for a launcher that cannot send one, once
+`<file>.done` exists and every complete line has been read.
+
 ## Backend
 
 ```bash

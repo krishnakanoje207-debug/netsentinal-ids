@@ -31,7 +31,12 @@ from netsentinel_api.db.session import get_sessionmaker
 from netsentinel_api.services.soar import forwarder_from
 from sqlalchemy import select
 
-from netsentinel_writer.consumer import Consumer, RedpandaConsumer, ReplayConsumer
+from netsentinel_writer.consumer import (
+    Consumer,
+    FollowConsumer,
+    RedpandaConsumer,
+    ReplayConsumer,
+)
 from netsentinel_writer.explain import ExplainerError, load_explainer
 from netsentinel_writer.technique import LabellerError, load_labeller
 from netsentinel_writer.writer import DetectionWriter
@@ -96,11 +101,20 @@ def main(argv: list[str] | None = None) -> int:
         "alerts arriving live",
     )
     parser.add_argument(
+        "--follow",
+        action="store_true",
+        help="with --replay, keep reading as a sensor still writing the file appends to "
+        "it, storing each flow as it lands; how the laptop watches its own traffic. "
+        "Ends on Ctrl+C, or once JSONL.done exists and the file is read to its end",
+    )
+    parser.add_argument(
         "--family-card",
         help="attack-family model card; with it, confident ML alerts carry a MITRE technique",
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
+    if args.follow and not args.replay:
+        parser.error("--follow needs --replay: it follows a file, not the bus")
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -145,16 +159,20 @@ def main(argv: list[str] | None = None) -> int:
     writer = DetectionWriter(
         session_factory, explainer, sensor_id, model_id, forwarder, labeller=labeller
     )
-    if args.replay:
+    if args.follow:
+        consumer: Consumer = FollowConsumer(args.replay)
+    elif args.replay:
         with open(args.replay, encoding="utf-8") as handle:
             payloads = [json.loads(line) for line in handle if line.strip()]
-        consumer: Consumer = ReplayConsumer(payloads, interval=args.replay_interval)
+        consumer = ReplayConsumer(payloads, interval=args.replay_interval)
     else:
         consumer = RedpandaConsumer(
             args.brokers, group_id=args.group_id, from_beginning=args.from_beginning
         )
-        # SIGTERM is how Docker stops a container. Stopping, not closing, ends the
-        # loop after the message in flight and still lets its offset be committed;
+    if args.follow or not args.replay:
+        # Both run until told to stop. SIGTERM is how Docker stops a container, Ctrl+C
+        # how the laptop's watch is ended. Stopping, not closing, ends the loop after
+        # the message in flight and still lets its offset be committed;
         # a closed consumer cannot commit, and the message would be written again.
         for signal_name in ("SIGINT", "SIGTERM"):
             if hasattr(signal, signal_name):

@@ -522,6 +522,15 @@ def test_a_followed_flow_is_stored_before_the_next_one_arrives(
     assert consumer.commits == 2
 
 
+def test_follow_without_a_file_is_refused(capsys):
+    from netsentinel_writer import main as entry
+
+    with pytest.raises(SystemExit) as exited:
+        entry.main(["--card", "card.json", "--sensor-id", "1", "--follow"])
+    assert exited.value.code == 2
+    assert "--follow needs --replay" in capsys.readouterr().err
+
+
 def test_a_revoked_sensor_is_refused_at_startup():
     """An administrator revoking a sensor on the Admin page stops its ingest."""
     from netsentinel_api.db.models import Sensor
