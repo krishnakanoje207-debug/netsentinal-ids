@@ -141,6 +141,9 @@ services:
       # required variable would stop "--profile storage" on a machine without it. The
       # API itself refuses to start without a signing key.
       NETSENTINEL_JWT_SECRET: ${NETSENTINEL_JWT_SECRET:-}
+      NETSENTINEL_GOOGLE_CLIENT_ID: ${NETSENTINEL_GOOGLE_CLIENT_ID:-}
+      NETSENTINEL_GOOGLE_ACCOUNTS: ${NETSENTINEL_GOOGLE_ACCOUNTS:-{}}
+      NETSENTINEL_GOOGLE_GMAIL_ACCOUNTS: ${NETSENTINEL_GOOGLE_GMAIL_ACCOUNTS:-{}}
       # What the pipeline's sensor presents to read which models are active. Blank
       # turns that endpoint off, and the sensor then refuses to start.
       NETSENTINEL_SENSOR_TOKEN: ${NETSENTINEL_SENSOR_TOKEN:-}

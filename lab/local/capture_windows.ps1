@@ -11,40 +11,50 @@
 # what is left there is nothing more. Closing this window instead leaves pktmon running;
 # "pktmon stop" in an administrator prompt ends it.
 
-param([Parameter(Mandatory)][string]$Dir, [int]$Seconds = 15)
+param([Parameter(Mandatory)][string]$Dir, [ValidateRange(1, 3600)][int]$Seconds = 15)
 
 $ErrorActionPreference = "Continue"
 $staging = Join-Path $Dir "staging"
 New-Item -ItemType Directory -Force $staging | Out-Null
 $request = Join-Path $Dir "stop-request"
+$script:ownsCapture = $false
 
 function Start-Window([int]$n) {
     $etl = Join-Path $staging ("window-{0:D6}.etl" -f $n)
-    # NICs only, whole packets, as in the one-off capture.
-    pktmon start --capture --comp nics --pkt-size 0 --file-name $etl | Out-Null
+    # Include stack components: native Wi-Fi NIC frames can still be encrypted.
+    # The sensor accepts IPv4 Ethernet frames and drops repeated stack copies.
+    pktmon start --capture --comp all --pkt-size 0 --file-name $etl | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "pktmon did not start (exit $LASTEXITCODE)" }
+    $script:ownsCapture = $true
     return $etl
+}
+
+function Stop-Window {
+    pktmon stop | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "pktmon did not stop (exit $LASTEXITCODE)" }
+    $script:ownsCapture = $false
 }
 
 function Publish-Window([string]$etl) {
     $pcap = [IO.Path]::ChangeExtension($etl, ".pcapng")
     pktmon etl2pcap $etl --out $pcap | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "pktmon conversion failed (exit $LASTEXITCODE); kept $etl" }
     Remove-Item $etl -ErrorAction SilentlyContinue
     # A window with no packets converts to nothing; there is nothing to publish.
     if (Test-Path $pcap) { Move-Item $pcap $Dir -Force }
 }
 
-# A session left running by an earlier run that was closed would make start fail.
-pktmon stop *> $null
+# pktmon is system-wide. If someone else owns a session, start fails; never stop theirs.
 Write-Host "Watching this computer in $Seconds-second windows. Stop it from the window that started it."
 
 $n = 1
 $etl = $null
 try {
     $etl = Start-Window $n
+    New-Item -ItemType File -Force (Join-Path $Dir "started") | Out-Null
     while (-not (Test-Path $request)) {
         Start-Sleep -Seconds $Seconds
-        pktmon stop | Out-Null
+        Stop-Window
         $previous = $etl
         $etl = $null
         if (-not (Test-Path $request)) {
@@ -55,11 +65,12 @@ try {
     }
 } catch {
     Write-Host $_ -ForegroundColor Red
-    Start-Sleep -Seconds 10
+    Set-Content -LiteralPath (Join-Path $Dir "failed") -Value "$_" -Encoding utf8
 } finally {
-    if ($etl) {
-        pktmon stop | Out-Null
+    if ($etl -and $script:ownsCapture) {
+        Stop-Window
         Publish-Window $etl
     }
     New-Item -ItemType File -Force (Join-Path $Dir "stop") | Out-Null
 }
+if (Test-Path (Join-Path $Dir "failed")) { exit 1 }

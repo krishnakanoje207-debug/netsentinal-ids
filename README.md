@@ -12,12 +12,27 @@ Design and requirements live in [`deliverables/`](deliverables).
 | [`docs/evaluation/REPORT.md`](docs/evaluation/REPORT.md) | How accurate the models are, measured honestly |
 | [`docs/testing/TEST_REPORT.md`](docs/testing/TEST_REPORT.md) | Tests, security scans, load test, requirement validation |
 | [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) | How to try to break it by hand |
-| [`docs/CLOUD_VM.md`](docs/CLOUD_VM.md) | Setting up the cloud VM that runs the full pipeline |
+| [`docs/CLOUD_VM.md`](docs/CLOUD_VM.md) | Historical cloud deployment instructions (optional) |
 
-Quickest look: `docker compose -f infra/docker-compose.yml --profile app up -d --build`,
-then https://127.0.0.1:5180 (a self-signed certificate; accept the browser warning).
-Without Docker, on the Windows laptop: `lab\replay\start_demo.ps1 -Native`, then
-http://127.0.0.1:5173 (see the user manual, Part 2).
+The current priority is monitoring this Windows computer's real traffic locally.
+Azure, SSH and a cloud VM are not prerequisites. The native path uses pktmon, the
+trained models, PostgreSQL, the writer, the API and the dashboard; see
+[`lab/README.md`](lab/README.md#this-computers-own-traffic) and the current local
+inventory in [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+
+```powershell
+powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1
+```
+
+Approve Windows' capture elevation prompt and keep the launcher open. It starts
+continuous capture and opens the dashboard on the persistent `netsentinel_live`
+database. Accounts are in `lab\local\out\live\credentials.txt`; Ctrl+C stops capture.
+`lab\replay\start_demo.ps1` also defaults to this live path.
+
+For a labelled dataset demonstration, `lab\replay\start_demo.ps1 -Demo -Native`
+opens the replay dashboard. This shows replayed traffic, not a live capture. The optional
+Docker app runs at https://127.0.0.1:5180 after
+`docker compose -f infra/docker-compose.yml --env-file infra/.env --profile app up -d --build`.
 
 The full pipeline ran on an 8 GB cloud VM on 27 September 2026: sensors, bus,
 ClickHouse, scoring, the API and dashboard, Wazuh, CrowdSec, Grafana and DFIR-IRIS

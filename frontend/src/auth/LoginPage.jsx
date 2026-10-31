@@ -10,6 +10,7 @@ import { FlapText } from '../components/FlapText'
 import { Mark } from '../components/Mark'
 import { ThemeToggle } from '../theme/theme'
 import { useAuth } from './AuthContext'
+import { GoogleSignIn } from './GoogleSignIn'
 
 const DOES = [
   ['Watch', 'Every network conversation is scored by AI detectors as it happens.'],
@@ -74,6 +75,8 @@ export function LoginPage() {
           <p className="mt-1 mb-7 text-[0.9375rem] text-ink-dim">
             Use the account your administrator gave you.
           </p>
+
+          <GoogleSignIn />
 
           {error && (
             <p role="alert" className="mb-5 rounded-md border border-sev-critical/50 bg-fill-critical/10 p-3 text-[0.9375rem]">

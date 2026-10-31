@@ -11,9 +11,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from google.auth.exceptions import GoogleAuthError, TransportError
+from jwt import InvalidTokenError
+from pydantic import BaseModel, Field
+from requests.exceptions import RequestException
 
 from netsentinel_api.db.models import AuditLog
 from netsentinel_api.deps import CurrentUser, SessionDep, SettingsDep, UserRepoDep
+from netsentinel_api.google_auth import verify_google_credential
 from netsentinel_api.rbac import permissions_for
 from netsentinel_api.schemas import CurrentUserOut, TokenResponse
 from netsentinel_api.security import create_access_token, verify_password
@@ -27,6 +32,67 @@ BAD_CREDENTIALS = HTTPException(
     detail="incorrect username or password",
     headers={"WWW-Authenticate": "Bearer"},
 )
+
+
+class GoogleCredential(BaseModel):
+    credential: str = Field(min_length=1, max_length=16384)
+
+
+def google_enabled(settings) -> bool:
+    return bool(settings.google_client_id and (
+        settings.google_accounts or settings.google_gmail_accounts
+    ))
+
+
+@router.get("/google/config")
+def google_config(settings: SettingsDep) -> dict:
+    # Only the public OAuth client id goes to the browser, never the allowlist.
+    return {"client_id": settings.google_client_id if google_enabled(settings) else None}
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(
+    body: GoogleCredential,
+    users: UserRepoDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> TokenResponse:
+    if not google_enabled(settings):
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    try:
+        claims = verify_google_credential(body.credential, settings.google_client_id)
+    except (TransportError, RequestException):
+        raise HTTPException(status_code=503, detail="Google sign-in is temporarily unavailable") from None
+    except (ValueError, GoogleAuthError, InvalidTokenError):
+        claims = None
+
+    username = None
+    if claims is not None:
+        username = settings.google_accounts.get(claims["sub"])
+        # Google is authoritative for verified @gmail.com addresses. Other email
+        # domains require an explicit stable subject mapping, even if verified.
+        email = claims.get("email")
+        if username is None and isinstance(email, str) and email.lower().endswith("@gmail.com"):
+            username = settings.google_gmail_accounts.get(email.lower())
+    user = users.by_username(username) if username else None
+    if user is None or not user.is_active:
+        session.add(AuditLog(
+            user_id=user.user_id if user else None,
+            action="auth.login_failed",
+            entity="auth:google",
+            details={"reason": "google_identity_not_authorized"},
+        ))
+        session.commit()
+        raise HTTPException(status_code=401, detail="Google account is not authorized for this console")
+
+    token = create_access_token(settings, user.user_id, user.role.name if user.role else "")
+    session.add(AuditLog(
+        user_id=user.user_id,
+        action="auth.login",
+        entity=f"user:{user.user_id}",
+        details={"provider": "google", "role": user.role.name if user.role else None},
+    ))
+    return TokenResponse(access_token=token, expires_in=settings.access_token_ttl_minutes * 60)
 
 
 @router.post("/token", response_model=TokenResponse)

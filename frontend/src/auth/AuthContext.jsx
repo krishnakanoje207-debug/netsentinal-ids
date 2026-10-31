@@ -101,9 +101,21 @@ export function AuthProvider({ children }) {
     [user],
   )
 
+  const signInWithGoogle = useCallback(async (credential) => {
+    setError(null)
+    try {
+      const response = await api.googleLogin(credential)
+      storeToken(response.access_token)
+      setToken(response.access_token)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Google sign in failed.')
+      throw cause
+    }
+  }, [])
+
   const value = useMemo(
-    () => ({ token, user, loading, error, signIn, signOut, can }),
-    [token, user, loading, error, signIn, signOut, can],
+    () => ({ token, user, loading, error, signIn, signInWithGoogle, signOut, can }),
+    [token, user, loading, error, signIn, signInWithGoogle, signOut, can],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

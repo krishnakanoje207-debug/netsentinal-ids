@@ -13,6 +13,8 @@ dependencies = [
     "fastapi>=0.115",
     # The alert export's PDF. Pure Python, and what it needs is already locked.
     "fpdf2>=2.7",
+    # Verify Google Identity credentials using Google's maintained verifier.
+    "google-auth[requests]>=2.40",
     # Outbound HTTP: MISP attribute sync and the Keep webhook.
     "httpx>=0.27",
     "psycopg[binary]>=3.2",

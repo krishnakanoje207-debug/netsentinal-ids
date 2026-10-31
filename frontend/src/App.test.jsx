@@ -25,8 +25,8 @@ describe('App', () => {
     render(<App queryClient={createQueryClient()} />)
     expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument()
-    // Nothing should have been requested without a token.
-    expect(fetch).not.toHaveBeenCalled()
+    // Only public provider configuration is requested without a token.
+    expect(fetch).toHaveBeenCalledWith('/api/v1/auth/google/config', expect.any(Object))
   })
 
   it('discards a stored token the API rejects, rather than showing a broken shell', async () => {

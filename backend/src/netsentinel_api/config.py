@@ -45,6 +45,25 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = Field(default=30, ge=1, le=1440)
 
+    # Optional Google sign-in. Every identity must be explicitly authorized for
+    # an existing local username; its permissions still come from the database.
+    google_client_id: str | None = None
+    google_accounts: dict[str, str] = Field(default_factory=dict)
+    google_gmail_accounts: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("google_client_id", mode="before")
+    @classmethod
+    def _blank_google_client_is_unset(cls, value):
+        return value or None
+
+    @field_validator("google_gmail_accounts")
+    @classmethod
+    def _only_pre_authorize_gmail(cls, value: dict[str, str]) -> dict[str, str]:
+        for email in value:
+            if email != email.strip().lower() or not email.endswith("@gmail.com"):
+                raise ValueError("google_gmail_accounts keys must be lowercase @gmail.com addresses")
+        return value
+
     # Shadow mode is the safe default. Flipping the system to act on its own
     # verdicts should be a deliberate, recorded change, not an omission.
     default_model_mode: str = "shadow"

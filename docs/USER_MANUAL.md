@@ -12,8 +12,9 @@ Part 1 is for everyone who uses the dashboard. Part 2 is for whoever installs it
 
 ### Signing in
 
-Open the dashboard address you were given (for the demo on this laptop,
-http://127.0.0.1:5173; with Docker, https://127.0.0.1:5180) and sign in. What you can do
+Open the dashboard address printed by the launcher (normally
+http://127.0.0.1:5173 on this laptop; it chooses another port if occupied). For live
+monitoring, accounts are in `lab\local\out\live\credentials.txt`. What you can do
 depends on your account's role, and the Overview page tells you in one line under its
 headline. Pages your role cannot use are not shown.
 
@@ -164,13 +165,48 @@ Every change made here is itself written to the audit log.
 
 ## Part 2: Installing and running
 
-### One-command deployment (Docker)
+### This computer's real traffic (Windows, default)
+
+From the repository, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1
+```
+
+Windows asks for administrator approval for pktmon capture. The launcher starts
+native PostgreSQL if necessary, scores real captured IPv4 traffic with the existing
+models, stores detections in `netsentinel_live`, and opens the dashboard. Azure,
+SSH and Docker are not required. The installed workspace Python environment,
+frontend dependencies, model files and `.env.local` are prerequisites; their
+verified local state is in `docs/PROJECT_STATUS.md`.
+
+Accounts and passwords are in `lab\local\out\live\credentials.txt`. Live history
+and accounts persist across runs. Keep the launcher running; Ctrl+C stops capture,
+then drains the sensor and writer. The dashboard remains available. The launcher
+prints its dashboard address; ports 8010 and 5173 advance if already occupied.
+`lab\replay\start_demo.ps1` without options starts the same continuous monitor.
+
+To change capture windows, add `-Window 30` (default: 15 seconds). To reopen only
+the dashboard on existing live history:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Native -Database netsentinel_live
+```
+
+An alert means a trained model found a flow suspicious; ordinary local HTTPS can
+cause false alarms because the training network differs. Review the evidence
+before confirming an intrusion. The native path does not decrypt TLS, score IPv6,
+or run Suricata, Zeek or Wazuh. A connected dashboard's **Live** clock indicates
+its alert feed connection; check the launcher's capture/sensor progress to confirm
+new real traffic is being processed.
+
+### Optional Docker app deployment
 
 Needs Docker with Compose. From the repository:
 
 ```bash
 cp infra/.env.example infra/.env     # then fill in every value
-docker compose -f infra/docker-compose.yml --profile app up -d --build
+docker compose -f infra/docker-compose.yml --env-file infra/.env --profile app up -d --build
 docker compose -f infra/docker-compose.yml logs api    # the first start prints the admin password once
 ```
 
@@ -188,7 +224,7 @@ certificate authority.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File lab\replay\build_demo.ps1   # once: builds the demo database
-powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1   # each time: starts everything
+powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Demo   # each time: starts the replay dashboard
 ```
 
 `build_demo.ps1` replays flows from the dataset's unseen test period through the real
@@ -204,12 +240,13 @@ To show alerts arriving live, give the build an interval in seconds between flow
 `build_demo.ps1 -Native -Interval 1` writes the 535 replayed flows over about nine
 minutes, so an open dashboard fills up as you watch.
 
-### The live pipeline on the cloud VM
+### Historical cloud pipeline (optional)
 
 The whole detection path, with the host sensors, response, dashboards and case
-management, runs on an 8 GB cloud VM; the threat-intelligence and vulnerability-scan
-services take turns there. Setting it up is in `docs/CLOUD_VM.md`, and what each part
-costs in memory is in `infra/README.md`.
+management, ran on an 8 GB cloud VM in September; its current state was not verified
+on 31 October. The threat-intelligence and vulnerability-scan services took turns
+there. This deployment is optional for local monitoring. Historical setup is in
+`docs/CLOUD_VM.md`, and service memory budgets are in `infra/README.md`.
 
 Only SSH is open on the VM. Open the tunnel from `docs/CLOUD_VM.md` (step 7) on the
 laptop, then use:

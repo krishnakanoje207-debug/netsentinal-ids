@@ -165,6 +165,10 @@ export const api = {
   login: (username, password) =>
     request('/auth/token', { method: 'POST', form: { username, password } }),
 
+  googleConfig: () => request('/auth/google/config'),
+
+  googleLogin: (credential) => request('/auth/google', { method: 'POST', json: { credential } }),
+
   /** @returns {Promise<import('./types').CurrentUser>} */
   me: (token) => request('/auth/me', { token }),
 

@@ -2,9 +2,133 @@
 
 Where NetSentinel-AI stands against the locked plan (Research Comparison and 15-Day
 Execution Plan v1.0), what remains, and why some planned tools are not running yet.
-Updated 29 September 2026.
+Updated 1 November 2026.
 
-## Measured today
+## Current scope: local real traffic
+
+Run this computer's actual traffic through the existing sensor, trained models,
+writer and dashboard. Azure and the historical VM are optional; restoring their
+connectivity is not a prerequisite for the local work. A successful dataset replay
+does not establish that packet capture works on this computer.
+
+Read-only inventory on 31 October found:
+
+| Component | Local state |
+|---|---|
+| Windows and memory | Windows 11 Home Single Language; 7.35 GB usable RAM, 0.79 GB free at the check |
+| Free disk | C: 4.95 GB; D: 113.30 GB; keep large caches and data on D: |
+| Python/runtime | Workspace `.venv` uses Python 3.11.15; uv, ONNX Runtime, LightGBM, dpkt, FastAPI, psycopg and CPU PyTorch installed |
+| Frontend | Node 24.13.1 and `frontend/node_modules` present |
+| Native services | PostgreSQL on 127.0.0.1:5433, API on 127.0.0.1:8010 and dashboard on 127.0.0.1:5173 |
+| Packet capture | Windows pktmon installed; real capture requires an elevated process |
+| Trained models | Tier A, B, C, both Tier D models, both lab-baselined Tier D models and family classifier present; ONNX/native hashes match their model cards |
+| Docker/Linux | Desktop/CLI and WSL2 installed; `docker-desktop` distro and Docker service stopped, Linux engine pipe unavailable |
+| Windows host monitoring | Wazuh agent installed, `WazuhSvc` stopped; Sysmon service absent; no local Wazuh manager listener |
+
+No model training or Python package installation is needed to start the native
+network-monitoring path. The system `python` points to Python 3.14; use `uv run
+--no-sync` or `.venv\Scripts\python.exe` for this workspace. The full Docker stack
+does not fit the current free memory: the Wazuh profile alone budgets 3 GB, before
+Docker's VM and the other services. Keep the native path first; add local Linux
+services in stages after freeing memory or increasing RAM.
+
+Additional offline inventory verified on 1 November: all six `llama3.2:3b` blobs
+under `D:\blobs`, with the manifest under `D:\manifests`, passed hash checks.
+The active Ollama store lacks the manifest, the Ollama installer is already on
+disk, and an installed Ollama runtime was not located. The valid `Sysmon.zip`
+and `wazuh-agent-4.14.8-1.msi` are already in Downloads. These packages do not
+need downloading again. Installing/configuring Ollama is optional for alert
+summaries; installing Sysmon and enrolling the existing Wazuh agent are optional
+host monitoring work after a manager is available.
+
+The broader Linux deployment uses existing Compose definitions: storage and
+pipeline services (PostgreSQL, Redpanda, ClickHouse, Vector, Grafana and the
+sensor/scorers/writers), Suricata/Zeek sensors, Wazuh manager/indexer/dashboard,
+DFIR-IRIS and response services, plus the optional intel profile (MISP/Keep) and
+scan profile (Greenbone). Cached local installers or model files do not replace
+the required container images. Pull only the profiles being enabled, after
+Docker starts and enough RAM/disk is available. The native watch needs none of
+these additional container downloads.
+
+The native watch scores IPv4 packet flows with Tiers A, B and D; it does not run
+the separate Tier C window scorer, Suricata or Zeek. TLS payloads remain encrypted.
+The benchmark-trained models can flag ordinary local HTTPS as anomalous, so an
+alert is a model verdict requiring review, not proof of an intrusion. pktmon's
+window restarts also leave short capture gaps.
+
+Wazuh/Sysmon is a separate host-monitoring extension. Sysmon supplies process and
+connection events; the Wazuh agent also needs a running manager. The existing
+`lab/local/enrol_wazuh_agent.ps1` targets 127.0.0.1 ports 1514/1515 and documents a
+historical SSH tunnel. Do not treat installing that agent alone as a working local
+Wazuh deployment. The manager must run locally first for a local-only setup.
+
+Start continuous monitoring from the repository with
+`powershell -ExecutionPolicy Bypass -File lab\local\watch_this_pc.ps1`, or use
+`lab\replay\start_demo.ps1` without options. Both now select real live capture.
+The launcher starts native PostgreSQL if needed, preserves the dedicated
+`netsentinel_live` database, and writes accounts to
+`lab\local\out\live\credentials.txt`. Approve the pktmon elevation prompt and
+leave the launcher open; Ctrl+C stops capture and drains pending flows. See
+`docs/USER_MANUAL.md`, Part 2, for dashboard-only and explicit replay commands.
+
+On 1 November the real capture started and accounts in the separate
+`netsentinel_live` database passed administrator and viewer login checks. The first
+Wi-Fi NIC capture yielded native encrypted 802.11 frames, which the Ethernet IPv4
+extractor correctly skipped. Capture now includes all Windows stack components so
+usable Ethernet frames above Wi-Fi can reach the existing duplicate filter. The
+corrected live run produced 76 scored flows with Tiers A, B and D, including 56
+model alerts; 33 alerts were already readable through the API during verification.
+A diagnostic window contained 474 parseable IPv4 frames;
+the temporary diagnostic copy was deleted after inspection. The active dashboard
+is `http://127.0.0.1:5174` and its API is `http://127.0.0.1:8011`; the earlier
+dashboard/API on 5173/8010 were stopped after verifying their process commands.
+Administrator access to
+`/api/v1/admin/users` returned 200, while viewer access returned 403.
+
+The launcher writes startup progress to `lab/local/out/watch-startup.log` when run
+in the background. To stop a background watch gracefully, find its newest run and
+request capture shutdown; the sensor and writer then drain before exiting:
+
+```powershell
+$run = Get-ChildItem lab/local/out/live -Directory |
+    Where-Object Name -Match '^\d{8}-\d{6}-\d{3}$' |
+    Sort-Object Name -Descending | Select-Object -First 1
+if ($run) { Set-Content -LiteralPath (Join-Path $run.FullName 'windows/stop-request') -Value '' }
+```
+
+Completed ETL files are removed after conversion, and the sensor removes PCAPNG
+windows after reading them. Scored flow JSON, alerts and local credentials persist
+under the ignored output directory/database and should be treated as sensitive.
+
+## Verified 31 October 2026
+
+On 1 November 2026, final local verification passed 1,119 Python tests plus 6
+Windows launcher tests, 167 dashboard tests, the production build, all 14 Compose
+profile configurations, and the CI security gates. Python and npm dependency
+audits reported no known vulnerabilities; lint passed with 29 existing warnings.
+
+The native demo is at database revision `0008`, with 135 alerts. A real viewer login
+and alert fetch succeeded; the API and dashboard both returned HTTP 200. The local
+checks passed: 1,107 Python tests, 165 dashboard tests, and the dashboard build. Lint
+completed with 28 warnings.
+
+The 3 October GitHub Actions run `37138097970` for HEAD
+`1becbd0` failed its security check on pip-audit's PyJWT finding. The 31 October npm
+audit initially reported 3 moderate and 3 high vulnerabilities. After dependency
+updates, the local CI-equivalent Python audit and npm audit both reported no known
+vulnerabilities, and `uv lock --check` passed. The lock now includes PyJWT 2.15.1,
+certifi 2026.10.23 and Pillow 13.0.0. Hosted CI still needs a push and a fresh run;
+the earlier failed run is not evidence that these changes passed remotely.
+
+VM SSH timed out on 31 October, so its services and the sensor fix could not be
+rechecked. The Docker daemon was unavailable, so the Docker demo could not be refreshed
+or verified. The native demo checks do not establish either deployment's current state.
+
+## Historical measurements (September 2026)
+
+The measurements below preserve the September evidence. Unless repeated above, they
+have not been re-measured on 31 October; references to active models and running
+services describe the deployment at the time of those measurements.
 
 | What | Result | Evidence |
 |---|---|---|
@@ -23,13 +147,13 @@ Updated 29 September 2026.
 | Replay of unseen flows through the real pipeline | 135/135 attacks alerted, 0/400 false alarms (re-run 26 Sep on the current models) | `lab/replay` |
 | Live alert push, end to end | Alerts written by the writer process reach the dashboard's WebSocket: 8 of 8 and 12 of 12 frames in two runs, including after the database was dropped and recreated under a running API | section "Live feed" in `README.md` |
 | Load: 25 concurrent analysts | 683 requests, 0 failures, feed p95 47 ms (24 Sep) | `docs/testing/TEST_REPORT.md` |
-| Security scans | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities (24 Sep) | same |
+| Security scans (24 Sep; historical) | bandit (1 real issue, fixed), pip-audit and npm audit: 0 known vulnerabilities then; see the 31 Oct audit results above | same |
 | Live lab on the cloud VM (27 Sep) | An nmap SYN scan of 1000 ports: 1000 flows, mean risk 0.937, 999 above 0.5, all alerted; benign flows mean 0.168, none above 0.5 | `docs/testing/TEST_REPORT.md` |
 | JA4 on live traffic | A TLS exchange on the lab bridge fingerprinted by Suricata and Zeek; Zeek's JA4 stored in ClickHouse | same |
 | Tier D on the lab's own traffic | The 11-12% of benign lab flows that alerted before the TCP teardown fix were all one-packet phantoms; after it, 0 of 28,738 benign flows alert with any Tier D card. Re-baselined on 21,631 post-fix flows (29 Sep): 0.84-0.89% flagged alone on 7,107 held-out ones; not promoted, since either would lose SSH brute-force (and, for the autoencoder, DNS tunnel) flows the fused rule catches today; in shadow | `docs/testing/TEST_REPORT.md`, section 9 |
 | Automated tests | 1,107 Python + 165 dashboard, all passing (coverage 82% when last measured, 24 Sep) | `uv run pytest`, `npx vitest run` |
 
-## Planned tools: built, running, or not
+## Planned tools: September deployment evidence
 
 The plan splits the system across a 16 GB cloud VM (always-on services), Kaggle (training)
 and the laptop (dashboard, LLM). **The VM ran on 27 September**, on 8 GB rather than 16:
@@ -37,6 +161,8 @@ Azure for Students offered no 16 GB size. Measured there, everything but MISP an
 Greenbone runs at once in 5.2 GB, and those two take turns (`infra/README.md`, "Why
 profiles"). The live runs found twenty defects that the tests against fakes had not,
 all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the design.
+The table records those historical runs; the VM's current state was not verified on
+31 October because SSH timed out.
 
 | Planned | In the plan as | Status | Why |
 |---|---|---|---|
@@ -56,7 +182,7 @@ all fixed (`docs/testing/TEST_REPORT.md`). Nothing below was dropped from the de
 | Tier B (F7) | Kaggle | Trained on the laptop CPU; scored in shadow by the pipeline sensor | Not in the demo: the NetFlow replay carries no packets |
 | Tier C (F8) | Kaggle | Trained on the laptop CPU; scored in shadow over flow windows by the pipeline | Not in the demo: it scores windows of a live stream |
 | Tier D autoencoder (F9) | Kaggle | Trained on the laptop CPU; **active** in the demo, the forest in shadow | |
-| CI (GitHub Actions) | Not in the plan | **Running** on every push to the private repository `netsentinal-ids`: per-package tests, frontend tests and build, bandit, pip-audit, npm audit, Compose validation; green since the first run on 26 Sep | |
+| CI (GitHub Actions) | Not in the plan | Configured on every push to the private repository `netsentinal-ids`: per-package tests, frontend tests and build, bandit, pip-audit, npm audit, Compose validation | Historically green from 26 Sep; run `37138097970` (3 Oct, HEAD `1becbd0`) failed the PyJWT security check; updated dependencies pass local audits, pending a fresh hosted run |
 | Apache Kafka | **Fallback** only | Not used, by design | The plan locks Redpanda (Kafka API, lighter) |
 | Apache Flink | **Out of scope for v1.0** | Not built, by design | Future work in the plan (section 9.2); the Python scorer does the streaming |
 | NVIDIA Triton | Dropped in rev. 1 | Not used, by design | In-process ONNX Runtime: 0.07 ms per flow, no GPU server |
@@ -76,8 +202,14 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 
 | # | Task | For | Needs |
 |---|---|---|---|
-| 1 | Enrol the laptop's Wazuh agent with Sysmon through the SSH tunnel | F3 on Windows | The Wazuh agent installed on the laptop |
-| 2 | Run the sensor's cut-short fix on the VM and re-measure false alerts at a restart (`TEST_REPORT.md`, section 11) | F10 | SSH to the VM, which the network rule currently refuses |
+| 1 | Continue observing real local traffic and review model verdicts; live pktmon capture and scored flows were verified on 1 November | Continuous local capture | Keep the watch launcher running; administrator/UAC approval is needed on restart |
+| 2 | Add local Wazuh manager/indexer/dashboard, then enrol the installed Windows agent and install Sysmon | F3 on Windows | Enough free RAM for Docker/Linux services, local ports 1514/1515 and elevated Sysmon installation |
+| 3 | Add local Suricata/Zeek and the remaining Linux pipeline services in stages | Broader local monitoring | A running Docker/Linux environment, capture access and sufficient RAM |
+| 4 | Confirm the dependency updates in a fresh hosted CI run; local Python and npm audits pass | Dependency security | A push and a new GitHub Actions run; optional for local monitoring |
+| 5 | Refresh and verify the Docker demo with `lab/replay/start_demo.ps1` (without `-Native`), if wanted | Optional replay demo on :5180 | A running Docker daemon and enough RAM; last recorded images were 23-24 Sep and its database was at revision `0005` |
+
+The historical VM sensor update (`6becd1e`) and its restart measurements remain
+unverified remotely. They are outside the current local-only path.
 
 Done 29 September: the sensor on the VM runs the teardown fix, both lab Tier D cards were refitted
 on the flows it produces, and the result was re-measured (`docs/testing/TEST_REPORT.md`, section 9).
@@ -115,8 +247,9 @@ does too, which is the price of the scan label being about 85% precise. Intellig
 matches still raise a severity by one step, and so does a Suricata signature between the
 same two addresses within 150 s (29 September; `docs/testing/TEST_REPORT.md`, section 14).
 
-## What I need from you
+## Local access needed
 
-- For item 1: installing the Wazuh agent on the laptop (it needs administrator rights).
-- For item 2: allowing this laptop's current public address in the VM's SSH rule in the
-  Azure portal; the ISP changes the address every day or two.
+- Real pktmon capture and Sysmon/Wazuh service installation require Windows
+  administrator elevation.
+- Docker/Linux services need additional free memory before the broader local stack
+  can run. No Azure account or SSH tunnel is required for local monitoring.
