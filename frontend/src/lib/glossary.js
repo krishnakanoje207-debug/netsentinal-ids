@@ -35,10 +35,10 @@ export function featureLabel(name) {
  * needs both. An attack of unknown kind counts as middling harm, never as harmless.
  */
 export const SEVERITY_MEANING = {
-  critical: 'Almost certainly an attack, of a kind that does real damage. Look now.',
-  high: 'Almost certainly an attack of an unknown kind, or likely a damaging one. Look today.',
-  medium: 'Worth a look: a likely attack, or a scan that has done no harm yet.',
-  low: 'Unusual, or an early probe. Probably harmless on its own.',
+  critical: 'Highest review priority because the detector score and possible impact are high. An analyst must verify it.',
+  high: 'High review priority based on the detector score and possible impact. This does not confirm an attack.',
+  medium: 'Review this unusual traffic or possible scan. Its cause has not been confirmed.',
+  low: 'Lower review priority. Unusual traffic can also have an ordinary explanation.',
   info: 'Recorded for context only.',
 }
 
@@ -142,4 +142,16 @@ export const TECHNIQUES = {
 export function techniqueName(id) {
   if (!id) return null
   return TECHNIQUES[id.toUpperCase()] ?? null
+}
+
+/** A possible traffic pattern, without claiming that an attack succeeded. */
+export function techniqueMeaning(id) {
+  const meanings = {
+    T1046: 'Possible search for open network services',
+    T1190: 'Possible attempt to exploit a public application',
+    T1210: 'Possible attempt to exploit a network service',
+    T1499: 'Possible attempt to overwhelm a device or service',
+    'T1595.002': 'Possible search for security weaknesses',
+  }
+  return meanings[id?.toUpperCase()] ?? (id ? 'Possible attack pattern' : 'Attack pattern not identified')
 }

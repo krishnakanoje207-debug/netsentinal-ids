@@ -28,6 +28,7 @@ import { api } from '../api/client'
 import { PERMISSIONS } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { Endpoint, useEndpointInventory } from '../components/Endpoint'
 import { ArrowCounterClockwise, ArrowLeft, CheckCircle, Eye, FolderOpen, Prohibit, XCircle } from '../components/icons'
 import { RiskScore } from '../components/RiskScore'
 import { SeverityBadge, StatusPill, statusLabel } from '../components/SeverityBadge'
@@ -38,6 +39,7 @@ import {
   STATUS_MEANING,
   featureLabel,
   techniqueName,
+  techniqueMeaning,
   isWatchingOnly,
   tierName,
 } from '../lib/glossary'
@@ -92,7 +94,7 @@ export function whatHappened(alert) {
   const score = Math.round(explanation.risk_score * 100)
   const reasons = spokenList(explanation.top_features.slice(0, 3).map((f) => featureLabel(f).toLowerCase()))
   return (
-    `At ${when}, traffic from ${from} to ${to} was rated ${score}% likely to be an attack. ` +
+    `At ${when}, traffic from ${from} to ${to} received a model risk score of ${score} out of 100. This is a detector score, not proof of an attack. ` +
     `What stood out most: ${reasons}.`
   )
 }
@@ -126,7 +128,7 @@ function Journey({ alert }) {
     { name: 'Seen', value: new Date(alert.created_at).toLocaleTimeString([], { hourCycle: 'h23' }), done: true },
     {
       name: 'Scored',
-      value: explanation ? `${Math.round(explanation.risk_score * 100)}% likely an attack` : 'By a signature rule',
+      value: explanation ? `Model score ${Math.round(explanation.risk_score * 100)}/100` : 'By a signature or host sensor',
       done: true,
     },
     {
@@ -330,6 +332,7 @@ function ActionHistory({ alertId, canDecide }) {
 export function AlertDetail() {
   const { alertId } = useParams()
   const { token, can } = useAuth()
+  const assets = useEndpointInventory()
   const queryClient = useQueryClient()
   const id = Number(alertId)
 
@@ -404,16 +407,17 @@ export function AlertDetail() {
             />
           </span>
         </div>
-        <p className="data mt-3 text-lg text-ink">
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-ink">
           <span className="sr-only">From </span>
-          {alert.src_ip ?? '--'}
+          <Endpoint address={alert.src_ip} assets={assets} />
           <span className="px-2 text-ink-faint" aria-hidden="true">→</span>
           <span className="sr-only"> to </span>
-          {alert.dst_ip ?? '--'}
-        </p>
+          <Endpoint address={alert.dst_ip} assets={assets} />
+        </div>
         <p className="mt-4 max-w-3xl text-[1.0625rem] leading-relaxed" data-testid="what-happened">
           {whatHappened(alert)}
         </p>
+        <p className="mt-2 text-sm text-ink-dim">Priority means how soon to investigate. {alert.mitre_technique ? `${techniqueMeaning(alert.mitre_technique)} (${alert.mitre_technique}) is the suggested pattern, not a verified event.` : 'No specific attack pattern was identified.'} Names use inventory or network settings observed at launch, so older alerts may involve a different device at that address. Unknown owners and locations are not inferred.</p>
         <div className="mt-6 border-t border-line pt-5">
           <Journey alert={alert} />
         </div>
@@ -484,7 +488,7 @@ export function AlertDetail() {
 
           <Panel
             title="AI summary"
-            description="Written by a language model running on this machine. It can be wrong: the evidence above is what counts."
+            description="An optional AI explanation, from Gemini when cloud processing is enabled. It can be wrong: check it against the evidence above."
           >
             {summary.data ? (
               <div className="space-y-3 text-[0.9375rem]" data-testid="copilot-summary">

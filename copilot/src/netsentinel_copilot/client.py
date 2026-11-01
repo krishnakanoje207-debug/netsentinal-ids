@@ -1,35 +1,14 @@
-"""Talking to the local model.
+"""Opt-in, server-side Gemini summaries over the official REST endpoint.
 
-Ollama on the laptop, not a hosted API. The reason is in the risk register rather
-than the budget: the prompt contains an alert, which is an attacker's traffic
-described in detail against named hosts on a real estate. That is not something to
-post to a third party, and a SOC assistant that only works with an internet
-connection is one that stops working during exactly the incident it was built for.
-
-Two settings do most of the work here. ``format`` carries the JSON Schema of the
-reply, so the server constrains generation to that shape rather than the prompt
-asking politely. ``temperature`` is zero, because the same alert summarised
-differently on two refreshes reads as though the system is unsure, and there is
-nothing creative to be gained from paraphrasing evidence.
-
-The reply is still validated afterwards. A served model is another system, and "it
-was asked for that shape" is not a guarantee, only an improvement of the odds.
+Only the minimized evidence assembled by summarise.py is sent. The API key stays
+in the worker's environment and request header; it is never sent to the browser.
 """
 
 from __future__ import annotations
 
-import logging
+import re
 
-logger = logging.getLogger("netsentinel.copilot")
-
-DEFAULT_URL = "http://localhost:11434"
-
-#: 3B on a 4 GB GPU. Larger models do summarise better and do not fit next to the
-#: rest of the stack; the schema is what makes a small model usable here.
-DEFAULT_MODEL = "llama3.2:3b"
-
-#: A local 3B model on a laptop GPU is not fast, and a summary is not on anybody's
-#: critical path.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
 REQUEST_TIMEOUT_SECONDS = 120.0
 
 
@@ -37,49 +16,67 @@ class CopilotError(RuntimeError):
     """The model could not be reached, or did not return usable JSON."""
 
 
-class OllamaClient:
-    def __init__(
-        self,
-        url: str = DEFAULT_URL,
-        model: str = DEFAULT_MODEL,
-        timeout: float = REQUEST_TIMEOUT_SECONDS,
-    ) -> None:
-        self._url = url.rstrip("/")
+class GeminiClient:
+    cloud = True
+
+    def __init__(self, api_key: str, model: str = DEFAULT_MODEL,
+                 timeout: float = REQUEST_TIMEOUT_SECONDS, *, allow_cloud: bool = False) -> None:
+        if not allow_cloud:
+            raise CopilotError("Cloud summaries are disabled; set NETSENTINEL_COPILOT_ALLOW_CLOUD=true to send minimized alert evidence to Google")
+        if not api_key.strip():
+            raise CopilotError("GEMINI_API_KEY is required for cloud summaries")
+        if not re.fullmatch(r"[a-zA-Z0-9._-]+", model):
+            raise CopilotError("invalid Gemini model name")
+        self._api_key = api_key
         self.model = model
         self._timeout = timeout
 
     def complete(self, system: str, user: str, schema: dict) -> dict:
-        """One completion, constrained to ``schema``. Returns the parsed object."""
         import httpx
 
         body = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            # The schema, not the string "json": the server then cannot emit a
-            # well-formed object of the wrong shape.
-            "format": schema,
-            "stream": False,
-            "options": {"temperature": 0},
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "responseFormat": {
+                    "text": {"mimeType": "APPLICATION_JSON", "schema": schema},
+                },
+                "maxOutputTokens": 2048,
+            },
         }
-
         try:
             response = httpx.post(
-                f"{self._url}/api/chat", json=body, timeout=self._timeout
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+                headers={"x-goog-api-key": self._api_key},
+                json=body, timeout=self._timeout,
             )
             response.raise_for_status()
             payload = response.json()
-        except httpx.HTTPError as exc:
-            raise CopilotError(f"the model could not be reached: {exc}") from exc
-        except ValueError as exc:
-            raise CopilotError(f"Ollama returned a body that is not JSON: {exc}") from exc
+        except httpx.HTTPStatusError as exc:
+            # Do not log the body, headers or exception: they may echo a secret.
+            raise CopilotError(f"Gemini returned HTTP {exc.response.status_code}") from None
+        except httpx.HTTPError:
+            raise CopilotError("Gemini could not be reached") from None
+        except ValueError:
+            raise CopilotError("Gemini returned a body that is not JSON") from None
 
-        content = (payload.get("message") or {}).get("content")
+        if not isinstance(payload, dict):
+            raise CopilotError("Gemini returned an invalid response")
+        candidates = payload.get("candidates") or []
+        if not isinstance(candidates, list):
+            raise CopilotError("Gemini returned invalid candidates")
+        candidate = candidates[0] if candidates else {}
+        if not isinstance(candidate, dict) or candidate.get("finishReason") != "STOP":
+            raise CopilotError("Gemini did not return a complete summary")
+        reply = candidate.get("content") or {}
+        if not isinstance(reply, dict) or not isinstance(reply.get("parts", []), list):
+            raise CopilotError("Gemini returned invalid content")
+        parts = reply.get("parts") or []
+        content = "".join(part.get("text", "") for part in parts
+                          if isinstance(part, dict) and isinstance(part.get("text"), str)
+                          and not part.get("thought"))
         if not content:
-            raise CopilotError("the model returned an empty reply")
-
+            raise CopilotError("Gemini returned an empty reply")
         return parse_content(content)
 
 

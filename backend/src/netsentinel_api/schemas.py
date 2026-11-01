@@ -76,7 +76,7 @@ class CurrentUserOut(UserOut):
 
 
 class CopilotSummaryOut(BaseModel):
-    """A schema-valid summary from the local model, as the dashboard shows it."""
+    """A schema-valid summary from the optional Copilot worker."""
 
     headline: str
     what_happened: str

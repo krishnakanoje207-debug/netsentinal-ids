@@ -17,6 +17,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ActivityStrip, activityTotals } from '../components/ActivityStrip'
 import { Board } from '../components/Board'
 import { ErrorNotice } from '../components/ErrorNotice'
+import { Endpoint, useEndpointInventory } from '../components/Endpoint'
 import { FlipNumber } from '../components/FlipNumber'
 import { HoverCard } from '../components/HoverCard'
 import { ArrowRight, House } from '../components/icons'
@@ -42,12 +43,12 @@ function plural(n, one, many) {
  */
 export function headline(summary, pending) {
   if (summary.total === 0) {
-    return 'No threats have been detected yet. The detectors are running and this page updates on its own.'
+    return 'No alerts have been recorded yet. This page updates as new alerts arrive.'
   }
   const open = (summary.by_status.new ?? 0) + (summary.by_status.triaging ?? 0)
   const critical = summary.by_severity.critical ?? 0
   const parts = [
-    `${plural(summary.total, 'threat has', 'threats have')} been detected`,
+    `${plural(summary.total, 'alert has', 'alerts have')} been flagged for review`,
     critical > 0 ? `${critical.toLocaleString()} of them critical` : null,
   ].filter(Boolean)
   let sentence = `${parts.join(', ')}. ${plural(open, 'alert is', 'alerts are')} still open.`
@@ -68,7 +69,7 @@ function DisplayHeadline({ summary, pending }) {
   if (summary.total === 0) {
     return (
       <p className="text-[1.625rem] leading-snug font-bold md:text-[2rem]" aria-hidden="true">
-        No threats have been detected yet. The detectors are running.
+        No alerts have been recorded yet.
       </p>
     )
   }
@@ -76,7 +77,7 @@ function DisplayHeadline({ summary, pending }) {
   const critical = summary.by_severity.critical ?? 0
   return (
     <p className="text-[1.625rem] leading-[1.55] font-bold md:text-[2rem]" aria-hidden="true">
-      <FlipNumber value={summary.total} size="lg" /> {summary.total === 1 ? 'threat' : 'threats'} detected
+      <FlipNumber value={summary.total} size="lg" /> {summary.total === 1 ? 'alert' : 'alerts'} recorded
       {critical > 0 && (
         <>
           , <FlipNumber value={critical} size="lg" className="flap-critical" />{' '}
@@ -113,6 +114,7 @@ function MoreLink({ to, children, onBoard = false }) {
 /** @param {{onFilter: (filters: {status: string, severity: string, q: string}) => void}} props */
 export function Overview({ onFilter }) {
   const { token, can, user } = useAuth()
+  const assets = useEndpointInventory()
   const navigate = useNavigate()
 
   const summary = useQuery({
@@ -181,6 +183,7 @@ export function Overview({ onFilter }) {
                   {headline(data, pending.data?.length)}
                 </p>
                 <DisplayHeadline summary={data} pending={pending.data?.length} />
+                <p className="mt-3 text-sm text-ink-dim">These are detector flags, not a count of confirmed attacks. Ordinary traffic can trigger alerts; open a row to review its evidence.</p>
                 {user?.role && ROLES[user.role] && (
                   <p className="mt-3 text-[0.9375rem] text-ink-dim" data-testid="overview-access">
                     You are signed in as <span className="font-semibold text-ink">{roleName(user.role)}</span>.{' '}
@@ -194,7 +197,7 @@ export function Overview({ onFilter }) {
           {data && (
             <section className="panel p-2" data-tour="severity" aria-labelledby="severity-heading">
               <h2 id="severity-heading" className="px-3 pt-2 pb-1 text-sm font-bold text-ink-dim">
-                Threats by severity
+                Alerts by review priority
               </h2>
               <ul>
                 {SEVERITY_ORDER.map((severity) => {
@@ -254,7 +257,7 @@ export function Overview({ onFilter }) {
             loading={latest.isLoading}
             updatedAt={latest.dataUpdatedAt}
             intervalMs={POLL_MS}
-            emptyText="No alerts yet. The detectors are running, and alerts are posted here the moment one is raised."
+            emptyText="No alerts recorded yet. New detector flags appear here automatically."
             action={<MoreLink to="/alerts" onBoard>All alerts</MoreLink>}
           />
           {latest.error && <ErrorNotice error={latest.error} />}
@@ -324,7 +327,7 @@ export function Overview({ onFilter }) {
                         style={{ width: `${(source.alerts / data.top_sources[0].alerts) * 100}%` }}
                         aria-hidden="true"
                       />
-                      <span className="data relative">{source.address}</span>
+                      <span className="relative"><Endpoint address={source.address} assets={assets} /></span>
                       <span className="numeric relative text-sm text-ink-dim">
                         {plural(source.alerts, 'alert', 'alerts')}
                       </span>

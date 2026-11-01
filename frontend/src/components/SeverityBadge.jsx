@@ -36,7 +36,7 @@ const STATUS_LABEL = {
 
 /** Short enough for a board column; the full label is on hover. */
 const STATUS_SHORT = {
-  new: 'New',
+  new: 'Unreviewed',
   triaging: 'Triaging',
   escalated: 'Escalated',
   closed_true_positive: 'Confirmed',

@@ -186,6 +186,8 @@ export const api = {
   /** @returns {Promise<import('./types').Asset[]>} */
   assets: (token) => request('/assets?limit=200', { token }),
 
+  endpointLabels: (token) => request('/alerts/endpoint-labels', { token }),
+
   /** @returns {Promise<import('./types').Vulnerability[]>} */
   vulnerabilities: (token, assetId) => request(`/assets/${assetId}/vulnerabilities`, { token }),
 

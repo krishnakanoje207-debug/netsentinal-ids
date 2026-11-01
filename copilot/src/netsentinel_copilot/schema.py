@@ -95,7 +95,7 @@ def validate(payload: object) -> AlertSummary:
 
 
 #: The JSON Schema handed to the model, so the request states the contract the reply
-#: is going to be held to. Ollama enforces the shape during generation; this schema
+#: is going to be held to. Gemini constrains the shape during generation; this schema
 #: is still re-checked on the way back, because a served model is another system and
 #: "it promised" is not a validation strategy.
 def json_schema() -> dict:

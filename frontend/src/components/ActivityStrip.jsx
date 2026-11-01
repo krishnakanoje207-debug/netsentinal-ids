@@ -82,7 +82,7 @@ export function ActivityStrip() {
             <span className="inline-block h-2 w-3 rounded-b-[2px] bg-signal" aria-hidden="true" /> Alerts raised
           </span>
           <span className={`numeric ${stale ? 'font-semibold text-sev-medium' : 'text-ink-faint'}`}>
-            {dataUpdatedAt ? (stale ? `Not updated since ${ago(dataUpdatedAt, now)}` : `Checked ${ago(dataUpdatedAt, now)}`) : ''}
+            {dataUpdatedAt ? (stale ? `Not updated since ${ago(dataUpdatedAt, now)}` : `Refreshed ${ago(dataUpdatedAt, now)}`) : ''}
           </span>
         </div>
       </header>

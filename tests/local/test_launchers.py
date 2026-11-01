@@ -132,3 +132,34 @@ def test_occupied_ports_are_skipped_without_reusing_existing_dashboard():
         }
     """)
     assert result.returncode == 0, result.stderr
+
+
+def test_endpoint_labels_combine_only_observed_roles_and_never_read_dns_cache():
+    result = run_ps(r"""
+        $ErrorActionPreference = 'Stop'
+        $tokens = $null; $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'lab/replay/start_demo.ps1'), [ref]$tokens, [ref]$errors)
+        $definition = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq 'Get-LocalEndpointLabels'
+        }, $true)
+        Invoke-Expression $definition.Extent.Text
+        function Get-DnsClientCache { throw 'Must not read browsing history' }
+        function Get-NetIPConfiguration {
+            @{
+                IPv4Address = @{ IPAddress = '10.0.0.20' }
+                IPv4DefaultGateway = @{ NextHop = '10.0.0.1' }
+                DNSServer = @{ ServerAddresses = @('10.0.0.1', '10.0.0.53', '10.0.0.20') }
+            }, @{
+                IPv4Address = @{ IPAddress = '10.0.0.20' }
+                DNSServer = @{ ServerAddresses = @('10.0.0.53') }
+            }
+        }
+        $labels = Get-LocalEndpointLabels
+        if ($labels.Count -ne 3) { throw 'Unexpected endpoint disclosure' }
+        if ($labels['10.0.0.1'] -ne 'Network gateway / Configured DNS server') { throw 'Missing gateway role' }
+        if ($labels['10.0.0.53'] -ne 'Configured DNS server') { throw 'Invented gateway role' }
+        if ($labels['10.0.0.20'] -ne "This computer ($env:COMPUTERNAME) / Configured DNS server") { throw 'Lost computer role' }
+    """)
+    assert result.returncode == 0, result.stderr

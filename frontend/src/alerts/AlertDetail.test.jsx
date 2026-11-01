@@ -88,7 +88,8 @@ describe('whatHappened', () => {
   it('says who talked to whom, how sure the model was, and why, in words', () => {
     const sentence = whatHappened(ALERT)
     expect(sentence).toContain('traffic from 175.45.176.0 to 149.171.126.12')
-    expect(sentence).toContain('99% likely to be an attack')
+    expect(sentence).toContain('model risk score of 99 out of 100')
+    expect(sentence).toContain('not proof of an attack')
     expect(sentence).toContain('destination port, packets per second and connection length')
   })
 

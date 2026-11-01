@@ -17,7 +17,7 @@ const SUMMARY = {
 describe('headline', () => {
   it('counts threats, the critical ones and the ones still open', () => {
     expect(headline(SUMMARY, undefined)).toBe(
-      '135 threats have been detected, 134 of them critical. 132 alerts are still open.',
+      '135 alerts have been flagged for review, 134 of them critical. 132 alerts are still open.',
     )
   })
 
@@ -29,13 +29,13 @@ describe('headline', () => {
 
   it('never reads an empty database as all clear', () => {
     const sentence = headline({ total: 0, by_severity: {}, by_status: {}, top_sources: [] }, 0)
-    expect(sentence).toContain('No threats have been detected yet')
+    expect(sentence).toContain('No alerts have been recorded yet')
     expect(sentence).not.toMatch(/safe|clear|secure/i)
   })
 
   it('leaves out the critical clause when there are none', () => {
     expect(headline({ ...SUMMARY, by_severity: { low: 135 } }, undefined)).toBe(
-      '135 threats have been detected. 132 alerts are still open.',
+      '135 alerts have been flagged for review. 132 alerts are still open.',
     )
   })
 })

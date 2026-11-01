@@ -53,7 +53,7 @@ than language conventions — each one ends up on a different node.
 | [`scoring/`](scoring) | cloud VM | Model loader and fusion scorer | built |
 | [`writer/`](writer) | cloud VM | Bus consumer: explained detections into PostgreSQL | built |
 | [`backend/`](backend) | cloud VM | FastAPI, PostgreSQL, the approval gate | built |
-| [`copilot/`](copilot) | laptop GPU | Read-only LLM summaries, schema-checked | built |
+| [`copilot/`](copilot) | optional Gemini worker | Read-only LLM summaries, schema-checked | built |
 | [`frontend/`](frontend) | browser | React SOC dashboard | built |
 | [`sensors/`](sensors) | cloud VM | Capture agent, Suricata, Zeek, Wazuh config | built, run on the VM |
 | [`infra/`](infra) | cloud VM | Compose files, ClickHouse DDL, Grafana | built, run on the VM |
@@ -512,13 +512,13 @@ database created before this change.
 
 ## The Copilot
 
-```bash
-ollama pull llama3.2:3b
-uv run netsentinel-copilot --alert 100
-```
+The optional worker uses Gemini through a server-only API key. It stays disabled
+until you explicitly opt in to sending minimized alert evidence to Google. See
+[Gemini summary setup](docs/GEMINI_SUMMARIES.md) for the local live-database command,
+key setup and fields sent. Ollama and a laptop GPU are no longer required.
 
 A read-only assistant: it turns one alert into a paragraph an analyst can skim, and
-it can do nothing else. It holds no credentials, calls no tools, and has no path to
+it can do nothing else. The model receives no credentials, calls no tools, and has no path to
 the response gate — so the worst a successful prompt injection achieves is a
 misleading paragraph sitting next to evidence the analyst can read for themselves.
 

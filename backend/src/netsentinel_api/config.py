@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     )
 
     database_url: str = DEFAULT_DATABASE_URL
+    # Display metadata observed by the local launcher, never managed asset records.
+    endpoint_labels: dict[str, str] = Field(default_factory=dict)
 
     # No default: see the module docstring.
     jwt_secret: SecretStr

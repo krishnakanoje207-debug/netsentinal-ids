@@ -289,13 +289,13 @@ the line number. Scan findings are then imported with `netsentinel-import-vulns`
 
 ### AI summaries
 
-The Copilot runs on the machine with the GPU, never inside the API:
-
-```bash
-ollama pull llama3.2:3b
-uv run netsentinel-copilot --latest 10     # the ten newest alerts without a summary
-uv run netsentinel-copilot --alert 134     # one alert
-```
+The optional Copilot worker uses Gemini with your server-side API key, separately
+from the API. It requires explicit cloud opt-in; it sends endpoint aliases, severity,
+risk, MITRE technique and known feature directions to Google. Raw IP addresses,
+indicator values and payloads stay local. See [Gemini summary setup](GEMINI_SUMMARIES.md)
+for commands targeting this PC's live database. Ollama and GPU downloads are no
+longer needed. Missing configuration leaves summaries unavailable while detection
+and the dashboard continue.
 
 ### Retraining the models
 

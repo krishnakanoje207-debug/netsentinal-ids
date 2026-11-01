@@ -50,7 +50,7 @@ export function RiskScore({ score, shadow = false, undecidedReason }) {
     ? (undecidedReason ?? 'No active model scored this flow, so no risk was determined.')
     : shadow
       ? 'Scored in shadow mode: logged for comparison, not acted on.'
-      : undefined
+      : 'Model risk score, not a calibrated probability of an attack. Review the evidence.'
 
   return (
     <span className="inline-flex items-center gap-1.5" title={title}>

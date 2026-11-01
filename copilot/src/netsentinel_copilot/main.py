@@ -1,17 +1,6 @@
-"""Summarise one alert with the local model.
+"""Run the opt-in Gemini summary worker against the configured local database.
 
-    python -m netsentinel_copilot --alert 100
-    python -m netsentinel_copilot --latest 10     # the newest ten without a summary
-
-Runs on the laptop, against the database over the SSH tunnel. It is a separate
-process and a separate workspace member for the same reason the writer is: the API
-must not be able to import an LLM client, and nothing that serves requests should be
-able to start a two-minute generation.
-
-The connection details are flags with environment defaults rather than entries in
-``netsentinel_api.config``. Ollama is a laptop concern, and the API's settings object
-is loaded by every process in the system - including the ones on the VM, which have
-no model and never will.
+Detection continues independently when summaries are disabled or unavailable.
 """
 
 from __future__ import annotations
@@ -27,9 +16,8 @@ from netsentinel_api.db.session import get_sessionmaker
 
 from netsentinel_copilot.client import (
     DEFAULT_MODEL,
-    DEFAULT_URL,
     CopilotError,
-    OllamaClient,
+    GeminiClient,
 )
 from netsentinel_copilot.summarise import as_row, summarise
 
@@ -47,14 +35,9 @@ def main(argv: list[str] | None = None) -> int:
         help="summarise the N newest alerts that have no valid summary yet",
     )
     parser.add_argument(
-        "--url",
-        default=os.environ.get("NETSENTINEL_OLLAMA_URL", DEFAULT_URL),
-        help=f"Ollama base URL (default: {DEFAULT_URL})",
-    )
-    parser.add_argument(
         "--model",
         default=os.environ.get("NETSENTINEL_COPILOT_MODEL", DEFAULT_MODEL),
-        help=f"model tag (default: {DEFAULT_MODEL})",
+        help=f"Gemini model (default: {DEFAULT_MODEL})",
     )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -64,7 +47,14 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)-5s %(name)s %(message)s",
     )
 
-    client = OllamaClient(args.url, args.model)
+    try:
+        client = GeminiClient(
+            os.environ.get("GEMINI_API_KEY", ""), args.model,
+            allow_cloud=os.environ.get("NETSENTINEL_COPILOT_ALLOW_CLOUD", "").lower() == "true",
+        )
+    except CopilotError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     with get_sessionmaker()() as session:
         repository = AlertRepository(session)
         if args.alert is not None:
@@ -88,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if all(code == 0 for code in results) else 1
 
 
-def _summarise_one(session, client: OllamaClient, alert, show: bool) -> int:
+def _summarise_one(session, client: GeminiClient, alert, show: bool) -> int:
     try:
         payload, summary = summarise(client, alert, alert.iocs)
     except CopilotError as exc:

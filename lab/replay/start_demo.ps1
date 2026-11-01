@@ -141,6 +141,30 @@ $apiEnvironment = @{
     NETSENTINEL_JWT_SECRET = $vars["NETSENTINEL_JWT_SECRET"]
 }
 foreach ($entry in $vars.GetEnumerator()) { if (-not $apiEnvironment.ContainsKey($entry.Key)) { $apiEnvironment[$entry.Key] = $entry.Value } }
+function Get-LocalEndpointLabels {
+    # Network settings only: never disclose the machine's browsing/DNS cache.
+    # Accumulate roles independently so DNS configuration cannot imply a gateway.
+    $roles = @{}
+    foreach ($config in (Get-NetIPConfiguration -ErrorAction SilentlyContinue)) {
+        foreach ($group in @(
+            @{ Addresses = @($config.IPv4Address.IPAddress) + @($config.IPv6Address.IPAddress); Role = "This computer ($env:COMPUTERNAME)" },
+            @{ Addresses = @($config.IPv4DefaultGateway.NextHop) + @($config.IPv6DefaultGateway.NextHop); Role = 'Network gateway' },
+            @{ Addresses = @($config.DNSServer.ServerAddresses); Role = 'Configured DNS server' }
+        )) {
+            foreach ($address in $group.Addresses) {
+                if ($address) { $roles[$address] = @($roles[$address]) + $group.Role }
+            }
+        }
+    }
+    $labels = @{}
+    foreach ($address in $roles.Keys) {
+        $labels[$address] = (@($roles[$address] | Where-Object { $_ } | Select-Object -Unique) -join ' / ')
+    }
+    return $labels
+}
+if ($Native -and $Database -eq 'netsentinel_live') {
+    $apiEnvironment.NETSENTINEL_ENDPOINT_LABELS = ConvertTo-Json -Compress -InputObject (Get-LocalEndpointLabels)
+}
 if ($Demo) {
     $apiEnvironment.NETSENTINEL_PROMOTION_MIN_LABELLED = "5"
     $apiEnvironment.NETSENTINEL_PROMOTION_MIN_SHADOW_DAYS = "0"

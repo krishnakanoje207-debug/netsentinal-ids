@@ -124,11 +124,53 @@ def summarise(client, alert: Alert, iocs: Iterable[IoC] = ()) -> tuple[dict, Ale
     pattern of invalid output says something about the model, the prompt, or
     somebody feeding the sensor sentences addressed to it.
     """
-    system, user = build_prompt(evidence(alert, iocs))
+    fields = evidence(alert, iocs)
+    aliases = {}
+    if getattr(client, "cloud", False):
+        # Keep identity and attacker-controlled strings on this machine. Only
+        # fixed labels, severity, score, technique and known feature names leave.
+        fields.pop("alert id", None)
+        fields.pop("matched threat indicators", None)
+        fields["detected by"] = "network detector"
+        for field, alias, value in (
+            ("source address", "SOURCE_ENDPOINT", alert.src_ip),
+            ("destination address", "DESTINATION_ENDPOINT", alert.dst_ip),
+        ):
+            fields[field] = alias if value else "unknown"
+            if value:
+                aliases[alias] = str(value)
+        technique = str(alert.mitre_technique or "")
+        fields["MITRE technique"] = technique if re.fullmatch(r"T\d{4}(?:\.\d{3})?", technique) else None
+        if alert.detection is not None:
+            contributions = alert.detection.shap_values or {}
+            ranked = sorted((name for name in contributions if name in FEATURE_NAMES),
+                            key=lambda name: abs(float(contributions[name])), reverse=True)
+            fields["top contributing features, strongest first"] = "; ".join(
+                f"{FEATURE_NAMES[name]} ({name}) pushed toward "
+                f"{'attack' if float(contributions[name]) > 0 else 'normal traffic'}"
+                for name in ranked[:TOP_FEATURE_COUNT]
+            )
+    system, user = build_prompt(fields)
 
     # CopilotError propagates: unreachable is not invalid. There is nothing to store
     # and nothing to show, and whether that is worth retrying is the caller's call.
     payload = client.complete(system, user, json_schema())
+
+    # Restore endpoint labels locally so existing direction and schema checks
+    # still evaluate the actual alert before a summary reaches the dashboard.
+    def restore(value):
+        if isinstance(value, str):
+            for alias, address in aliases.items():
+                value = value.replace(alias, address)
+            return value
+        if isinstance(value, list):
+            return [restore(item) for item in value]
+        if isinstance(value, dict):
+            return {key: restore(item) for key, item in value.items()}
+        return value
+
+    if aliases:
+        payload = restore(payload)
 
     try:
         summary = validate(payload)

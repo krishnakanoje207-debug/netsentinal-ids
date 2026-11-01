@@ -159,7 +159,9 @@ describe('Board', () => {
     const row = screen.getByTestId('board-row')
     expect(row).toHaveAttribute('href', '/alerts/9')
     expect(row).toHaveTextContent('175.45.176.0')
-    expect(row).toHaveTextContent('Network Service Discovery')
+    expect(row).toHaveTextContent('Possible search for open network services')
+    expect(row).toHaveTextContent('Unreviewed')
+    expect(row).toHaveTextContent('Model flagged unusual traffic')
   })
 
   it('says when its data has stopped refreshing', () => {

@@ -6,7 +6,7 @@ requires-python = "==3.11.*"
 # netsentinel-api is here for the ORM models and settings, as in the writer: the
 # summary is stored through the same classes the API reads back.
 #
-# No LLM SDK. Ollama serves plain HTTP and httpx is already a dependency of the
+# No LLM SDK. Gemini serves plain HTTP and httpx is already a dependency of the
 # workspace; a client library would add a supply chain for one POST.
 dependencies = [
     "netsentinel-api",

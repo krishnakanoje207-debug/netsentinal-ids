@@ -18,9 +18,10 @@ import { Link } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { featureLabel, techniqueName, tierName } from '../lib/glossary'
+import { featureLabel, techniqueName, techniqueMeaning, tierName } from '../lib/glossary'
 import { ago, isStale, useNow } from '../lib/useNow'
 import { HoverCard } from './HoverCard'
+import { Endpoint, useEndpointInventory } from './Endpoint'
 import { RiskScore } from './RiskScore'
 import { SeverityBadge, StatusPill } from './SeverityBadge'
 
@@ -43,6 +44,7 @@ export function boardTime(iso, now = Date.now()) {
 /** The alert's own detail, fetched when its row is hovered. */
 export function AlertPreview({ alertId }) {
   const { token } = useAuth()
+  const assets = useEndpointInventory()
   const { data, isLoading, error } = useQuery({
     queryKey: ['alert', alertId],
     queryFn: () => api.alert(token, alertId),
@@ -76,12 +78,14 @@ export function AlertPreview({ alertId }) {
           undecidedReason={explanation === null ? 'Raised by a signature or host sensor, so no model scored it.' : undefined}
         />
       </div>
-      <p className="data text-ink">
-        {data.src_ip ?? '--'} <span className="text-ink-faint">to</span> {data.dst_ip ?? '--'}
-      </p>
+      <div className="space-y-1 text-ink">
+        <Endpoint address={data.src_ip} assets={assets} />
+        <span className="text-xs text-ink-faint">to</span>
+        <Endpoint address={data.dst_ip} assets={assets} />
+      </div>
       {data.mitre_technique && (
         <p className="text-ink-dim">
-          <span className="data text-ink">{data.mitre_technique}</span> {techniqueName(data.mitre_technique)}
+          {techniqueMeaning(data.mitre_technique)}. <span className="data text-ink">{data.mitre_technique}</span>
         </p>
       )}
       {explanation ? (
@@ -129,7 +133,7 @@ function PollLine({ updatedAt, intervalMs, stale }) {
 // the route column is bounded (an address pair has a known length) and the technique
 // takes the rest.
 const COLUMNS =
-  'grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 md:grid-cols-[5.25rem_5.5rem_minmax(0,17rem)_minmax(0,1fr)_7.5rem] md:gap-y-0'
+  'grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 md:grid-cols-[5.25rem_5rem_minmax(0,1.25fr)_minmax(0,1fr)_6rem] md:gap-y-0'
 
 /**
  * @param {{alerts: import('../api/types').Alert[] | undefined, title: string,
@@ -137,6 +141,7 @@ const COLUMNS =
  *   loading?: boolean, emptyText: string, limit?: number, tour?: string}} props
  */
 export function Board({ alerts, title, action, updatedAt, intervalMs, loading = false, emptyText, limit, tour }) {
+  const assets = useEndpointInventory()
   const now = useNow(1000)
   const stale = isStale(updatedAt, now, intervalMs)
   const rows = limit ? (alerts ?? []).slice(0, limit) : (alerts ?? [])
@@ -183,19 +188,23 @@ export function Board({ alerts, title, action, updatedAt, intervalMs, loading = 
         </h2>
         <div className="flex items-center gap-3 text-[0.8125rem]">
           <span className={`numeric ${stale ? 'font-semibold text-attention' : 'text-board-dim'}`} data-testid="board-freshness">
-            {updatedAt ? (stale ? `Not updated since ${ago(updatedAt, now)}` : `Checked ${ago(updatedAt, now)}`) : 'Loading'}
+            {updatedAt ? (stale ? `Not updated since ${ago(updatedAt, now)}` : `Refreshed ${ago(updatedAt, now)}`) : 'Loading'}
           </span>
           {action}
         </div>
       </header>
+      <p className="px-4 pb-3 text-xs leading-relaxed text-board-dim md:px-5">
+        Each row is a flagged connection to review, not a confirmed attack. High is the review priority.
+        {' '}Addresses can repeat across connections. Names use inventory or network settings observed at launch; addresses may have belonged to different devices when older alerts were recorded. Other owners and locations are unknown.
+      </p>
       <PollLine updatedAt={updatedAt} intervalMs={intervalMs} stale={stale} />
 
       <div className={`${COLUMNS} hidden bg-board-deep px-4 py-2 text-[0.6875rem] font-bold tracking-[0.08em] text-board-dim uppercase md:grid md:px-5`} aria-hidden="true">
         <span>Time</span>
-        <span>Severity</span>
-        <span>From → to</span>
-        <span className="hidden md:block">Technique</span>
-        <span>Status</span>
+        <span>Priority</span>
+        <span>Connection · from → to</span>
+        <span className="hidden md:block">Why review it?</span>
+        <span>Review</span>
       </div>
 
       {loading && rows.length === 0 && (
@@ -221,24 +230,25 @@ export function Board({ alerts, title, action, updatedAt, intervalMs, loading = 
                   <span>
                     <SeverityBadge severity={alert.severity} />
                   </span>
-                  <span className="data order-4 col-span-3 min-w-0 truncate text-board-ink md:order-none md:col-span-1">
+                  <span className="order-4 col-span-3 min-w-0 text-board-ink md:order-none md:col-span-1">
                     <span className="sr-only">from </span>
-                    {alert.src_ip ?? '--'}
-                    <span className="px-1.5 text-board-dim" aria-hidden="true">→</span>
+                    <Endpoint address={alert.src_ip} assets={assets} onBoard />
+                    <span className="block text-xs text-board-dim" aria-hidden="true">↓ to</span>
                     <span className="sr-only"> to </span>
-                    {alert.dst_ip ?? '--'}
+                    <Endpoint address={alert.dst_ip} assets={assets} onBoard />
                   </span>
                   <span
-                    className="hidden min-w-0 truncate text-[0.875rem] text-board-dim md:block"
+                    className="order-5 col-span-3 block min-w-0 text-[0.8125rem] leading-snug text-board-dim md:order-none md:col-span-1"
                     title={techniqueName(alert.mitre_technique) ?? undefined}
                   >
+                    <span className="block font-semibold text-board-ink">{alert.detection_id != null ? 'Model flagged unusual traffic' : 'Sensor reported activity'}</span>
                     {alert.mitre_technique ? (
                       <>
-                        <span className="data text-board-ink">{alert.mitre_technique}</span>{' '}
-                        {techniqueName(alert.mitre_technique)}
+                        <span className="mt-1 block">{techniqueMeaning(alert.mitre_technique)}</span>
+                        <span className="data mt-1 block text-xs">{alert.mitre_technique} · suggested pattern</span>
                       </>
                     ) : (
-                      <span aria-label="no technique named">--</span>
+                      <span className="mt-1 block">Attack pattern not identified</span>
                     )}
                   </span>
                   <span className="order-3 justify-self-end md:order-none md:justify-self-auto">
