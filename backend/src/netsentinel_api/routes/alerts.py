@@ -284,6 +284,10 @@ def get_alert(
     detail = AlertDetailOut.model_validate(alert)
     detail.explanation = _explanation(alert.detection)
     detail.ioc_values = [ioc.value for ioc in alert.iocs]
+    if alert.source == "wazuh":
+        detail.related_alerts = [
+            AlertOut.model_validate(row) for row in alerts.related_network_alerts(alert)
+        ]
     return detail
 
 

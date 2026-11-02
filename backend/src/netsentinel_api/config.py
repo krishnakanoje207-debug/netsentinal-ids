@@ -114,6 +114,14 @@ class Settings(BaseSettings):
     # and nothing else). Unset turns that endpoint off. A static token rather than
     # an account, because the sensor is not a person: see deps.sensor_token.
     sensor_token: SecretStr | None = None
+    telemetry_token: SecretStr | None = None
+
+    @field_validator("telemetry_token")
+    @classmethod
+    def _telemetry_secret_length(cls, value):
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("telemetry token must contain at least 32 characters")
+        return value
 
     # Threat intelligence and SOAR. All optional: the pipeline detects, triages and
     # alerts perfectly well without either, so an unconfigured MISP is a feature that

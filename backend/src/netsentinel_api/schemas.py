@@ -167,6 +167,8 @@ class ExplanationOut(BaseModel):
 
 
 class AlertDetailOut(AlertOut):
+    source_details: dict | None = None
+    related_alerts: list[AlertOut] = Field(default_factory=list)
     explanation: ExplanationOut | None = None
     ioc_values: list[str] = Field(default_factory=list)
     corroborated_by_alert_id: int | None = Field(

@@ -312,6 +312,8 @@ class Alert(Base):
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("assets.asset_id"))
     incident_id: Mapped[int | None] = mapped_column(ForeignKey("incidents.incident_id"))
     source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_event_id: Mapped[str | None] = mapped_column(String(255))
+    source_details: Mapped[dict | None] = mapped_column(JSONB)
     severity: Mapped[Severity] = mapped_column(_enum(Severity, "severity"), nullable=False)
     status: Mapped[AlertStatus] = mapped_column(
         _enum(AlertStatus, "alert_status"), nullable=False, default=AlertStatus.new
@@ -337,6 +339,7 @@ class Alert(Base):
         Index("ix_alerts_created_at", created_at.desc()),
         Index("ix_alerts_status_severity", "status", "severity"),
         Index("ix_alerts_src_ip", "src_ip"),
+        UniqueConstraint("source", "source_event_id", name="uq_alert_source_event"),
     )
 
 

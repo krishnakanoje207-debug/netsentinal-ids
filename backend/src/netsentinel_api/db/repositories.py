@@ -11,7 +11,7 @@ Two reasons, in order of importance:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import cast, func, literal, literal_column, or_, select
 from sqlalchemy.dialects.postgresql import INET
@@ -238,6 +238,20 @@ class AlertRepository:
             .options(joinedload(Alert.detection), joinedload(Alert.iocs))
             .where(Alert.alert_id == alert_id)
         )
+
+    def related_network_alerts(self, alert: Alert) -> list[Alert]:
+        """Same mapped asset and nearby time supplies context, not corroboration."""
+        if alert.source != "wazuh" or alert.asset_id is None:
+            return []
+        return list(self._session.scalars(
+            select(Alert).where(
+                Alert.alert_id != alert.alert_id,
+                Alert.asset_id == alert.asset_id,
+                Alert.detection_id.is_not(None),
+                Alert.created_at >= alert.created_at - timedelta(seconds=150),
+                Alert.created_at <= alert.created_at + timedelta(seconds=150),
+            ).order_by(Alert.created_at.desc(), Alert.alert_id.desc()).limit(10)
+        ))
 
     def detection_for(self, alert: Alert) -> Detection | None:
         return alert.detection

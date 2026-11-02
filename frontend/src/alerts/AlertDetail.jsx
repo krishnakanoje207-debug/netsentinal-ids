@@ -88,6 +88,13 @@ export function whatHappened(alert) {
   const to = alert.dst_ip ?? 'an unknown address'
   const when = new Date(alert.created_at).toLocaleString()
   const explanation = alert.explanation
+  if (alert.source === 'wazuh') {
+    const evidence = alert.source_details
+    return `At ${when}, Wazuh raised a host alert${evidence?.agent_name ? ` for ${evidence.agent_name}` : ''}${evidence?.rule_id ? ` under rule ${evidence.rule_id}` : ''}. Review the event evidence before deciding whether it indicates an attack.`
+  }
+  if (alert.source === 'telemetry') {
+    return `At ${when}, a connected PC reported a ${alert.source_details?.source ?? 'sensor'} alert. Only sanitized metadata was synchronized; inspect the local dashboard for event evidence.`
+  }
   if (!explanation) {
     return `At ${when}, the ${alert.source} sensor raised an alert on traffic from ${from} to ${to}.`
   }
@@ -128,14 +135,14 @@ function Journey({ alert }) {
     { name: 'Seen', value: new Date(alert.created_at).toLocaleTimeString([], { hourCycle: 'h23' }), done: true },
     {
       name: 'Scored',
-      value: explanation ? `Model score ${Math.round(explanation.risk_score * 100)}/100` : 'By a signature or host sensor',
+      value: explanation ? `Model score ${Math.round(explanation.risk_score * 100)}/100` : alert.source === 'telemetry' ? 'Metadata copy' : 'By a signature or host sensor',
       done: true,
     },
     {
       name: 'Explained',
       value: explanation
         ? `${Object.keys(explanation.feature_contributions).length} measurements weighed`
-        : 'No model measurements',
+        : alert.source === 'telemetry' ? 'Evidence kept locally' : 'No model measurements',
       done: explanation !== null,
     },
     { name: 'Decided', value: DECIDED[alert.status] ?? statusLabel(alert.status), done: alert.status !== 'new' },
@@ -401,7 +408,9 @@ export function AlertDetail() {
               shadow={explanation?.shadow ?? false}
               undecidedReason={
                 explanation === null
-                  ? 'This alert came from a signature or host sensor, so no model scored it.'
+                  ? alert.source === 'telemetry'
+                    ? 'Model scores stay on the source PC; this cloud copy contains metadata only.'
+                    : 'This alert came from a signature or host sensor, so no model scored it.'
                   : undefined
               }
             />
@@ -435,6 +444,49 @@ export function AlertDetail() {
 
       <div className="grid gap-6 lg:grid-cols-12">
         <div className="space-y-6 lg:col-span-8">
+          {alert.source === 'wazuh' && alert.source_details && (
+            <Panel title="Host event evidence" description="A Wazuh rule match needs analyst review; it is not confirmation of an intrusion.">
+              <dl className="divide-y divide-line">
+                {[
+                  ['Host', alert.source_details.agent_name],
+                  ['Agent ID', alert.source_details.agent_id],
+                  ['Rule', alert.source_details.rule_id],
+                  ['Wazuh level', alert.source_details.rule_level],
+                  ['Rule description', alert.source_details.description],
+                  ['Channel', alert.source_details.channel],
+                  ['Event ID', alert.source_details.event_id],
+                  ['Event record', alert.source_details.event_record_id],
+                  ['Process', alert.source_details.process_image],
+                  ['Process ID', alert.source_details.process_id],
+                ].filter(([, value]) => value !== null && value !== undefined).map(([label, value]) => (
+                  <Field key={label} label={label}>{value}</Field>
+                ))}
+              </dl>
+              <p className="mt-4 text-sm text-ink-dim">Command lines and full local paths are not stored in this alert.</p>
+              {alert.related_alerts?.length > 0 && (
+                <div className="mt-5 border-t border-line pt-4">
+                  <h3 className="font-semibold">Nearby network alerts</h3>
+                  <p className="mt-1 text-sm text-ink-dim">These alerts share the explicitly mapped asset and occurred within 150 seconds. This is context, not proof of a shared cause; severity has not been increased.</p>
+                  <ul className="mt-3 space-y-2">
+                    {alert.related_alerts.map((related) => (
+                      <li key={related.alert_id}><Link className="underline" to={`/alerts/${related.alert_id}`}>Alert #{related.alert_id} · {related.severity} · {new Date(related.created_at).toLocaleString()}</Link></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Panel>
+          )}
+          {alert.source === 'telemetry' && alert.source_details && (
+            <Panel title="Synced alert metadata" description="Event evidence remains on the source PC. No model score or explanation was copied to the cloud.">
+              <dl className="divide-y divide-line">
+                <Field label="Pseudonymous host">{alert.source_details.host_id}</Field>
+                <Field label="Original sensor">{alert.source_details.source}</Field>
+                <Field label="Local alert ID">{alert.source_details.local_alert_id}</Field>
+                {alert.source_details.rule_id && <Field label="Rule ID">{alert.source_details.rule_id}</Field>}
+                {alert.source_details.model_id && <Field label="Local model ID">{alert.source_details.model_id}</Field>}
+              </dl>
+            </Panel>
+          )}
           <Panel
             tour="reasons"
             title="Why this was flagged"
@@ -446,9 +498,11 @@ export function AlertDetail() {
           >
             {explanation === null ? (
               <p className="text-ink-dim" data-testid="no-explanation">
+                {alert.source === 'telemetry' ? 'This is a metadata-only copy. Open the local dashboard for the original event evidence and any model explanation.' : <>
                 No model explanation exists for this alert. It was raised by a signature or host
                 sensor rather than by the AI models, so there are no measurements to show. That is
                 a different kind of evidence, not an absence of it.
+                </>}
               </p>
             ) : (
               <>

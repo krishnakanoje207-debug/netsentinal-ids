@@ -83,6 +83,8 @@
  *   explanation: Explanation | null,
  *   ioc_values: string[],
  *   corroborated_by_alert_id: number | null,
+ *   source_details?: Record<string, string | number | null> | null,
+ *   related_alerts?: Alert[],
  * }} AlertDetail
  */
 

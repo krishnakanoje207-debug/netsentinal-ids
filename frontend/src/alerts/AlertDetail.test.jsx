@@ -85,6 +85,38 @@ function renderAs(account, alert = ALERT, summary = null, actions = [], rollback
 }
 
 describe('whatHappened', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('netsentinel.token', 'good-token')
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    sessionStorage.clear()
+    vi.unstubAllGlobals()
+  })
+  it('describes Wazuh host evidence without inventing network traffic', () => {
+    const sentence = whatHappened({ ...ALERT, source: 'wazuh', explanation: null,
+      source_details: { agent_name: 'local-host', rule_id: '92052' } })
+    expect(sentence).toContain('host alert for local-host under rule 92052')
+    expect(sentence).not.toContain('traffic from')
+  })
+
+  it('shows host evidence and labels nearby alerts as context', async () => {
+    renderAs('viewer', { ...ALERT, source: 'wazuh', explanation: null,
+      source_details: { agent_name: 'local-host', rule_id: '92052', rule_level: 6, process_image: 'powershell.exe' },
+      related_alerts: [{ ...ALERT, alert_id: 8 }] })
+    expect(await screen.findByText('Host event evidence')).toBeInTheDocument()
+    expect(screen.getByText('powershell.exe')).toBeInTheDocument()
+    expect(screen.getByText(/context, not proof of a shared cause/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Alert #8/ })).toHaveAttribute('href', '/alerts/8')
+  })
+
+  it('does not claim a metadata copy was never scored locally', async () => {
+    renderAs('viewer', { ...ALERT, source: 'telemetry', explanation: null,
+      source_details: { host_id: 'host_abc', source: 'ml', local_alert_id: 100, model_id: 2 } })
+    expect(await screen.findByText('Synced alert metadata')).toBeInTheDocument()
+    expect(screen.getByText(/metadata-only copy/)).toBeInTheDocument()
+    expect(screen.queryByText(/No model explanation exists/)).not.toBeInTheDocument()
+  })
   it('says who talked to whom, how sure the model was, and why, in words', () => {
     const sentence = whatHappened(ALERT)
     expect(sentence).toContain('traffic from 175.45.176.0 to 149.171.126.12')

@@ -28,6 +28,7 @@ from netsentinel_api.routes import (
     models,
     stream,
     system,
+    telemetry,
 )
 
 API_PREFIX = "/api/v1"
@@ -68,6 +69,7 @@ def create_app(*, listen_for_alerts: bool = True) -> FastAPI:
     )
 
     app.include_router(system.router, prefix=API_PREFIX)
+    app.include_router(telemetry.router, prefix=API_PREFIX)
     app.include_router(browser_audit.router, prefix=API_PREFIX)
     app.include_router(endpoint.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
