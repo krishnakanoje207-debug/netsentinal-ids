@@ -42,14 +42,15 @@ def export_alert(alert: Alert) -> TelemetryAlert | None:
 
 
 def receive(session, batch: TelemetryBatch) -> int:
-    added = 0
+    values = []
     for event in batch.alerts:
         metadata = event.model_dump(mode="json", exclude={"occurred_at", "severity"})
         metadata["host_id"] = batch.host_id
-        result = session.scalar(insert(Alert).values(
+        values.append(dict(
             source="telemetry", source_event_id=f"{batch.host_id}:{event.local_alert_id}",
             source_details=metadata, created_at=event.occurred_at,
             severity=event.severity, status=AlertStatus.new,
-        ).on_conflict_do_nothing(constraint="uq_alert_source_event").returning(Alert.alert_id))
-        added += result is not None
-    return added
+        ))
+    return len(list(session.scalars(insert(Alert).values(values)
+                    .on_conflict_do_nothing(constraint="uq_alert_source_event")
+                    .returning(Alert.alert_id))))
