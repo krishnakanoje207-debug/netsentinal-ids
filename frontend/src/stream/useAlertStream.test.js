@@ -28,6 +28,14 @@ describe('retryDelay', () => {
 })
 
 describe('streamUrl', () => {
+  it('connects directly to the configured HTTPS backend for a hosted dashboard', () => {
+    const url = new URL(streamUrl('a+b/c=d&e', 'https://netsentinel-api.onrender.com/api/v1'))
+    expect(url.protocol).toBe('wss:')
+    expect(url.host).toBe('netsentinel-api.onrender.com')
+    expect(url.pathname).toBe('/api/v1/alerts/stream')
+    expect(url.searchParams.get('token')).toBe('a+b/c=d&e')
+  })
+
   it('uses ws on an insecure origin and wss on a secure one', () => {
     // jsdom serves http://localhost by default.
     expect(streamUrl('t')).toMatch(/^ws:\/\//)

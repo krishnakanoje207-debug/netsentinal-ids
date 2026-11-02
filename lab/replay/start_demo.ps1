@@ -163,6 +163,7 @@ function Get-LocalEndpointLabels {
     return $labels
 }
 if ($Native -and $Database -eq 'netsentinel_live') {
+    $apiEnvironment.NETSENTINEL_LOCAL_BROWSER_AUDIT = '1'
     $apiEnvironment.NETSENTINEL_ENDPOINT_LABELS = ConvertTo-Json -Compress -InputObject (Get-LocalEndpointLabels)
 }
 if ($Demo) {

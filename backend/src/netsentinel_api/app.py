@@ -11,8 +11,9 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from netsentinel_api.config import database_url
+from netsentinel_api.config import cors_origins, database_url
 from netsentinel_api.events import get_broadcaster
 from netsentinel_api.notify import AlertListener
 from netsentinel_api.routes import (
@@ -22,6 +23,8 @@ from netsentinel_api.routes import (
     alerts,
     assets,
     auth,
+    browser_audit,
+    endpoint,
     models,
     stream,
     system,
@@ -65,6 +68,8 @@ def create_app(*, listen_for_alerts: bool = True) -> FastAPI:
     )
 
     app.include_router(system.router, prefix=API_PREFIX)
+    app.include_router(browser_audit.router, prefix=API_PREFIX)
+    app.include_router(endpoint.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(alerts.router, prefix=API_PREFIX)
     app.include_router(activity.router, prefix=API_PREFIX)
@@ -74,9 +79,15 @@ def create_app(*, listen_for_alerts: bool = True) -> FastAPI:
     app.include_router(admin.router, prefix=API_PREFIX)
     app.include_router(stream.router, prefix=API_PREFIX)
 
-    # No CORS middleware on purpose. The dashboard reaches the API through an SSH
-    # tunnel, so it is same-origin; adding permissive CORS would open the API to
-    # any page the analyst's browser happens to load.
+    origins = cors_origins()
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "PATCH", "DELETE"],
+            allow_headers=["Authorization", "Content-Type"],
+            expose_headers=["Content-Disposition", "X-Export-Truncated"],
+        )
     return app
 
 

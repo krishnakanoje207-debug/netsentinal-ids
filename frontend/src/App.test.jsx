@@ -101,7 +101,7 @@ describe('App', () => {
     expect(screen.getAllByText('Security analyst').length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument()
     expect(await screen.findByTestId('overview-headline')).toHaveTextContent(
-      '3 threats have been detected, 2 of them critical. 3 alerts are still open.',
+      '3 alerts have been flagged for review, 2 of them critical. 3 alerts are still open.',
     )
   })
 })

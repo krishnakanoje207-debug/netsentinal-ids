@@ -7,7 +7,7 @@
  * pointless, and a 422 carries a message worth showing verbatim.
  */
 
-export const API_BASE = '/api/v1'
+export const API_BASE = `${(import.meta.env.VITE_API_ORIGIN ?? '').replace(/\/$/, '')}/api/v1`
 
 /**
  * @typedef {'unauthenticated' | 'forbidden' | 'not_found' | 'conflict' | 'invalid'

@@ -26,6 +26,7 @@ const ApprovalQueue = named(() => import('./actions/ApprovalQueue'), 'ApprovalQu
 const ModelsPage = named(() => import('./models/ModelsPage'), 'ModelsPage')
 const EstatePage = named(() => import('./estate/EstatePage'), 'EstatePage')
 const AdminPage = named(() => import('./admin/AdminPage'), 'AdminPage')
+const ConditionPage = named(() => import('./condition/ConditionPage'), 'ConditionPage')
 
 export function createQueryClient() {
   return new QueryClient({
@@ -131,6 +132,7 @@ function Shell({ children }) {
           <nav aria-label="Pages" className="flex min-w-0 items-center gap-0.5 overflow-x-auto md:gap-1 lg:ml-4">
             <PageSign to="/" icon={House}>Overview</PageSign>
             <PageSign to="/alerts" icon={ListBullets}>Alerts</PageSign>
+            <PageSign to="/condition" icon={HardDrives}>This PC</PageSign>
             <PageSign to="/approvals" icon={Scales}>Approvals</PageSign>
             {can(PERMISSIONS.assetsRead) && <PageSign to="/estate" icon={HardDrives}>Estate</PageSign>}
             {can(PERMISSIONS.modelsRead) && <PageSign to="/models" icon={Brain}>Models</PageSign>}
@@ -196,6 +198,7 @@ function Authenticated() {
             />
             <Route path="/alerts/:alertId" element={<AlertDetail />} />
             <Route path="/approvals" element={<ApprovalQueue />} />
+            <Route path="/condition" element={<ConditionPage />} />
             <Route path="/estate" element={<EstatePage onFilter={setFilters} />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/admin" element={<AdminPage />} />

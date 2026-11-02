@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: netsentinel-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NETSENTINEL_DATABASE_URL
+        fromDatabase:
+          name: netsentinel-db
+          property: connectionString
+      - key: NETSENTINEL_JWT_SECRET
+        generateValue: true
+      - key: NETSENTINEL_CORS_ORIGINS
+        value: '["https://frontend-pi-eight-gvw406z5rs.vercel.app"]'
+      - key: NETSENTINEL_LOCAL_BROWSER_AUDIT
+        value: "0"
+
+databases:
+  - name: netsentinel-db
+    plan: free
+    region: singapore
+    databaseName: netsentinel
+    user: netsentinel
+    ipAllowList: []

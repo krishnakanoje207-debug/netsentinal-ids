@@ -2,7 +2,31 @@
 
 Where NetSentinel-AI stands against the locked plan (Research Comparison and 15-Day
 Execution Plan v1.0), what remains, and why some planned tools are not running yet.
-Updated 1 November 2026.
+Updated 2 November 2026.
+
+## Hosted deployment preparation and counter restoration — 2 November
+
+The API supports Render PostgreSQL URLs and an explicit dashboard CORS origin
+list. The frontend supports a separate HTTPS API origin for both requests and its
+direct secure WebSocket feed. `render.yaml` defines the API and database, and
+`frontend/vercel.json` enables dashboard deep links. Operational instructions and
+the separation between cloud data and local Windows evidence are in
+[hosted deployment](HOSTED_DEPLOYMENT.md). The Vercel frontend reached READY at
+`https://frontend-pi-eight-gvw406z5rs.vercel.app`. Render provisioning and the
+frontend's final API origin are still pending; cloud sign-in is not verified.
+
+Verification passed 697 API/Windows launcher tests. The frontend run passed 173
+of 174 tests, with the alert paging test reporting `Error: Test timed out in
+5000ms.` A focused single-worker rerun passed all 14 tests covering alert paging,
+hosted requests/exports and WebSocket routing. The production build and lint
+passed; lint retains the existing warnings.
+
+The temporary native capture test processed 8,343 packet observations and 57 flow
+records; the writer stored 46 detections and 23 alerts. These model verdicts are
+review items, not confirmed intrusions. The test used the finite `netsentinel_mypc`
+database. After the test, elevated `pktmon status` verified the original state:
+Counters, All packets, All components, No filters. No continuous NetSentinel watch
+was left running by this test.
 
 ## Current scope: local real traffic
 
@@ -10,6 +34,36 @@ Run this computer's actual traffic through the existing sensor, trained models,
 writer and dashboard. Azure and the historical VM are optional; restoring their
 connectivity is not a prerequisite for the local work. A successful dataset replay
 does not establish that packet capture works on this computer.
+
+### Resident monitoring and This PC page
+
+The current local version includes a **This PC** page at `/condition`, an
+authenticated endpoint snapshot, and an administrator-only local browser audit.
+The page polls Windows protection/capture evidence every 10 seconds and recorded
+browser activity every 30 seconds. Nested evidence is displayed as labeled values,
+including Yes/No/Unknown, rather than raw JSON. Snapshot freshness and capture
+freshness are separate from dashboard refresh time.
+
+On 1 November at approximately 20:05 IST, verification through the dashboard on
+`http://127.0.0.1:5173` found a running monitor, fresh endpoint evidence, and advancing
+scored-flow/alert timestamps in `netsentinel_live`. Browser metadata was readable
+from eight profiles for the local administrator; viewer access returned HTTP 403.
+Defender reported real-time and downloaded-file protection enabled, zero active
+threats, and three historical detections. Both configured Downloads-folder scans
+and the Defender quick scan completed earlier that day. Historical detections are
+not findings attributable to those scans, and completion is not a clean bill of
+health. Model alerts remain unconfirmed review items.
+
+The resident watcher is independent of dashboard/browser windows. Its Windows
+sign-in task requests packet-capture consent when a new watch starts. Power-off,
+sign-out, and sleep leave observation gaps; reboot and actual sleep/wake recovery
+have not been tested. The browser audit checks bounded recorded activity against
+a limited local phishing feed after a visit. Native Windows/browser protections
+handle real-time file scanning and pre-download warnings. This version does not
+intercept every URL or inspect encrypted page/download contents.
+
+See [resident monitor](RESIDENT_MONITOR.md), [endpoint checks](ENDPOINT_CHECKS.md),
+and [browser audit scope](local-browser-audit.md) for operation and limits.
 
 Read-only inventory on 31 October found:
 

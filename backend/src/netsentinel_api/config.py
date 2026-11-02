@@ -11,8 +11,10 @@ Two rules shape this module:
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,12 +27,35 @@ ENV_PREFIX = "NETSENTINEL_"
 DEFAULT_DATABASE_URL = "postgresql+psycopg://netsentinel@localhost:5432/netsentinel"
 
 
+def normalize_database_url(value: str) -> str:
+    """Render supplies a libpq URL; SQLAlchemy must select installed psycopg 3."""
+    for prefix in ("postgres://", "postgresql://"):
+        if value.startswith(prefix):
+            return "postgresql+psycopg://" + value[len(prefix):]
+    return value
+
+
+def cors_origins() -> list[str]:
+    """Only explicitly configured dashboard origins may call a hosted API."""
+    origins = json.loads(os.environ.get(f"{ENV_PREFIX}CORS_ORIGINS", "[]"))
+    if not isinstance(origins, list):
+        raise ValueError("NETSENTINEL_CORS_ORIGINS must be a JSON list of origins")
+    for origin in origins:
+        if not isinstance(origin, str):
+            raise ValueError("CORS origins must be HTTP(S) origins")
+        parsed = urlsplit(origin)
+        if (parsed.scheme not in {"http", "https"} or not parsed.netloc
+                or parsed.path or parsed.query or parsed.fragment or parsed.username):
+            raise ValueError("CORS origins must be exact HTTP(S) origins without paths")
+    return origins
+
+
 def database_url() -> str:
     """The database URL alone, for Alembic.
 
     Kept separate so a migration run does not need a JWT secret it will never use.
     """
-    return os.environ.get(f"{ENV_PREFIX}DATABASE_URL", DEFAULT_DATABASE_URL)
+    return normalize_database_url(os.environ.get(f"{ENV_PREFIX}DATABASE_URL", DEFAULT_DATABASE_URL))
 
 
 class Settings(BaseSettings):
@@ -39,6 +64,12 @@ class Settings(BaseSettings):
     )
 
     database_url: str = DEFAULT_DATABASE_URL
+
+    @field_validator("database_url")
+    @classmethod
+    def _select_psycopg(cls, value: str) -> str:
+        return normalize_database_url(value)
+
     # Display metadata observed by the local launcher, never managed asset records.
     endpoint_labels: dict[str, str] = Field(default_factory=dict)
 

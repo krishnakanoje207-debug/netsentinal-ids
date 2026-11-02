@@ -22,6 +22,7 @@ def run_ps(source: str):
 def test_all_launchers_parse_in_windows_powershell():
     result = run_ps(r"""        $ErrorActionPreference = 'Stop'
         foreach ($file in @('lab/local/watch_this_pc.ps1',
+                            'lab/local/monitor_this_pc.ps1', 'lab/local/check_endpoint.ps1',
                             'lab/local/capture_windows.ps1', 'lab/replay/start_demo.ps1')) {
             $tokens = $null; $errors = $null
             $null = [Management.Automation.Language.Parser]::ParseFile(

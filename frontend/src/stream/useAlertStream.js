@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { API_BASE } from '../api/client'
 
 /** @typedef {'connecting' | 'open' | 'closed'} StreamStatus */
 
@@ -19,11 +20,13 @@ export function retryDelay(attempt) {
   return Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
 }
 
-export function streamUrl(token, base = '/api/v1') {
-  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
+export function streamUrl(token, base = API_BASE) {
+  const url = new URL(`${base}/alerts/stream`, window.location.origin)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   // The token goes in the query string because a browser cannot set headers on a
   // WebSocket handshake. See the note in backend routes/stream.py.
-  return `${scheme}://${window.location.host}${base}/alerts/stream?token=${encodeURIComponent(token)}`
+  url.searchParams.set('token', token)
+  return url.toString()
 }
 
 /**

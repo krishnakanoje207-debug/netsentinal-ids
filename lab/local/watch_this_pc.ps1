@@ -20,7 +20,8 @@
 # a 2015 testbed: expect false alarms on ordinary browsing (docs/evaluation/REPORT.md).
 
 param([ValidateRange(1, 86400)][int]$Seconds = 120, [string]$Pcap = "", [switch]$Live,
-      [ValidateRange(1, 3600)][int]$Window = 15, [switch]$Fresh, [switch]$Once)
+      [ValidateRange(1, 3600)][int]$Window = 15, [switch]$Fresh, [switch]$Once,
+      [switch]$NoDashboard)
 
 if ($Live -and ($Once -or $Pcap)) { throw "-Live cannot be combined with -Once or -Pcap." }
 $Live = -not ($Once -or $Pcap)
@@ -40,11 +41,25 @@ if ($Live) {
     catch { throw "A live watch is already running. Stop it from its launcher before starting another." }
 }
 
+function Write-WatchStatus([string]$state, [string]$message = "") {
+    if (-not $Live) { return }
+    $status = @{ state = $state; updated_at = [DateTime]::UtcNow.ToString('o'); watcher_pid = $PID;
+        run = $run; window_seconds = $Window; error = $message;
+        capture_pid = $(if ($capture) { $capture.Id } else { $null });
+        sensor_pid = $(if ($sensorProc) { $sensorProc.Id } else { $null });
+        writer_pid = $(if ($writerProc) { $writerProc.Id } else { $null }) }
+    $status | ConvertTo-Json | Set-Content -LiteralPath "$out\status.tmp" -Encoding utf8
+    Move-Item -LiteralPath "$out\status.tmp" -Destination "$out\status.json" -Force
+}
+if ($Live) { Write-WatchStatus 'starting' }
+
 try {
 function Step($name, [scriptblock]$body) {
+    if ($Live -and (Test-Path "$out\stop-request")) { throw 'Watch stop requested.' }
+    Write-WatchStatus 'starting'
     Write-Host "== $name"
     & $body
-    if ($LASTEXITCODE -ne 0) { Write-Host "failed: $name" -ForegroundColor Red; exit 1 }
+    if ($LASTEXITCODE -ne 0) { throw "failed: $name (exit $LASTEXITCODE)" }
 }
 
 # --- 1. capture -------------------------------------------------------------------
@@ -148,11 +163,15 @@ if ($LASTEXITCODE -ne 0 -or -not $sensor) { throw "Could not register this compu
 
 $token = -join ((1..48) | ForEach-Object { "{0:x}" -f (Get-Random -Maximum 16) })
 $env:NETSENTINEL_SENSOR_TOKEN = $token
-$registryPort = 8011
-while (Get-NetTCPConnection -LocalPort $registryPort -State Listen -ErrorAction SilentlyContinue) { $registryPort++ }
+# Ask Windows for a free private port; fixed dashboard ports can be occupied by
+# another local API whose health endpoint must not be mistaken for this registry.
+$portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+$portProbe.Start()
+$registryPort = $portProbe.LocalEndpoint.Port
+$portProbe.Stop()
 $api = Start-Process -PassThru -WindowStyle Hidden -RedirectStandardError "$out\registry.log" uv -ArgumentList "run", "--no-sync", "uvicorn",
     "netsentinel_api.app:app", "--host", "127.0.0.1", "--port", "$registryPort"
-$deadline = (Get-Date).AddSeconds(60)
+$deadline = (Get-Date).AddSeconds(300)
 do {
     Start-Sleep -Seconds 1
     $up = (curl.exe -s -o NUL -w "%{http_code}" --max-time 2 "http://127.0.0.1:$registryPort/api/v1/health") -eq "200"
@@ -184,7 +203,7 @@ if ($Live) {
         "--registry-url", "http://127.0.0.1:$registryPort", "--sensor-name", "this-pc", "--out", $flows
     # The sensor opens its output only after it has read the registry, so once the file
     # exists the registry API has done its job.
-    $deadline = (Get-Date).AddSeconds(120)
+    $deadline = (Get-Date).AddSeconds(300)
     while (-not (Test-Path $flows) -and -not $sensorProc.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
     taskkill /PID $api.Id /T /F *> $null
     $env:NETSENTINEL_SENSOR_TOKEN = $null
@@ -198,8 +217,10 @@ if ($Live) {
         "--family-card", "artefacts/family/model_card.json", "--sensor-id", $sensor, "--replay", $flows, "--follow"
 
     Write-Host "== start the capture ($Window-second windows; Windows will ask for administrator rights)"
+    if (Test-Path "$out\stop-request") { throw 'Watch stop requested.' }
+    Write-WatchStatus 'awaiting_consent'
     try {
-        $capture = Start-Process -PassThru -Verb RunAs -WindowStyle Minimized powershell -ArgumentList "-ExecutionPolicy", "Bypass",
+        $capture = Start-Process -PassThru -Verb RunAs -WindowStyle Hidden powershell -ArgumentList "-ExecutionPolicy", "Bypass",
             "-File", "`"$root\lab\local\capture_windows.ps1`"", "-Dir", "`"$root\$liveDir`"", "-Seconds", "$Window"
     } catch {
         $capture = $null
@@ -210,15 +231,35 @@ if ($Live) {
     $deadline = (Get-Date).AddSeconds(30)
     while (-not (Test-Path "$liveDir\started") -and -not $capture.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
     if (-not (Test-Path "$liveDir\started") -or $capture.HasExited) { throw "pktmon did not start. Check the capture window; another pktmon session may already be running." }
-    if ($capture) {
+    if ($capture -and -not $NoDashboard) {
         & "$root\lab\replay\start_demo.ps1" -Native -DashboardOnly -Database $database
         if ($LASTEXITCODE -ne 0) { throw "The local dashboard did not start." }
         Set-Location $root
         Write-Host "Watching. Accounts: $out\credentials.txt. Ctrl+C here stops the watch." -ForegroundColor Green
     }
 
+        $endpointProc = $null
+        $endpointAt = [DateTime]::MinValue
+        $siteRiskProc = $null
+        $siteRiskAt = [DateTime]::MinValue
+        Write-WatchStatus 'running'
         while ($capture) {
             Start-Sleep -Seconds 15
+            if (Test-Path "$out\stop-request") { break }
+            if (([DateTime]::UtcNow - $endpointAt).TotalSeconds -ge 60 -and
+                (-not $endpointProc -or $endpointProc.HasExited) -and
+                (Test-Path "$root\lab\local\check_endpoint.ps1")) {
+                $endpointProc = Start-Process -PassThru -WindowStyle Hidden powershell -ArgumentList '-NoProfile', '-File', "`"$root\lab\local\check_endpoint.ps1`""
+                $endpointAt = [DateTime]::UtcNow
+            }
+            # Opt-in personal research feed only. The module downloads the fixed
+            # public feed at most every 12h; failures retry no more than hourly.
+            if ((Test-Path "$root\lab\local\out\site-risk-opt-in") -and
+                ([DateTime]::UtcNow - $siteRiskAt).TotalHours -ge 1 -and
+                (-not $siteRiskProc -or $siteRiskProc.HasExited)) {
+                $siteRiskProc = Start-Process -PassThru -WindowStyle Hidden "$root\.venv\Scripts\python.exe" -ArgumentList '-m', 'netsentinel_api.services.site_risk', '--if-due' -WorkingDirectory $root -RedirectStandardOutput "$out\site-risk.log" -RedirectStandardError "$out\site-risk.err"
+                $siteRiskAt = [DateTime]::UtcNow
+            }
             if ($capture.HasExited) {
                 if ((Test-Path "$liveDir\stop-request") -and -not (Test-Path "$liveDir\failed")) { break }
                 throw "The capture stopped; see $liveDir\failed if present."
@@ -229,12 +270,14 @@ if ($Live) {
             $last = Select-String -Path "$out\sensor.log" -Pattern "sensor: " | Select-Object -Last 1
             $stats = if ($last) { ($last.Line -split "sensor: ", 2)[1] } else { "no window read yet" }
             Write-Host "$(Get-Date -Format HH:mm:ss)  $alerts alerts stored  $stats"
+            Write-WatchStatus 'running'
         }
     } finally {
         # In order, so nothing captured is lost: the capture publishes its last window and
         # says so, the sensor reads what is left and ends, and only then is the writer told
         # that the flows file is complete.
         Write-Host "== stopping ($why)"
+        Write-WatchStatus 'stopping'
         New-Item -ItemType File -Force "$liveDir\stop-request" | Out-Null
         if ($capture -and -not $capture.HasExited) { $null = $capture.WaitForExit(($Window + 60) * 1000) }
         if (-not (Test-Path "$liveDir\stop")) {
@@ -247,6 +290,7 @@ if ($Live) {
         if (-not $api.HasExited) { taskkill /PID $api.Id /T /F *> $null }
         $env:NETSENTINEL_SENSOR_TOKEN = $null
         Write-Host "Stopped. Alerts stay in $database; the dashboard remains available. Captured files: $root\lab\local\out\live\$run"
+        Write-WatchStatus 'stopped'
     }
     exit 0
 }
@@ -271,6 +315,10 @@ Step "write explained alerts" {
 Write-Host "Ready. Start the dashboard on it:" -ForegroundColor Green
 Write-Host "  powershell -ExecutionPolicy Bypass -File lab\replay\start_demo.ps1 -Native -Database netsentinel_mypc"
 Write-Host "Accounts: $out\credentials.txt"
+} catch {
+    if ($Live -and (Test-Path "$out\stop-request")) { Write-WatchStatus 'stopped' }
+    else { Write-WatchStatus 'failed' "$_" }
+    throw
 } finally {
     if ($watchLock) { $watchLock.Dispose() }
 }

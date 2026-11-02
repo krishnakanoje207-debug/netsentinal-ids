@@ -13,7 +13,7 @@ import { api } from '../api/client'
 import { AlertFeed, PAGE_SIZE } from './AlertFeed'
 
 vi.mock('../auth/AuthContext', () => ({
-  useAuth: () => ({ token: 'a-token', user: { permissions: [] } }),
+  useAuth: () => ({ token: 'a-token', user: { permissions: [] }, can: () => false }),
 }))
 vi.mock('../stream/StreamContext', () => ({ useStream: () => ({ status: 'open' }) }))
 
