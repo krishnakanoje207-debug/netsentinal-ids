@@ -14,11 +14,14 @@ the ignored `lab/local/out/sysmon-verification.json`; raw command lines were not
 copied into this report.
 
 The installed Wazuh agent is prepared with one Sysmon `eventchannel` input, a
-backed-up configuration, and the intended loopback manager address. It has no
-enrollment key yet. Docker Desktop has since been migrated to D: and updated to
-4.97.0; Engine 29.9.2 runs with the preserved D: disk. Manager ingestion and
-dashboard correlation remain unverified until Wazuh starts. The installation discussion below records the earlier
-1 November state and is superseded by this update.
+backed-up configuration, and the intended loopback manager address. It has an
+enrollment key, and reports Active to the local manager as agent `001`. Docker
+Desktop has been migrated to D: and updated to 4.97.0; Engine 29.9.2 runs with the
+preserved D: disk. The indexer is green, Filebeat's TLS output test passes, and a
+controlled benign command reached the alerts index as document
+`jjsanaEBipqqdtg-zTjt` (Sysmon Event 1, record 332361, Wazuh rule 92052).
+This is a pipeline check, not a confirmed intrusion. The installation discussion
+below records the earlier 1 November state and is superseded by this update.
 
 ## Source and counting method
 

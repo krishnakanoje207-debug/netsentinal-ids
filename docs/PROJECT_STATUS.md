@@ -31,7 +31,13 @@ unconfigured `0.0.0.0` manager address was replaced with the project's local
 `127.0.0.1` endpoint, and its original configuration was backed up. The launcher
 reuses installed services and preserves trailing XML comments. Eight Windows
 launcher tests passed, including repeat configuration and missing-manager checks.
-The agent remains stopped and unenrolled until a manager is reachable.
+The Windows agent is now enrolled as `001` and reports Active. The manager,
+indexer and dashboard run locally; the indexer cluster is green and Filebeat's
+verified TLS output test passes. A labeled benign command generated Sysmon Event
+1, record `332361`, and was indexed as document `jjsanaEBipqqdtg-zTjt` under Wazuh
+rule `92052`. This verifies the pipeline, not an intrusion. The dashboard serves
+at `https://127.0.0.1:5601`; local credentials remain in ignored
+`lab/local/out/wazuh-credentials.env`.
 
 Docker Desktop was migrated from C: to `D:\DockerDesktop` and updated to 4.97.0.
 Engine 29.9.2 and the WSL registration at `D:\DockerData\main` are verified.
@@ -39,8 +45,10 @@ The preserved D: data disk restored the existing containers. Both the fresh C:
 disk and older D: disk were backed up and SHA-256 verified under
 `D:\DockerMigration\backup-20261102` before reinstalling. Installation/staging
 also used D:, and C: free space increased to approximately 10 GB. Windows keeps
-small installation metadata and integration files on C:. Local Wazuh manager
-ingestion remains pending the staged service startup.
+small installation metadata and integration files on C:. Local Wazuh ingestion
+and indexer publishing are now verified. The current local NetSentinel dashboard
+at `http://127.0.0.1:5173` also passed administrator/viewer sign-in and alert-read
+checks, with personal browser audit access denied to the viewer.
 
 Verification passed 697 API/Windows launcher tests. The frontend run passed 173
 of 174 tests, with the alert paging test reporting `Error: Test timed out in
@@ -284,7 +292,6 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Continue observing real local traffic and review model verdicts; live pktmon capture and scored flows were verified on 1 November | Continuous local capture | Keep the watch launcher running; administrator/UAC approval is needed on restart |
-| 2 | Repair Docker startup, add local Wazuh manager/indexer/dashboard, then enrol the prepared Windows agent; Sysmon process/network events are verified | F3 on Windows | Working Docker/Linux engine, sufficient RAM and local ports 1514/1515 |
 | 3 | Add local Suricata/Zeek and the remaining Linux pipeline services in stages | Broader local monitoring | A running Docker/Linux environment, capture access and sufficient RAM |
 | 4 | Confirm the dependency updates in a fresh hosted CI run; local Python and npm audits pass | Dependency security | A push and a new GitHub Actions run; optional for local monitoring |
 | 5 | Refresh and verify the Docker demo with `lab/replay/start_demo.ps1` (without `-Native`), if wanted | Optional replay demo on :5180 | A running Docker daemon and enough RAM; last recorded images were 23-24 Sep and its database was at revision `0005` |
