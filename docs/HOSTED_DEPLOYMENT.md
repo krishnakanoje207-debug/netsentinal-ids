@@ -13,10 +13,35 @@ are included in the image.
 
 The dashboard is deployed at
 [NetSentinel dashboard](https://frontend-pi-eight-gvw406z5rs.vercel.app).
-The Blueprint already allows this exact origin. Provision the backend with
+Production deployment `dpl_A3Sf5KL4VjupxTJW6HBEETpU5vcu` is ready and its
+`VITE_API_ORIGIN` points to
+[NetSentinel API](https://netsentinel-api-15ig.onrender.com).
+The [API service](https://dashboard.render.com/web/srv-dbk9a3psrm7s73e8qbtg) and
+[PostgreSQL database](https://dashboard.render.com/d/dpg-dbk99ics728c73cgb03g-a)
+were created directly in My Workspace on the free plan in Singapore. The database
+is available and expires on 2 December 2026. External database access is disabled.
+The internal database URL is configured as `NETSENTINEL_DATABASE_URL`. API deploy
+`dep-dbk9c0bil8vc73avhcqg` is live at commit `5ac0737` after migrations and bootstrap.
+Render currently reports its default TCP health check; the HTTP health endpoint
+works, and the recommended Health Check Path in Settings is `/api/v1/health`.
+
+Hosted verification passed on 2 November 2026: health and administrator sign-in,
+the administrator role and four configured roles, empty alert and asset reads,
+CSV and PDF downloads, and an authenticated WSS connection with ping/pong. The
+exact Vercel origin passes the CORS preflight; an unrelated origin is rejected.
+Unauthenticated alert reads return 401. The hosted endpoint snapshot reports
+`unavailable`, and browser auditing returns the intended 403. The live Vercel
+JavaScript includes the Render origin, and refreshing `/condition` serves the SPA.
+No runtime error logs were found after the successful API deploy. These checks
+exercise HTTP and WebSocket behavior; browser UI interaction was not automated.
+
+The generated cloud administrator password is stored locally in the Git-ignored
+`lab/local/out/hosted-credentials.env`; it is separate from local monitoring
+credentials. The existing cloud account will be preserved on redeploy.
+
+For a fresh deployment, the Blueprint already allows the exact dashboard origin:
 [Deploy to Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fkrishnakanoje207-debug%2Fnetsentinal-ids%2Ftree%2Fcodex%2Frender-vercel-hosting).
-The dashboard still needs `VITE_API_ORIGIN` set to the resulting Render URL and a
-redeploy before sign-in can reach the hosted API.
+Do not apply it to create duplicates of the resources listed above.
 
 1. Deploy the Blueprint from this repository on Render with GitHub access. Set
    `NETSENTINEL_CORS_ORIGINS` to a JSON list containing the exact Vercel dashboard
