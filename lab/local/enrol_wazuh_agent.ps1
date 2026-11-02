@@ -20,38 +20,72 @@ $repo = Resolve-Path "$PSScriptRoot\..\.."
 $work = Join-Path $env:TEMP "netsentinel-wazuh"
 New-Item -ItemType Directory -Force $work | Out-Null
 
-# Sysmon, with the repository's config. -c updates the config of one already installed.
-$sysmon = Join-Path $work "Sysmon64.exe"
+# Reuse the existing local installers and services before downloading anything.
+$sysmon = Join-Path $repo "Sysmon64.exe"
+if (-not (Test-Path $sysmon)) { $sysmon = Join-Path $work "Sysmon64.exe" }
 if (-not (Test-Path $sysmon)) {
     Invoke-WebRequest "https://download.sysinternals.com/files/Sysmon.zip" -OutFile "$work\Sysmon.zip"
     Expand-Archive "$work\Sysmon.zip" -DestinationPath $work -Force
 }
 $config = Join-Path $repo "sensors\sysmon\sysmonconfig.xml"
-if (Get-Service Sysmon64 -ErrorAction SilentlyContinue) {
-    & $sysmon -accepteula -c $config
-} else {
-    & $sysmon -accepteula -i $config
-}
+$operation = if (Get-Service Sysmon64 -ErrorAction SilentlyContinue) { '-c' } else { '-i' }
+$update = Start-Process -FilePath $sysmon -NoNewWindow -PassThru -ArgumentList '-accepteula', $operation, ('"' + $config + '"')
+$null = $update.Handle
+$update.WaitForExit()
+if ($update.ExitCode -ne 0) { throw "Sysmon configuration failed (exit $($update.ExitCode))." }
 
 # The agent, enrolled through the tunnel.
-$msi = Join-Path $work "wazuh-agent-$WazuhVersion.msi"
-if (-not (Test-Path $msi)) {
-    Invoke-WebRequest "https://packages.wazuh.com/4.x/windows/wazuh-agent-$WazuhVersion.msi" -OutFile $msi
+if (-not (Get-Service WazuhSvc -ErrorAction SilentlyContinue)) {
+    $msi = Join-Path $work "wazuh-agent-$WazuhVersion.msi"
+    if (-not (Test-Path $msi)) {
+        Invoke-WebRequest "https://packages.wazuh.com/4.x/windows/wazuh-agent-$WazuhVersion.msi" -OutFile $msi
+    }
+    $install = Start-Process msiexec.exe -PassThru -ArgumentList @(
+        "/i", "`"$msi`"", "/q",
+        "WAZUH_MANAGER=127.0.0.1", "WAZUH_REGISTRATION_SERVER=127.0.0.1",
+        "WAZUH_AGENT_NAME=$AgentName"
+    )
+    $null = $install.Handle
+    $install.WaitForExit()
+    if ($install.ExitCode -notin @(0, 3010)) { throw "Wazuh installation failed (exit $($install.ExitCode))." }
 }
-Start-Process msiexec.exe -Wait -ArgumentList @(
-    "/i", "`"$msi`"", "/q",
-    "WAZUH_MANAGER=127.0.0.1", "WAZUH_REGISTRATION_SERVER=127.0.0.1",
-    "WAZUH_AGENT_NAME=$AgentName"
-)
 
 # Read the Sysmon channel: the localfile block goes inside <ossec_config>, once.
 $conf = "${env:ProgramFiles(x86)}\ossec-agent\ossec.conf"
 $text = Get-Content $conf -Raw
-if ($text -notmatch "Microsoft-Windows-Sysmon/Operational") {
+$parsed = New-Object Xml.XmlDocument
+$parsed.PreserveWhitespace = $true
+$parsed.LoadXml($text)
+$changed = $false
+if (-not ($parsed.SelectNodes('//localfile/location') | Where-Object InnerText -eq 'Microsoft-Windows-Sysmon/Operational')) {
     $block = (Get-Content (Join-Path $repo "sensors\sysmon\ossec-localfile.xml") -Raw) -replace "(?s)<!--.*?-->", ""
-    $text = $text -replace "</ossec_config>\s*$", "$($block.Trim())`r`n</ossec_config>`r`n"
-    Set-Content $conf $text -Encoding ascii
+    $inputXml = [xml]$block
+    $null = $parsed.DocumentElement.AppendChild($parsed.ImportNode($inputXml.DocumentElement, $true))
+    $changed = $true
+}
+foreach ($address in $parsed.SelectNodes('//client/server/address')) {
+    if ($address.InnerText -eq '0.0.0.0') { $address.InnerText = '127.0.0.1'; $changed = $true }
+}
+if ($changed) {
+    Copy-Item -LiteralPath $conf -Destination ($conf + '.netsentinel-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.bak')
+    [IO.File]::WriteAllText($conf, $parsed.OuterXml, (New-Object Text.UTF8Encoding $false))
 }
 
+# Prepare collection even when the manager is not available, but do not start an
+# unenrolled agent that can only retry against an absent server.
+$servers = @($parsed.SelectNodes('//client/server'))
+$ready = $false
+foreach ($server in $servers) {
+    $address = [string]$server.address
+    $port = if ($server.port) { [int]$server.port } else { 1514 }
+    $probe = New-Object Net.Sockets.TcpClient
+    try {
+        $connect = $probe.ConnectAsync($address, $port)
+        if ($connect.Wait(1500) -and $probe.Connected) { $ready = $true }
+    } catch { } finally { $probe.Dispose() }
+}
+if (-not $ready) {
+    throw 'Sysmon and its Wazuh input are configured. No configured Wazuh manager accepts agent connections; start the manager before enrollment.'
+}
 Restart-Service -Name WazuhSvc
 Get-Service WazuhSvc, Sysmon64 | Format-Table Name, Status

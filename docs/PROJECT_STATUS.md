@@ -12,8 +12,35 @@ direct secure WebSocket feed. `render.yaml` defines the API and database, and
 `frontend/vercel.json` enables dashboard deep links. Operational instructions and
 the separation between cloud data and local Windows evidence are in
 [hosted deployment](HOSTED_DEPLOYMENT.md). The Vercel frontend reached READY at
-`https://frontend-pi-eight-gvw406z5rs.vercel.app`. Render provisioning and the
-frontend's final API origin are still pending; cloud sign-in is not verified.
+`https://frontend-pi-eight-gvw406z5rs.vercel.app`. Its API origin is now
+`https://netsentinel-api-15ig.onrender.com`. The Render API and private PostgreSQL
+database are live. Administrator sign-in, reads, CSV/PDF exports, explicit CORS,
+and the authenticated secure WebSocket passed hosted verification.
+
+### Windows host telemetry — verified 2 November
+
+Sysmon64 and SysmonDrv are running, with the Operational channel enabled. The
+initial installation used default rules with network connections disabled. The
+project configuration is now applied. A benign PowerShell connection to the
+project's Render host produced Event 1 (process create, record 50660) and Event 3
+(network connection, record 50738), both for process 13940. Loopback connections
+are deliberately excluded by these rules.
+
+The installed Wazuh agent now has exactly one Sysmon `eventchannel` input. Its
+unconfigured `0.0.0.0` manager address was replaced with the project's local
+`127.0.0.1` endpoint, and its original configuration was backed up. The launcher
+reuses installed services and preserves trailing XML comments. Eight Windows
+launcher tests passed, including repeat configuration and missing-manager checks.
+The agent remains stopped and unenrolled until a manager is reachable.
+
+Docker Desktop was migrated from C: to `D:\DockerDesktop` and updated to 4.97.0.
+Engine 29.9.2 and the WSL registration at `D:\DockerData\main` are verified.
+The preserved D: data disk restored the existing containers. Both the fresh C:
+disk and older D: disk were backed up and SHA-256 verified under
+`D:\DockerMigration\backup-20261102` before reinstalling. Installation/staging
+also used D:, and C: free space increased to approximately 10 GB. Windows keeps
+small installation metadata and integration files on C:. Local Wazuh manager
+ingestion remains pending the staged service startup.
 
 Verification passed 697 API/Windows launcher tests. The frontend run passed 173
 of 174 tests, with the alert paging test reporting `Error: Test timed out in
@@ -257,7 +284,7 @@ night-mode tiles. The Estate page (hosts and their scan findings) was added the 
 | # | Task | For | Needs |
 |---|---|---|---|
 | 1 | Continue observing real local traffic and review model verdicts; live pktmon capture and scored flows were verified on 1 November | Continuous local capture | Keep the watch launcher running; administrator/UAC approval is needed on restart |
-| 2 | Add local Wazuh manager/indexer/dashboard, then enrol the installed Windows agent and install Sysmon | F3 on Windows | Enough free RAM for Docker/Linux services, local ports 1514/1515 and elevated Sysmon installation |
+| 2 | Repair Docker startup, add local Wazuh manager/indexer/dashboard, then enrol the prepared Windows agent; Sysmon process/network events are verified | F3 on Windows | Working Docker/Linux engine, sufficient RAM and local ports 1514/1515 |
 | 3 | Add local Suricata/Zeek and the remaining Linux pipeline services in stages | Broader local monitoring | A running Docker/Linux environment, capture access and sufficient RAM |
 | 4 | Confirm the dependency updates in a fresh hosted CI run; local Python and npm audits pass | Dependency security | A push and a new GitHub Actions run; optional for local monitoring |
 | 5 | Refresh and verify the Docker demo with `lab/replay/start_demo.ps1` (without `-Native`), if wanted | Optional replay demo on :5180 | A running Docker daemon and enough RAM; last recorded images were 23-24 Sep and its database was at revision `0005` |

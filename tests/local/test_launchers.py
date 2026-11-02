@@ -1,6 +1,7 @@
 """Exercise Windows launcher behavior without starting services or capturing traffic."""
 
 import shutil
+import socket
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,7 @@ def test_all_launchers_parse_in_windows_powershell():
     result = run_ps(r"""        $ErrorActionPreference = 'Stop'
         foreach ($file in @('lab/local/watch_this_pc.ps1',
                             'lab/local/monitor_this_pc.ps1', 'lab/local/check_endpoint.ps1',
+                            'lab/local/enrol_wazuh_agent.ps1',
                             'lab/local/capture_windows.ps1', 'lab/replay/start_demo.ps1')) {
             $tokens = $null; $errors = $null
             $null = [Management.Automation.Language.Parser]::ParseFile(
@@ -164,3 +166,62 @@ def test_endpoint_labels_combine_only_observed_roles_and_never_read_dns_cache():
         if ($labels['10.0.0.20'] -ne "This computer ($env:COMPUTERNAME) / Configured DNS server") { throw 'Lost computer role' }
     """)
     assert result.returncode == 0, result.stderr
+
+
+def test_installed_host_setup_preserves_config_and_waits_for_manager(tmp_path):
+    launcher = tmp_path / 'lab/local'
+    launcher.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'lab/local/enrol_wazuh_agent.ps1', launcher / 'enrol_wazuh_agent.ps1')
+    sensor = tmp_path / 'sensors/sysmon'
+    sensor.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'sensors/sysmon/ossec-localfile.xml', sensor / 'ossec-localfile.xml')
+    (tmp_path / 'Sysmon64.exe').touch()
+    agent = tmp_path / 'ossec-agent'
+    agent.mkdir()
+    with socket.socket() as closed_port:
+        closed_port.bind(('127.0.0.1', 0))
+        port = closed_port.getsockname()[1]
+        config = agent / 'ossec.conf'
+        original = (f'<ossec_config><client><server><address>0.0.0.0</address>'
+                    f'<port>{port}</port></server></client></ossec_config>\n'
+                    '<!-- Preserve this trailing operator comment. -->\n')
+        config.write_text(original, encoding='utf-8')
+        target = str(tmp_path).replace("'", "''")
+        result = run_ps(r"""
+            $ErrorActionPreference = 'Stop'
+            ${env:ProgramFiles(x86)} = '__DIR__'
+            $env:TEMP = '__DIR__'
+            $global:sysmonCalls = 0
+            function Get-Service { param($Name, $ErrorAction); return @{ Name = $Name } }
+            function Invoke-WebRequest { throw 'Must reuse installed services without downloading' }
+            function Restart-Service { throw 'Must not start an agent without a reachable manager' }
+            function Start-Process {
+                param($FilePath, $ArgumentList, [switch]$NoNewWindow, [switch]$PassThru)
+                if ((Split-Path $FilePath -Leaf) -ne 'Sysmon64.exe') { throw 'Unexpected installer launch' }
+                $global:sysmonCalls++
+                $process = [pscustomobject]@{ Handle = 1; ExitCode = 0 }
+                $process | Add-Member ScriptMethod WaitForExit { }
+                return $process
+            }
+            1..2 | ForEach-Object {
+                try {
+                    & '__DIR__/lab/local/enrol_wazuh_agent.ps1'
+                    throw 'Missing manager was not reported'
+                } catch {
+                    if ($_ -notlike '*No configured Wazuh manager accepts agent connections*') { throw }
+                }
+            }
+            if ($global:sysmonCalls -ne 2) { throw 'Installed Sysmon was not reused' }
+        """.replace('__DIR__', target))
+    assert result.returncode == 0, result.stderr
+    from xml.etree import ElementTree
+    parsed = ElementTree.parse(config)
+    assert parsed.findtext('client/server/address') == '127.0.0.1'
+    inputs = parsed.findall('localfile')
+    assert len(inputs) == 1
+    assert inputs[0].findtext('location') == 'Microsoft-Windows-Sysmon/Operational'
+    assert inputs[0].findtext('log_format') == 'eventchannel'
+    assert 'Preserve this trailing operator comment.' in config.read_text(encoding='utf-8')
+    backups = list(agent.glob('ossec.conf.netsentinel-*.bak'))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding='utf-8') == original

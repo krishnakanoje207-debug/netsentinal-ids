@@ -3,6 +3,23 @@
 Verified 1 November 2026 (IST). This review describes the retained real capture,
 not a fresh capture or a determination that traffic was malicious or benign.
 
+## Host telemetry update — 2 November 2026
+
+Sysmon is now installed and its service/driver are running. Applying
+`sensors/sysmon/sysmonconfig.xml` enabled the selected network-connection events,
+which were disabled in the initial default installation. A benign connection to
+the project's Render host generated process-create record 50660 and network
+record 50738 for the same PowerShell process (13940). The evidence summary is in
+the ignored `lab/local/out/sysmon-verification.json`; raw command lines were not
+copied into this report.
+
+The installed Wazuh agent is prepared with one Sysmon `eventchannel` input, a
+backed-up configuration, and the intended loopback manager address. It has no
+enrollment key yet. Docker Desktop has since been migrated to D: and updated to
+4.97.0; Engine 29.9.2 runs with the preserved D: disk. Manager ingestion and
+dashboard correlation remain unverified until Wazuh starts. The installation discussion below records the earlier
+1 November state and is superseded by this update.
+
 ## Source and counting method
 
 Read `lab/local/out/live/20261101-004559-000/flows.jsonl`, the sensor/startup

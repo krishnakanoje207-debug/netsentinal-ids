@@ -2,7 +2,7 @@
   Wazuh agent on the Windows laptop: read the Sysmon channel written by
   sysmonconfig.xml. Paste inside <ossec_config> in
   C:\Program Files (x86)\ossec-agent\ossec.conf, then restart the agent
-  (Restart-Service -Name wazuh). Wazuh's stock Sysmon rules (61600 range) decode it.
+  (Restart-Service -Name WazuhSvc). Wazuh's stock Sysmon rules (61600 range) decode it.
 -->
 <localfile>
   <location>Microsoft-Windows-Sysmon/Operational</location>
